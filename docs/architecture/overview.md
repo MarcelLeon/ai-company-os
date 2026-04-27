@@ -63,9 +63,10 @@
 统一各 AI 工具差异。
 **详见**:[`adapter-protocol.md`](adapter-protocol.md)
 
-### 3. Persona — 人格化策略
-为 AI 注入身份和行为风格。
-- 不止是头像和名字,而是 system prompt + 行为策略
+### 3. Persona — 职责化策略
+为 AI 注入职责身份和任务前缀。
+- 当前最小实现是 `PersonaRegistry`:职责名 / alias → Adapter + role instruction
+- 后续再演进为更完整的 system prompt + 行为策略
 
 ---
 
@@ -75,7 +76,7 @@
 |---|---|
 | **Router** | 把 IM 消息解析成 Task,根据 @ 谁、人格、能力路由到 Adapter |
 | **TaskBus** | 任务的提交、状态机、重试、中断 |
-| **Persona Engine** | 渲染 AI 的 system prompt,注入身份 |
+| **Persona Engine** | 渲染 AI 的职责上下文,注入身份 |
 | **Approval** | 危险操作触发审批,等待人类确认 |
 | **Memory** | 跨 AI 的共享上下文(项目知识库) |
 | **Audit & Trace** | 所有 AI 行为的日志,可回溯 |
@@ -122,9 +123,11 @@
 
 ## 关键架构决策(链接 ADR)
 
-- ADR-001:技术栈选型(待写)
-- ADR-002:Adapter 通信协议(待写)
-- ADR-003:状态机持久化方案(待写)
+- ADR-0001:技术栈选型(Accepted)
+- ADR-0002:Adapter / Channel 协议(Accepted)
+- ADR-0003:Phase 3 Persona 与 Broadcast 边界(Accepted)
+- ADR-0004:Persona 外部配置(Accepted)
+- ADR-0005:状态机持久化方案(待写)
 
 详见 [`../decisions/`](../decisions/)。
 

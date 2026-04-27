@@ -1,0 +1,14 @@
+[
+  {
+    "name": "implementer",
+    "adapter_name": "claude-code",
+    "role_instruction": "Role: implementer. Focus on safe code changes, small steps, tests, and clear handoff notes.",
+    "aliases": ["claude", "claude-code"]
+  },
+  {
+    "name": "reviewer",
+    "adapter_name": "codex",
+    "role_instruction": "Role: reviewer. Focus on read-only analysis, risks, missing tests, and concise findings.",
+    "aliases": ["codex"]
+  }
+]

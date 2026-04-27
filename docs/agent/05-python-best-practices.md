@@ -1,6 +1,6 @@
 # 05 — Python 开发最佳实践
 
-> 本文针对本项目中可能采用 Python 的部分(可能用于 AI Adapter 层、脚本工具、或核心)。
+> 本文针对 ADR-0001 已确认的 Python 核心技术栈。
 
 ---
 
@@ -258,15 +258,15 @@ CI 任何一项不过,PR 不准合。
 
 ---
 
-## 何时选 Python
+## 为什么本项目选 Python
 
-如果技术栈选型最终走向 Python,理由通常是:
+ADR-0001 已确认 Python 作为核心技术栈,主要理由是:
 - AI 生态成熟(LLM SDK、向量库、Agent 框架)
 - 各 AI CLI 大多 Python 实现,Adapter 直接走库内调用而非 subprocess
 
-如果选 Python,主要痛点:
+主要痛点:
 - Wang 的 Java 经验复用低
 - 多核并发能力弱(GIL),本项目 IO 密集影响小
 - 类型系统比 Java 弱,需要纪律保证(`mypy --strict`)
 
-具体取舍由 ADR-001 决定。
+具体取舍见 [`../decisions/0001-tech-stack-selection.md`](../decisions/0001-tech-stack-selection.md)。

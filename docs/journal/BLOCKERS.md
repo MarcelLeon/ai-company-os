@@ -18,36 +18,6 @@
 
 ## 当前活跃卡点
 
-### [B-001] 技术栈选型
-
-**状态**:🟡 DEFERRED(必须 Phase 1 之前解决)
-**提出于**:Round 1
-**最后更新**:2026-04-26
-**影响**:阻塞所有后续编码工作
-
-**问题描述**
-编排核心使用 Java / Python / TypeScript 中的哪一个尚未决定。每种都有取舍:
-- Java + Spring AI:Wang 已有 `claw-code-java` 经验,但 AI CLI 生态对 Java 支持薄弱
-- Python + FastAPI:AI 生态最成熟,但 Wang 的 Java 经验复用有限
-- TypeScript + Node:接 Telegram Bot / 各 AI CLI 最丝滑,但偏离 Wang 主战场
-
-**已尝试的方向**
-- Round 2 人类明确偏向 Python 技术栈,主要原因是不选 Java:代码量偏多、维护负担偏高。
-- Round 2 Agent 初步建议:核心用 Python 3.11+、FastAPI、asyncio、Pydantic v2、typing.Protocol、pytest/ruff/mypy。该建议尚未写成 ADR,因此本卡点未关闭。
-
-**需要什么才能解开**
-- 列清楚每个 AI CLI(Claude Code、Codex、OpenClaw、内部 CLI)各语言下的接入成本
-- 评估 IM 通道(Telegram、飞书、QQ)各语言下的 SDK 成熟度
-- 写成 ADR-001
-
-**当前 workaround**
-- 文档先写,代码不动,等 ADR-001 正式确认 Python 技术栈后再创建代码骨架
-
-**相关链接**
-- STATUS.md 下一轮建议 #1
-
----
-
 ### [B-002] AI 间协作协议形态待定
 
 **状态**:🟡 DEFERRED(Phase 5 之前解决即可)
@@ -75,7 +45,33 @@
 
 ## 已归档卡点
 
-(暂无)
+### [B-001] 技术栈选型
+
+**状态**:🟢 RESOLVED(ADR-0001 Accepted)
+**提出于**:Round 1
+**最后更新**:2026-04-27
+**影响**:曾阻塞所有后续编码工作
+
+**问题描述**
+编排核心使用 Java / Python / TypeScript 中的哪一个尚未决定。每种都有取舍:
+- Java + Spring AI:Wang 已有 `claw-code-java` 经验,但 AI CLI 生态对 Java 支持薄弱
+- Python + FastAPI:AI 生态最成熟,但 Wang 的 Java 经验复用有限
+- TypeScript + Node:接 Telegram Bot / 各 AI CLI 最丝滑,但偏离 Wang 主战场
+
+**已尝试的方向**
+- Round 2 人类明确偏向 Python 技术栈,主要原因是不选 Java:代码量偏多、维护负担偏高。
+- Round 2 Agent 初步建议:核心用 Python 3.11+、FastAPI、asyncio、Pydantic v2、typing.Protocol、pytest/ruff/mypy。
+- Round 3 已写 ADR-0001 并接受 Python 技术栈,同时创建 `pyproject.toml` 和最小 Python 骨架。
+
+**需要什么才能解开**
+- 已解决:见 `docs/decisions/0001-tech-stack-selection.md`。
+
+**当前 workaround**
+- 无。后续编码默认使用 ADR-0001 的 Python 技术栈。
+
+**相关链接**
+- STATUS.md 下一轮建议 #1
+- ADR-0001
 
 ---
 

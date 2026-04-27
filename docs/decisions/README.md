@@ -19,9 +19,12 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | 编号 | 标题 | 状态 | 日期 |
 |---|---|---|---|
 | ADR-0000 | (示例)使用 Markdown 写 ADR | Accepted | 2026-04-26 |
-| ADR-0001 | 技术栈选型 | 待写 | TBD |
-| ADR-0002 | Adapter 通信协议 | 待写 | TBD |
-| ADR-0003 | 状态机持久化方案 | 待写 | TBD |
+| ADR-0001 | 技术栈选型 | Accepted | 2026-04-27 |
+| ADR-0002 | Adapter / Channel 协议 | Accepted | 2026-04-27 |
+| ADR-0003 | Phase 3 Persona 与 Broadcast 边界 | Accepted | 2026-04-28 |
+| ADR-0004 | Persona 外部配置 | Accepted | 2026-04-28 |
+| ADR-0005 | Phase 4 审批与审计边界 | Accepted | 2026-04-28 |
+| ADR-0006 | 状态机持久化方案 | 待写 | TBD |
 
 **状态图例**:
 - `Proposed`(提议中)

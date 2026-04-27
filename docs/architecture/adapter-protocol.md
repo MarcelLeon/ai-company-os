@@ -2,7 +2,7 @@
 
 > 本文定义两个核心接口的草案:`AIAdapter`(AI 工具适配器)和 `IMChannel`(IM 通道)。
 >
-> ⚠️ Phase 0 草案,具体接口签名将随 ADR-002 确定。
+> ADR-0002 已接受 Phase 1 最小接口。本文保留语言中立说明,Python 代码见 `src/aico/adapter/base.py` 和 `src/aico/channel/base.py`。
 
 ---
 
