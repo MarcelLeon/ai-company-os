@@ -49,6 +49,7 @@ class TelegramChannel:
         self._poll_timeout_seconds = poll_timeout_seconds
         self._handler: IncomingMessageHandler | None = None
         self._poll_task: asyncio.Task[None] | None = None
+        self._handler_tasks: set[asyncio.Task[None]] = set()
         self._running = False
         self._offset: int | None = None
 
@@ -73,10 +74,21 @@ class TelegramChannel:
                 pass
             self._poll_task = None
 
+        for task in tuple(self._handler_tasks):
+            task.cancel()
+        if self._handler_tasks:
+            await asyncio.gather(*self._handler_tasks, return_exceptions=True)
+            self._handler_tasks.clear()
+
         if self._owns_client:
             await self._client.aclose()
 
     async def send_message(self, target: ChannelTarget, content: MessageContent) -> SentMessage:
+        log.info(
+            "Telegram sendMessage: target=%s text_chars=%s",
+            target.target_id,
+            len(content.text),
+        )
         result = await self._post(
             "sendMessage",
             {
@@ -92,14 +104,30 @@ class TelegramChannel:
         message_id: str,
         content: MessageContent,
     ) -> None:
-        await self._post(
-            "editMessageText",
-            {
-                "chat_id": target.target_id,
-                "message_id": message_id,
-                "text": content.text,
-            },
+        log.info(
+            "Telegram editMessageText: target=%s message_id=%s text_chars=%s",
+            target.target_id,
+            message_id,
+            len(content.text),
         )
+        try:
+            await self._post(
+                "editMessageText",
+                {
+                    "chat_id": target.target_id,
+                    "message_id": message_id,
+                    "text": content.text,
+                },
+            )
+        except TelegramAPIError as exc:
+            if _is_noop_edit_error(exc):
+                log.info(
+                    "Telegram editMessageText ignored no-op: target=%s message_id=%s",
+                    target.target_id,
+                    message_id,
+                )
+                return
+            raise
 
     async def delete_message(self, target: ChannelTarget, message_id: str) -> None:
         await self._post(
@@ -131,7 +159,14 @@ class TelegramChannel:
             self._offset = int(update_id) + 1
             message = _to_incoming_message(self._name, update)
             if message is not None and self._handler is not None:
-                await self._handler(message)
+                log.info(
+                    "Telegram incoming text: update_id=%s raw_ref=%s sender=%s chars=%s",
+                    update_id,
+                    message.raw_ref,
+                    message.sender_id,
+                    len(message.content.text),
+                )
+                self._schedule_handler(message)
 
     async def _poll_loop(self) -> None:
         while self._running:
@@ -145,15 +180,36 @@ class TelegramChannel:
 
     async def _post(self, method: str, payload: dict[str, Any]) -> Any:
         response = await self._client.post(self._method_url(method), json=payload)
-        response.raise_for_status()
-        data = response.json()
+        data = _telegram_response_json(response)
         if not data.get("ok"):
             description = data.get("description", "unknown Telegram API error")
             raise TelegramAPIError(str(description))
+        response.raise_for_status()
         return data["result"]
 
     def _method_url(self, method: str) -> str:
         return f"{self._api_base_url}/bot{self._bot_token}/{method}"
+
+    def _schedule_handler(self, message: IncomingMessage) -> None:
+        if self._handler is None:
+            return
+
+        task = asyncio.create_task(self._dispatch_message(message))
+        log.info("Telegram handler scheduled: raw_ref=%s", message.raw_ref)
+        self._handler_tasks.add(task)
+        task.add_done_callback(self._handler_tasks.discard)
+
+    async def _dispatch_message(self, message: IncomingMessage) -> None:
+        if self._handler is None:
+            return
+        try:
+            log.info("Telegram handler started: raw_ref=%s", message.raw_ref)
+            await self._handler(message)
+            log.info("Telegram handler finished: raw_ref=%s", message.raw_ref)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Telegram incoming message handler failed: raw_ref=%s", message.raw_ref)
 
 
 def _to_incoming_message(channel_name: str, update: dict[str, Any]) -> IncomingMessage | None:
@@ -202,3 +258,18 @@ def _optional_str(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _telegram_response_json(response: httpx.Response) -> dict[str, Any]:
+    try:
+        data = response.json()
+    except ValueError:
+        response.raise_for_status()
+        raise TelegramAPIError("invalid Telegram API response") from None
+    if not isinstance(data, dict):
+        raise TelegramAPIError("invalid Telegram API response")
+    return data
+
+
+def _is_noop_edit_error(exc: TelegramAPIError) -> bool:
+    return "message is not modified" in str(exc).lower()

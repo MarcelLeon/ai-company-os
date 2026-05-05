@@ -647,3 +647,1550 @@
 - 危险操作识别模型:未完成 → 完成。
 - 审计事件模型:未完成 → 完成。
 - 本地单测:55 个 → 66 个,`pytest` / `ruff check` / `ruff format --check` / `mypy` 全绿。
+
+## Round 14 — 2026-04-28 — Codex
+
+### 输入
+- 人类要求快速上手项目,然后继续开发接下来的工作。
+- `STATUS.md` 的下一轮建议中最高优先级包括 Phase 4 真实审批 smoke test、审计事件可观测输出和审批权限策略。
+
+### 思考与讨论
+
+**接手判断**:
+- 按 `AGENTS.md` 强制顺序阅读北极星、状态、轮次、踩坑、卡点和开发规范。
+- 当前唯一活跃卡点 B-002 是 Phase 5 前的延后卡点,不阻塞 Phase 4。
+- 真实 Telegram smoke test 需要人类环境配合,但审计可观测出口可以本地完成并用单测验证。
+
+**方案选择**:
+- 候选 A:直接实现结构化日志输出 → ❌ **否决**:需要先设计日志字段、脱敏和运行时配置,比当前 Phase 4 的最小闭环更重。
+- 候选 B:直接做审计事件持久化 → ❌ **否决**:会提前引入 Repository / SQLite 等持久化选择,需要 ADR,且不影响马上在 Telegram 中确认 trace。
+- 候选 C:新增 `/audit` 只读命令,展示 `TaskBus` 内存审计事件 → ✅ **选定**:复用 Round 13 的内存 append-only log,最小满足“人类能确认 trace”。
+- 候选 D:先抽小型 command parser 再加 `/audit` → ❌ **否决**:命令解析确实开始变多,但本轮只新增一个简单只读命令;把 parser 收口留给下一次命令扩展,避免把可观测出口和重构绑在一起。
+
+### 产出
+- 更新 `src/aico/core/orchestrator.py`,新增 `/audit` / `audit` 只读命令和审计事件文本格式化。
+- 扩展 `tests/unit/test_orchestrator.py`,覆盖空审计日志和危险任务审计 trace 查询。
+- 更新 `docs/playbooks/phase-4-approval-audit.md`,把 `/audit` 加入 smoke test 步骤。
+- 更新 `docs/human/daily-ops.md`,记录 `/audit` 常用命令和内存审计限制。
+- 更新 `CHANGELOG.md`,记录 `/audit` 用户可见能力。
+
+### 关键决策
+- 🔒 **决策 1**:`/audit` 当前只展示最近 10 条内存审计事件,不伪装成持久审计系统。
+- 🔒 **决策 2**:本轮不引入命令解析框架;下一次新增命令前优先收口 command parser。
+
+### 留给下一轮
+- 人类按 `docs/playbooks/phase-4-approval-audit.md` 做真实 Telegram smoke test,重点验证 `/audit` 能看到 `task_submitted` / `approval_requested` / `approval_approved` / `approval_rejected`。
+- 设计最小审批权限策略,避免任意 Telegram 用户知道 task id 就能 `/approve`。
+- 选择审计事件持久化或结构化日志输出方案,让 trace 不随进程重启丢失。
+
+### 状态变化
+- Phase 4 进度新增:`/audit` 最近审计事件只读查询 ✅。
+- 审计事件可观测输出:未完成 → 最小可用(`/audit` 内存视图)。
+- 本地单测:66 个 → 68 个,`pytest` / `ruff check` / `ruff format --check` / `mypy` 全绿。
+
+## Round 15 — 2026-04-28 — Codex
+
+### 输入
+- 人类在 Telegram + Claude 写文件审批中遇到 `Task rejected: unknown pending approval`。
+- 人类反馈审批交互不好:需要手动输入 taskId,且 Telegram 授权提示里不方便看到完整 taskId。
+
+### 思考与讨论
+
+**问题定位**:
+- Round 13 的审批命令要求 `/approve <task_id>` 精确匹配完整 task id。
+- 真实 IM 场景里 task id 太长,用户不应该被迫复制 UUID。
+- 当前权限策略尚未实现,但本轮问题是交互可用性和 pending approval 查找,不需要先扩大到权限系统。
+
+**方案选择**:
+- 候选 A:继续要求用户用 `/audit` 找完整 task id → ❌ **否决**:这是把系统复杂度转嫁给人,违背 IM dogfooding 的轻量交互。
+- 候选 B:`/approve` 默认批准唯一待审批任务,多任务时提示短 ID → ✅ **选定**:最符合真实聊天习惯,也避免误批多个任务。
+- 候选 C:Telegram inline button 审批 → ❌ **暂缓**:体验最好,但需要引入 Telegram callback query 处理,范围比本轮 bug fix 大。
+- 候选 D:只把完整 task id 再打印一遍 → ❌ **否决**:仍然要求复制长 ID,不能解决根因。
+
+### 产出
+- 更新 `TaskBus.approve()` / `reject_approval()`,支持无 task id 时处理唯一 pending approval。
+- 支持 task id 前缀匹配,多个匹配或多个 pending 时返回短 ID 列表。
+- 更新 `Orchestrator` 审批提示,展示短 ID,并提示直接发送 `/approve` / `/reject`。
+- 扩展 TaskBus / Orchestrator 单测,覆盖无 ID 审批、短 ID 审批、多 pending 提示和无 ID 拒绝。
+- 更新 `docs/human/daily-ops.md`、`docs/playbooks/phase-4-approval-audit.md`、`CHANGELOG.md`。
+- 新增 PITFALL P-006。
+
+### 关键决策
+- 🔒 **决策 1**:IM 审批命令默认面向“当前唯一待审批任务”,不强迫用户复制完整 task id。
+- 🔒 **决策 2**:多个待审批任务时不自动猜测,必须让用户用短 ID 指定,避免误批。
+
+### 留给下一轮
+- 重新做真实 Telegram 审批 smoke test,优先验证 `/approve` 无 ID 流程。
+- 后续若继续优化审批体验,优先考虑 Telegram inline button,但要另起小范围任务。
+- 审批权限策略仍是 Phase 4 高优先级,不要因为 UX 修复而忽略。
+
+### 状态变化
+- Phase 4 进度新增:`/approve` / `/reject` 无 task id 快捷审批 ✅。
+- 新增 P-006,记录 IM 审批命令不要依赖完整 UUID。
+- 本地单测:68 个 → 74 个,`pytest` / `ruff check` / `ruff format --check` / `mypy` 全绿。
+
+## Round 16 — 2026-04-28 — Codex
+
+### 输入
+- 人类要求快速上手项目并继续开发接下来的工作。
+- `STATUS.md` 的高优先级下一步包括真实审批 smoke test、审批权限策略、审计持久化或结构化日志输出。
+
+### 思考与讨论
+
+**接手判断**:
+- 按 `AGENTS.md` 强制顺序读取北极星、状态、轮次、踩坑、卡点和开发规范。
+- 工作区已有 Round 15 未提交改动,本轮在其基础上继续,不回滚已有内容。
+- 真实 Telegram smoke test 需要人类环境配合;本轮优先完成能本地验证的最高优先级代码项:审批权限策略。
+
+**方案选择**:
+- 候选 A:继续允许任意用户审批 → ❌ **否决**:群聊中只要看到 task id 或短 ID 就能批准危险任务,违反 Phase 4 的安全目标。
+- 候选 B:默认只允许任务发起人审批,并通过配置增加额外审批人 → ✅ **选定**:单人 dogfooding 零配置可用,群聊中有最小权限边界,不把 Telegram ACL 细节耦合进核心。
+- 候选 C:立刻接入 Telegram 群管理员权限 → ❌ **否决**:需要额外 Bot API 调用、缓存和 Channel 特定逻辑,对 Phase 4 当前闭环过重。
+- 候选 D:先做完整企业 ACL / IAM → ❌ **否决**:个人项目现阶段没有足够样本,会提前引入持久化和权限模型复杂度。
+
+**实现边界**:
+- 新增 `ApprovalPolicy` 协议与 `RequesterOrListedApproverPolicy` 默认实现。
+- 未授权 `/approve` / `/reject` 不改变 pending task 状态,也不派发 Adapter,只记录 `approval_denied` 审计事件。
+- `aico-phase1` 用 `AICO_APPROVAL_REVIEWER_IDS` 读取逗号分隔的额外审批人 Telegram sender id。
+
+### 产出
+- 新增 `src/aico/core/approval.py`,定义审批权限策略。
+- 更新 `TaskBus`,在批准 / 拒绝 pending approval 前执行 reviewer 权限校验。
+- 新增 `AuditEventType.APPROVAL_DENIED`。
+- 更新 `aico-phase1`,支持 `AICO_APPROVAL_REVIEWER_IDS`。
+- 新增 `docs/decisions/0006-approval-permission-policy.md`,并更新 ADR 索引。
+- 更新 Phase 4 playbook、daily ops、CHANGELOG。
+- 扩展 TaskBus / Orchestrator / Phase1Settings / models 单测,覆盖未授权审批拒绝和配置审批人通过。
+
+### 关键决策
+- 🔒 **决策 1**:危险任务默认只能由任务发起人审批;额外审批人必须显式配置。
+- 🔒 **决策 2**:审批权限判断属于核心 `TaskBus` 前置门禁,不是 Telegram Channel 的命令特例。
+- 🔒 **决策 3**:当前不接入 Telegram 群管理员权限,避免 IM 细节污染核心审批策略。
+
+### 留给下一轮
+- 人类按 `docs/playbooks/phase-4-approval-audit.md` 做真实 Telegram smoke test,新增验证未授权用户审批会被拒绝且记录 `approval_denied`。
+- 继续推进审计事件持久化或结构化日志输出,让 trace 不随进程重启丢失。
+- 下一次新增命令前优先做小型 command parser;`TaskBus` 已 467 行,继续加功能前要警惕 500 行硬上限。
+
+### 状态变化
+- Phase 4 进度新增:审批权限策略 ✅。
+- 新增 ADR-0006。
+- 本地单测:74 个 → 79 个,`pytest` / `ruff check` / `ruff format --check` / `mypy` 全绿。
+
+## Round 17 — 2026-04-28 — Codex
+
+### 输入
+- 人类完成真实 Telegram 测试后反馈 3 点:
+  - 给 `@codex` 授权时,Codex 报 read-only 沙箱且不允许申请写权限。
+  - `@claude` 写 `/tmp/readme.md` 在 AICO `/approve` 后仍提示需要本机授权写权限,用户不知道该在哪里授权。
+  - `/audit` 输出没有舒服的换行。
+
+### 思考与讨论
+
+**问题定位**:
+- Codex 在项目里定位是 `reviewer`,能力只有 `CODE_REVIEW` / `STREAM_OUTPUT`,但 Round 16 的审批流只校验“人是否能审批”,没有校验“Adapter 是否能执行该风险等级任务”。因此 `/codex create ...` 会进入无效审批,批准后才由 Codex CLI read-only sandbox 报错。
+- Claude Code CLI 的 `-p` 非交互模式仍可能触发 Claude 自己的权限系统。当前 Adapter 只接 stdout/stderr,没有 TTY / stdin 交互桥,所以本机授权提示无法自然转发到 Telegram。
+- `/audit` 技术上有换行,但每个事件仍压成一条很长的行,在 Telegram 中可读性差。
+
+**方案选择**:
+- 候选 A:继续让底层 CLI 报错 → ❌ **否决**:用户已经批准后才失败,错误来自底层沙箱,不符合“可审批、可审计”的核心体验。
+- 候选 B:把 Codex 默认改成 workspace-write → ❌ **否决**:Round 7/9 已决定 Codex 默认 read-only reviewer,远程 IM 不应默认放开写能力。
+- 候选 C:TaskBus 在审批前校验 Adapter capability,read-only Adapter 直接拒绝危险任务 → ✅ **选定**:保持 Codex reviewer 定位,错误在核心层可控且可审计。
+- 候选 D:把 Claude 原生权限提示桥接到 Telegram → ❌ **否决**:需要 TTY/stdin 交互转发,不同 CLI 格式不同,会把 Adapter 易变细节污染核心。
+- 候选 E:Claude 远程入口使用 `--permission-mode bypassPermissions`,由 AICO `/approve` 作为唯一远程审批门 → ✅ **选定**:符合“远程异步”北极星,也避免本机二次授权。
+
+**实现边界**:
+- 新增 `risk_capability.py`,将风险等级映射到 Adapter capability,避免 `TaskBus` 超过 500 行硬约束。
+- 不改变 Codex 默认 read-only 命令。
+- `/audit` 改为多行事件块,不引入 Markdown/HTML parse mode。
+
+### 产出
+- 新增 `src/aico/core/risk_capability.py`,实现 Adapter 风险能力门禁。
+- 更新 `TaskBus.submit()`,危险任务进入审批前先检查 Adapter 是否具备对应能力;不具备则记录 `TASK_REJECTED` 并返回明确 reason。
+- 更新 `ClaudeCodeAdapter` 和 `Phase1Settings` 的默认 Claude 命令,加入 `--permission-mode bypassPermissions`。
+- 更新 `Orchestrator` `/audit` 输出,每个事件按多行块展示。
+- 新增 `docs/decisions/0007-remote-approval-adapter-boundary.md`。
+- 新增 PITFALL P-007。
+- 更新 Phase 4 playbook、daily ops、CHANGELOG、STATUS。
+- 扩展单测覆盖 Claude 默认命令、read-only Adapter 危险任务拒绝、`/audit` 多行输出。
+
+### 关键决策
+- 🔒 **决策 1**:AICO `/approve` 是远程场景唯一审批入口;底层 CLI 不应再要求本机交互授权。
+- 🔒 **决策 2**:read-only Adapter 不承接危险任务,即使人类尝试审批也不派发。
+- 🔒 **决策 3**:暂不做 CLI TTY 权限提示转发到 Telegram。
+
+### 留给下一轮
+- 人类复测 Phase 4 playbook,重点验证 `/codex create ...` 会直接拒绝、`/claude create /tmp/readme.md` 在 `/approve` 后不再要求本机授权、`/audit` 多行可读。
+- 继续推进审计事件持久化或结构化日志输出。
+- 风险识别仍是文本启发式,后续应升级为规则表,避免误判后配合 Claude bypass 权限造成风险。
+
+### 状态变化
+- Phase 4 进度新增:Adapter 风险能力门禁 ✅、Claude Code 远程审批后免本机二次授权 ✅、`/audit` 多行可读输出 ✅。
+- 新增 ADR-0007 和 PITFALL P-007。
+- 本地单测:79 个 → 82 个,`pytest` / `ruff check` / `ruff format --check` / `mypy` 全绿。
+
+## Round 18 — 2026-04-28 — Codex
+
+### 输入
+- 人类复测 Round 17 后反馈“验收了没问题,继续执行”。
+- `STATUS.md` 下一轮高优先级剩余项是审计事件持久化或结构化日志输出。
+
+### 思考与讨论
+
+**阶段判断**:
+- Phase 4 真实审批 smoke test 已由人类验收通过,可以把真实审批链路标记完成。
+- `/audit` 已经能看最近事件,但仍是进程内视图;进程重启会丢失历史 trace。
+- 北极星第三句要求 AI 行为可审计,因此需要一个最小跨重启审计留痕。
+
+**方案选择**:
+- 候选 A:继续只用内存 `/audit` → ❌ **否决**:真实 smoke test 已通过,继续只保留内存会让审计在重启后消失。
+- 候选 B:直接引入 SQLite/Postgres 审计仓储 → ❌ **否决**:需要 Repository、迁移、备份和查询设计,对 Phase 4 收口过重。
+- 候选 C:配置 JSONL append-only 文件 → ✅ **选定**:无需新依赖,每行一个结构化事件,可用 `tail` / `jq` / 日志采集读取,足够支撑单机 dogfooding。
+- 候选 D:只打 Python structured logger → ❌ **否决**:如果没有明确 handler / 文件配置,人类不一定能找到历史事件;JSONL path 更直接。
+
+**实现边界**:
+- `InMemoryAuditLog` 继续作为 `/audit` 的近实时内存视图。
+- 新增 `AuditSink` / `JsonlAuditSink`;配置 `AICO_AUDIT_LOG_PATH` 后,每条事件同步 append 到 JSONL 文件。
+- 不做日志轮转、压缩、索引和历史查询命令;这些留给 Phase 6 可观测看板。
+
+### 产出
+- 更新 `src/aico/core/audit.py`,新增 `AuditSink` 和 `JsonlAuditSink`。
+- 更新 `aico-phase1`,新增 `AICO_AUDIT_LOG_PATH` 配置,并将 JSONL sink 接入 `TaskBus`。
+- 新增 `tests/unit/test_audit.py`,覆盖 JSONL 写入内容。
+- 扩展 Phase1 app 单测,验证配置审计路径后会写入 JSONL。
+- 新增 `docs/decisions/0008-audit-jsonl-persistence.md`,并更新 ADR 索引。
+- 更新 `docs/human/daily-ops.md`、`docs/playbooks/phase-4-approval-audit.md`、`CHANGELOG.md`、`STATUS.md`。
+- 更新 `BLOCKERS.md`,将 B-002 从 DEFERRED 升级为 Phase 5 入口 BLOCKING。
+
+### 关键决策
+- 🔒 **决策 1**:Phase 4 审计持久化采用可配置 JSONL append-only 文件,不引入数据库。
+- 🔒 **决策 2**:`/audit` 仍只展示进程内最近事件,完整历史从 JSONL 文件读取。
+- 🔒 **决策 3**:Phase 4 到此收口完成,下一轮进入 Phase 5 前必须解决 B-002。
+
+### 留给下一轮
+- 写 Phase 5 范围 ADR / Playbook,围绕 B-002 决定 AI 间协作协议的最小形态。
+- 建议先选择一个最小 demo:人类在 Telegram 发任务给一个 persona,该 persona 通过核心协议请求另一个 persona 协作,结果回到同一会话。
+- 进入 Phase 5 前优先收口 command parser,避免 `Orchestrator` 继续增长。
+
+### 状态变化
+- Phase 4:进行中 → 完成。
+- Telegram 真实审批 smoke test:未完成 → 完成。
+- 审计事件持久化或结构化日志输出:未完成 → JSONL 持久化完成。
+- B-002:DEFERRED → BLOCKING(Phase 5 入口)。
+- 本地单测:82 个 → 84 个,`pytest` / `ruff check` / `ruff format --check` / `mypy` 全绿。
+
+## Round 19 — 2026-04-28 — Codex
+
+### 输入
+- 人类要求“继续执行”。
+- `STATUS.md` 显示 Phase 4 已完成,下一步最高优先级是启动 Phase 5 并解决 B-002(AI 间协作协议形态)。
+
+### 思考与讨论
+
+**协议调研**:
+- A2A 当前是面向 Agent↔Agent 的开放协议,覆盖能力发现、消息 / artifact 交换、长任务协作。
+- ACP 早期作为 IBM/BeeAI Agent Communication Protocol,现在已并入 A2A 生态。
+- MCP 更适合 Agent↔工具 / 上下文,不适合作为本项目 Phase 5 的 Agent↔Agent 主通道。
+
+**方案选择**:
+- 候选 A:走 IM 消息总线 → ❌ **否决**:群聊感强,但会把内部协作语义耦合到 Telegram,未来接飞书/钉钉会重复实现。
+- 候选 B:直接实现完整 A2A HTTP server/client → ❌ **否决**:当前两个 Adapter 都在同一进程内,Agent Card/SSE/HTTP 服务对 MVP 过重。
+- 候选 C:内部 A2A-inspired 协作指令 `@persona: request` → ✅ **选定**:保留 source/target/payload 协作语义,复用 TaskBus、审批、审计和状态机,未来可映射到 A2A。
+- 候选 D:直接 RPC 调用目标 Adapter → ❌ **否决**:会绕过 TaskBus,失去审批、审计和状态可观测,也弱化“真实团队协作”的 IM 体验。
+
+**实现边界**:
+- 协作触发语法必须是行首 `@persona: request`,普通文本中的 `@persona` 不触发。
+- 协作子任务仍是普通 `Task`,payload 里包含来源 persona。
+- 当前只支持单层协作,避免 AI 之间无限递归。
+- Telegram 只展示协作过程,不作为内部消息总线。
+
+### 产出
+- 新增 `src/aico/core/collaboration.py`,定义 `CollaborationDirective`、指令解析和协作 payload 包装。
+- 更新 `Orchestrator`,在 Adapter 文本输出中识别协作指令,自动创建目标 persona 子任务并流式返回结果。
+- 更新默认 implementer persona 和 `config/personas.example.json`,提示可用 `@reviewer: ...` 请求 reviewer 协作。
+- 新增 `tests/unit/test_collaboration.py`,并扩展 Orchestrator 单测覆盖 implementer → reviewer 协作链路。
+- 新增 `docs/decisions/0009-phase-5-collaboration-protocol.md`。
+- 新增 `docs/playbooks/phase-5-collaboration.md`,并更新 playbook 索引、daily ops、CHANGELOG。
+- 更新 `BLOCKERS.md`,将 B-002 标记为 RESOLVED。
+- 更新 `STATUS.md`,Phase 5 进入进行中。
+
+### 关键决策
+- 🔒 **决策 1**:Phase 5 MVP 采用内部 A2A-inspired 文本协作指令,不直接实现完整 A2A HTTP。
+- 🔒 **决策 2**:协作子任务必须走 `TaskBus`,不得绕过审批、审计和状态机。
+- 🔒 **决策 3**:当前只支持单层协作,避免无限递归和不可控任务树。
+
+### 留给下一轮
+- 人类按 `docs/playbooks/phase-5-collaboration.md` 做真实 Telegram smoke test。
+- 增加显式 `collaboration_requested` 审计事件,让 parent task 与 child task 关系在 JSONL 中可追溯。
+- 进入更多 Phase 5 命令前,优先抽小型 command parser;`Orchestrator` 已增长到 371 行。
+
+### 状态变化
+- Phase 5:未开始 → 进行中。
+- B-002:BLOCKING → RESOLVED。
+- Phase 5 进度新增:协作协议 ADR / Playbook ✅、轻量协作指令解析 ✅、Adapter 输出触发目标 persona 子任务 ✅。
+- 本地单测:84 个 → 88 个,`pytest` / `ruff check` / `ruff format --check` / `mypy` 全绿。
+
+## Round 20 — 2026-04-28 — Codex
+
+### 输入
+- 人类在 Telegram 中发送:
+  `@claude 请简要分一下当前仓库phase 5的协作方案，然后输出一行 @reviewer review一下phase 5有什么风险和问题`
+- 实际只收到 Claude 的“Phase 5 协作方案简析”,怀疑没有用到 Codex。
+- 人类还发现 Claude 执行时输入 `/status` 和 `/audit` 会卡住。
+
+### 思考与讨论
+
+**问题定位**:
+- Round 19 的协作解析只支持行首 `@reviewer: ...`。人类真实输入是 `@reviewer review一下...`,没有冒号,因此没有触发 reviewer 子任务。没有看到 `Collaboration requested: implementer -> reviewer` 也说明没有用到 Codex。
+- `TelegramChannel.poll_once()` 逐条 update `await self._handler(message)`。普通任务 handler 会一直 await Adapter 输出流,所以长任务期间 polling loop 无法继续处理后续 `/status` / `/audit`。
+
+**方案选择**:
+- 候选 A:要求人类必须使用冒号语法 → ❌ **否决**:真实 IM 里自然会写成 `@reviewer review一下...`,语法过窄会反复踩坑。
+- 候选 B:协作解析同时支持冒号和空格 → ✅ **选定**:兼容自然输入,仍要求行首 `@persona`,避免正文中的普通 mention 误触发。
+- 候选 C:在 Orchestrator 内把长任务放后台 → ❌ **暂缓**:可以做,但当前卡住的直接根因在 Channel polling await handler;先从入口解阻塞。
+- 候选 D:TelegramChannel 为每条 incoming message 创建后台 handler task → ✅ **选定**:Channel 继续 polling,长任务运行时轻量命令能进入 Orchestrator。
+
+### 产出
+- 更新 `parse_collaboration_directive()`,支持 `@persona request` 和 `@persona: request`。
+- 更新 `TelegramChannel`,incoming message handler 改为后台 task 分发,`stop()` 时取消未完成 handler。
+- 扩展 `tests/unit/test_collaboration.py`,覆盖空格协作语法。
+- 扩展 `tests/unit/test_telegram_channel.py`,覆盖长 handler 未完成时仍可继续 poll 下一条 update。
+- 新增 PITFALL P-008 / P-009。
+- 更新 Phase 5 playbook、daily ops、STATUS。
+
+### 关键决策
+- 🔒 **决策 1**:IM 协作触发语法兼容 `@persona request` 和 `@persona: request`。
+- 🔒 **决策 2**:Channel polling 不 await 长任务 handler,只负责快速分发 update。
+
+### 留给下一轮
+- 人类复测真实 Telegram:同样的 `@reviewer review一下...` 应触发 `Collaboration requested: implementer -> reviewer`。
+- 复测 Claude 长任务期间 `/status` 和 `/audit` 是否能即时响应。
+- 后续仍建议抽 command parser;Orchestrator 已接近复杂度边界。
+
+### 状态变化
+- 新增 P-008 / P-009。
+- 本地单测:88 个 → 90 个,`pytest` / `ruff check` / `ruff format --check` / `mypy` 全绿。
+
+## Round 21 — 2026-04-28 — Codex
+
+### 输入
+- 人类反馈 Telegram 中长文本返回时疑似只收到部分信息,怀疑消息被吞。
+- 人类要求确认问题,并说明 AICO 对用户 prompt 做了哪些加工。
+
+### 思考与讨论
+
+**问题定位**:
+- `Orchestrator` 原本把所有流式输出 chunk 拼成一条文本,持续调用 `editMessageText` 刷新同一条 Telegram 消息。
+- Telegram Bot API 单条文本消息有 4096 字符限制。长输出超过限制后,编辑请求会失败,handler 中断,表现为 Telegram 只收到前半段。
+- 这不是模型一定少生成,而是 IM 出口层承载失败。
+
+**方案选择**:
+- 候选 A:在 `TelegramChannel` 内部静默截断 → ❌ **否决**:截断仍会丢内容,且 Channel 无法理解流式上下文。
+- 候选 B:只把上限写进文档,要求 AI 少输出 → ❌ **否决**:真实协作和审计场景天然会有长文本,靠人约束不可靠。
+- 候选 C:在核心流式出口加保守分片器 → ✅ **选定**:不改变 `IMChannel` 协议,仍由核心保证不会向任何 Channel 推送超长文本。
+
+### 产出
+- 新增 `src/aico/core/streaming.py`,实现 `StreamedMessageWriter`,使用 3900 字符保守上限拆分流式输出。
+- 更新 `Orchestrator`,普通任务和审批后任务的输出都经分片器写回 IM。
+- 扩展 Orchestrator 单测,覆盖超过单条消息安全长度的长输出会拆成多条消息。
+- 新增 PITFALL P-010,更新 daily ops、troubleshooting、Phase 1 / Phase 5 playbook 和 CHANGELOG。
+
+### 关键决策
+- 🔒 **决策 1**:IM 流式输出层必须主动处理单条消息长度上限,不能把平台限制留给 Bot API 报错。
+- 🔒 **决策 2**:当前用 3900 字符作为保守文本上限,不引入 Telegram 特定协议扩展。
+
+### 留给下一轮
+- 真实 Telegram 复测一个超过 4096 字符的长输出,确认会拆成多条消息且内容连续。
+- 继续推进 Phase 5 的显式 `collaboration_requested` 审计事件。
+- 后续若支持 Markdown/HTML parse mode,需要重新确认实体转义后的长度上限。
+
+### 状态变化
+- 新增 P-010。
+- 长文本流式输出从“单条消息编辑”改为“安全长度内编辑,超长后续发新消息”。
+
+## Round 22 — 2026-04-29 — Codex
+
+### 输入
+- 人类要求继续开发后续工作,最后集中汇报改动和验收方式。
+- `STATUS.md` 的下一轮建议包括真实 Telegram 复测、Phase 5 协作审计增强、命令解析收口和风险识别迭代。
+
+### 思考与讨论
+
+**推进边界**:
+- 真实 Telegram 复测需要在当前 bot 会话中发送消息并观察回复。当前 shell 有 Token 变量,但没有可靠 chat id / 不应贸然启动长任务打扰人类会话,因此本轮把真实复测保留为人类验收步骤。
+- 可本地闭环的开发项包括协作审计增强、命令解析收口、风险识别规则表化。
+
+**方案选择**:
+- 候选 A:只做真实 smoke test 脚本 → ❌ **否决**:没有 chat id 和人工观察点,容易做成不稳定或打扰真实 IM 的测试。
+- 候选 B:先增强协作审计事件 → ✅ **选定**:直接补齐 Phase 5 “可追溯”缺口,符合北极星第三句。
+- 候选 C:继续在 `Orchestrator` 里加命令判断 → ❌ **否决**:`Orchestrator` 已多次被提醒接近复杂度边界,继续堆命令会扩大维护风险。
+- 候选 D:把内置命令解析抽成小模块 → ✅ **选定**:命令已有 6 个,满足 Rule of Three 后抽离的条件。
+- 候选 E:风险识别直接换 LLM 判定 → ❌ **否决**:远程审批门禁应可预测、可测试;当前更适合规则表迭代。
+
+### 产出
+- 新增 `AuditEventType.COLLABORATION_REQUESTED`。
+- 新增 `TaskBus.record_collaboration_requested()`,记录 child task、source persona 和 parent task id。
+- 更新 `Orchestrator`,触发 `@reviewer ...` 协作时先记录 `collaboration_requested`,再派发 child task。
+- 新增 `src/aico/core/commands.py`,统一解析 help/status/audit/broadcast/approve/reject 命令,支持 Telegram bot suffix。
+- 更新 `Orchestrator` 使用 command parser,删除原有散落命令解析 helper。
+- 更新 `src/aico/core/risk.py`,将风险识别改为 `RiskRule` 规则表。
+- 新增 / 扩展 `tests/unit/test_commands.py`、`tests/unit/test_orchestrator.py`、`tests/unit/test_models.py`、`tests/unit/test_risk.py`。
+- 更新 daily ops、Phase 5 playbook、CHANGELOG、STATUS。
+
+### 关键决策
+- 🔒 **决策 1**:Phase 5 协作关系作为审计事件记录,事件挂在 child task 上,`actor` 使用 source persona,`detail` 记录 parent task。
+- 🔒 **决策 2**:内置 IM 命令解析归入独立核心模块,`Orchestrator` 只消费解析结果。
+- 🔒 **决策 3**:风险门禁继续采用确定性规则,不引入 LLM 风险判定。
+
+### 留给下一轮
+- 人类按 Phase 5 playbook 做真实 Telegram 复测,重点看 `collaboration_requested` 是否出现在 `/audit`。
+- 人类做超过 4096 字符长文本复测,确认会拆成多条消息。
+- 后续可设计显式 opt-in 的真实 Telegram integration harness,避免自动测试打扰真实聊天。
+
+### 状态变化
+- Phase 5 协作任务审计事件增强:未完成 → 完成。
+- `Orchestrator` 行数降低到 318 行,`TaskBus` 保持 496 行。
+
+## Round 23 — 2026-04-29 — Codex
+
+### 输入
+- 人类反馈 `/claude 请输出一段超过5000字...` 没有收到结果,怀疑卡住或长文本分片仍有问题。
+- 人类询问当前并发模型为何多次请求 Claude 会 busy。
+- 人类希望“后台搞点日志”,并开始脑暴更薄的 Agent 层 / agent harness。
+
+### 思考与讨论
+
+**问题定位**:
+- 当前 long polling 已支持并发分发,但 Claude/Codex Adapter 本身是单任务占用。`ClaudeCodeAdapter.receive_task()` 发现任一未完成 task 时会返回 `AckStatus.BUSY`。
+- 长文本分片已有单测覆盖,但如果 Claude CLI 长时间不退出或 stdout 没有完整 line/chunk,Telegram 仍可能长时间没有可推送内容。
+- 之前后台缺少关键链路日志,无法区分“Adapter busy”“CLI 没退出”“没有 stdout”“Telegram 出口失败”。
+
+**方案选择**:
+- 候选 A:先猜一个长文本 bug 继续改分片 → ❌ **否决**:已有分片测试,且缺少运行时证据,继续猜容易制造新问题。
+- 候选 B:补关键链路日志 → ✅ **选定**:先让下一次真实复现可定位。
+- 候选 C:马上把 Claude 并发改成多进程池 → ❌ **否决**:涉及工作区写入冲突、审批语义、状态聚合,需要先设计。
+- 候选 D:立即引入 pi-mono 或自研 agent harness → ❌ **暂缓**:这是架构层变化,本轮先脑暴和建议写 ADR。
+
+### 产出
+- `Phase1Settings` 新增 `log_level` / `log_path`,默认 `INFO` 和 `logs/aico.log`。
+- `aico-phase1` 启动时配置 stdout + 文件日志。
+- `TelegramChannel` 记录入站消息、handler 生命周期、send/edit 消息长度。
+- `Orchestrator` 记录入站、命令、任务路由、ack、stream start/output/finish、协作触发。
+- `ClaudeCodeAdapter` 记录 accepted/busy、进程启动、退出码、stdout chunk 数量、任务完成。
+- `StreamedMessageWriter` 记录长文本分片触发。
+- 新增 PITFALL P-011,更新 daily ops、troubleshooting、CHANGELOG、STATUS。
+
+### 关键决策
+- 🔒 **决策 1**:后台日志默认开启到 `logs/aico.log`,但不打印完整用户 prompt,只打印长度和可追踪 id。
+- 🔒 **决策 2**:当前 Adapter 并发仍保持 1,不在没有设计的情况下引入多 Claude 进程。
+- 🔒 **决策 3**:Agent harness 先做设计 ADR,不直接把 pi-mono 或自研 loop 落进主链路。
+
+### 留给下一轮
+- 人类复现长文本请求后,用 `tail -f logs/aico.log` 判断卡点。
+- 写 Agent harness 设计 ADR,比较三条路线:继续 CLI 封装、接 pi-mono、AICO 自研轻量 loop/tool/skill harness。
+- 若需要提升并发,先设计每 Adapter 的 queue / worker slots / workspace lock / interrupt 语义。
+
+### 状态变化
+- 新增 P-011。
+- 后台关键链路日志完成。
+
+## Round 24 — 2026-04-29 — Codex
+
+### 输入
+- 人类确认 Adapter 层和 Loop 层没有异议。
+- 人类要求 Agent Harness 薄层进一步简化:tools/skills 直接获取 Claude/Codex 自己的能力,AICO 仅在 Adapter 层翻译;pi-mono 这条较重链路先不考虑。
+- 人类要求把讨论和结论更新到合适文档,然后开始开发。
+
+### 思考与讨论
+
+**边界收敛**:
+- AICO 不拥有 Claude/Codex 的 tools/skills registry,也不重写它们的 tool execution loop。
+- AICO 必须拥有 IM 侧会话引用,否则 Telegram 无法表达“继续这个 Claude/Codex 会话”。
+- provider 的真实上下文仍在 Claude/Codex 内部,AICO 只保存 provider session id / resume hint / workspace / status。
+
+**方案选择**:
+- 候选 A:继续只做黑盒 prompt → ❌ **否决**:无法解决无会话管理和能力不可见。
+- 候选 B:自研完整 tools/skills runtime → ❌ **否决**:与人类要求相反,会重复 Claude/Codex 能力。
+- 候选 C:接 pi-mono 做重 agent runtime → ❌ **否决**:本阶段先不考虑,避免引入新主链路。
+- 候选 D:薄 session/capability facade → ✅ **选定**:AICO 只做会话和能力门面,provider-owned tools/skills 由 Adapter 翻译展示。
+
+### 产出
+- 新增 ADR-0010:`Agent Session 与 Harness 边界`。
+- ADR 明确写入:`AICO Agent Harness is a session and capability facade, not a tool execution runtime.`
+- 新增 `src/aico/core/agent_session.py`,定义:
+  - `AgentCard`:展示 provider-owned tools/skills 来源和 session feature。
+  - `ProviderSessionRef`:保存 Claude/Codex provider session id 和 resume hint。
+  - `AgentSession`:保存 AICO session 到 provider session 的引用。
+  - `InMemoryAgentSessionStore`:最小内存会话 store。
+- `Phase1Runtime` 挂载 `session_store`,但暂不改变现有 Telegram 命令行为。
+- 新增 `tests/unit/test_agent_session.py`,扩展 Phase1 app 单测。
+
+### 关键决策
+- 🔒 **决策 1**:AICO Agent Harness 是 session/capability facade,不是 tool execution runtime。
+- 🔒 **决策 2**:Claude/Codex 的 tools/skills/slash/plugin/mcp 状态由各 Adapter 翻译,不在 AICO 内复制 registry。
+- 🔒 **决策 3**:pi-mono 作为较重 Agent runtime 暂不进入主线;未来最多作为独立 Adapter 实验。
+
+### 留给下一轮
+- 基于 `InMemoryAgentSessionStore` 做 `/sessions`、`/new <agent>`、`/use <session>` MVP。
+- Claude Adapter 优先接 `--session-id` / `--resume` / `--continue`;Codex Adapter 评估 `exec resume`。
+- 设计 `/agent <name>` / `/skills <name>` / `/tools <name>` 的 provider introspection 输出。
+
+### 状态变化
+- 新增 ADR-0010。
+- Phase 5 进度新增 Agent Session / Harness 边界 ADR。
+
+## Round 25 — 2026-04-29 — Codex
+
+### 输入
+- 人类确认前一轮 ADR 和薄 Agent Harness 边界没有问题,要求继续开发。
+- `STATUS.md` 下一轮建议中最高的可本地闭环开发项是 Session 命令 MVP。
+
+### 思考与讨论
+
+**推进边界**:
+- AICO 需要先能在 IM 侧表达“我现在使用哪个 agent session”,否则后续 provider resume 无处挂载。
+- 但 Claude/Codex 的真实上下文仍应由 provider 自己保存;本轮不能把 AICO 变成 tool execution runtime。
+
+**方案选择**:
+- 候选 A:直接接 Claude/Codex resume 参数 → ❌ **暂缓**:需要先有稳定的 AICO session id / active session 体验,否则 provider session ref 无处查询和切换。
+- 候选 B:先做 `/sessions`、`/new`、`/use` → ✅ **选定**:最小闭环,能在 Telegram 侧创建会话引用并切换普通消息默认目标。
+- 候选 C:把会话绑定全局用户而不区分聊天 → ❌ **否决**:同一个人可能在私聊、群聊中使用不同上下文;作用域应至少包含 channel / chat / sender。
+- 候选 D:`/use` 后覆盖所有路由 → ❌ **否决**:显式 `/codex`、`@reviewer`、`agent:` 应继续优先生效,active session 只接管普通消息。
+
+### 产出
+- `CommandName` 新增 `SESSIONS`、`NEW`、`USE`,命令解析支持 `/sessions`、`/new <agent>`、`/use <session_id>`。
+- `InMemoryAgentSessionStore` 增加 active session 映射,按 `channel:chat:sender` 作用域保存当前 session。
+- `Orchestrator` 支持 session 命令;普通消息没有显式目标时,优先路由到 active session 的 agent。
+- `_run_task` 会在 active session 任务执行期间标记 session `busy`,结束后恢复 `idle`。
+- `Phase1Runtime` 将同一个 `session_store` 注入 Orchestrator。
+- 扩展 `test_commands.py`、`test_agent_session.py`、`test_orchestrator.py`。
+- 更新 daily ops、CHANGELOG、STATUS。
+
+### 关键决策
+- 🔒 **决策 1**:AICO session 作用域是 `channel:chat:sender`,避免不同聊天里的上下文互相污染。
+- 🔒 **决策 2**:`/use` 只改变普通消息默认路由;显式 persona / adapter 路由仍然优先。
+- 🔒 **决策 3**:本轮不接 provider resume,保持 ADR-0010 的薄 facade 边界。
+
+### 留给下一轮
+- 真实 Telegram 复测 `/sessions`、`/new claude`、`/use <session>` 和普通消息路由。
+- Claude Adapter 优先接 provider 原生 `--resume` / `--continue` 能力,把 provider session ref 写入 AICO session。
+- 继续做 provider capability 展示,但只翻译 Claude/Codex 自身 tools/skills/slash/plugin/mcp 信息。
+
+### 状态变化
+- Phase 5 进度新增 Session 命令 MVP。
+- Session 命令从“文档建议”进入“本地单测覆盖的 Telegram 命令入口”。
+
+## Round 26 — 2026-04-29 — Codex
+
+### 输入
+- 人类验收 Session 命令 MVP 没问题,要求继续开发。
+- `STATUS.md` 下一轮建议最高优先级之一是 Provider session resume 接入。
+
+### 思考与讨论
+
+**CLI 事实确认**:
+- 本机 `claude --help` 显示 Claude 支持 `--session-id <uuid>`、`--resume [value]`、`--continue` 和 `--fork-session`。
+- 本机 `codex exec resume --help` 显示 Codex 非交互链路支持 `codex exec resume [SESSION_ID] [PROMPT]`。
+- Codex 默认命令中的 `exec --sandbox read-only --color never` 不能原样挪到 `exec resume` 后面;`--sandbox` 应提升到全局参数位置,`--color` 对 `exec resume` 不适用。
+
+**方案选择**:
+- 候选 A:让 AICO 保存完整对话历史并自己拼上下文 → ❌ **否决**:违反 ADR-0010,AICO 不是 tool execution runtime。
+- 候选 B:Claude session 使用 AICO UUID,首轮 `--session-id`,后续 `--resume` → ✅ **选定**:Claude CLI 明确支持指定 session id,适合作为最小闭环。
+- 候选 C:Codex 也直接用 AICO UUID 首轮 `exec resume` → ❌ **否决**:Codex `exec` 没有等价的“指定新 session id”入口,直接 resume 不存在的 id 会失败。
+- 候选 D:Codex Adapter 先支持已有 provider ref 的 `exec resume` 命令构造 → ✅ **选定**:先封装易变 CLI 形态,后续再解决 provider session id 捕获 / 绑定。
+
+### 产出
+- `ProviderSessionRef` 增加 `initialized`,并新增 `ProviderSessionMode`、`ProviderTaskSession`。
+- 新增 `task_with_provider_session()` / `provider_session_from_task()`,用 Task metadata 在核心和 Adapter 间传递 provider session 引用。
+- `Orchestrator` 在 active session task 中注入 provider session metadata,并在首轮成功派发后标记 provider ref initialized。
+- 审批路径也会保留 task → session 关系,危险任务批准后仍能使用原 provider session metadata。
+- `ClaudeCodeAdapter` 根据 metadata 构造:
+  - `--session-id <uuid>`:provider ref 尚未 initialized。
+  - `--resume <uuid>`:provider ref 已 initialized。
+  - 如果自定义 command 已含 `--session-id` / `--resume` / `--continue`,不重复追加。
+- `CodexAdapter` 支持已有 provider ref 时构造 `codex ... exec resume <session_id> <prompt>`,并处理默认命令中 `--sandbox` / `--color` 的 resume 兼容问题。
+- `Phase1Runtime` 为 Claude persona / alias 自动创建 provider ref;Codex 暂不自动创建 provider ref。
+- 扩展 `test_agent_session.py`、`test_claude_code_adapter.py`、`test_codex_adapter.py`、`test_orchestrator.py`。
+- 更新 daily ops、CHANGELOG、STATUS。
+
+### 关键决策
+- 🔒 **决策 1**:AICO 只传 provider session ref,不保存或重放 provider 对话历史。
+- 🔒 **决策 2**:Claude 首轮使用 `--session-id`,后续使用 `--resume`,以 AICO UUID 作为 provider session id。
+- 🔒 **决策 3**:Codex 在拿不到真实 provider session id 前不自动绑定,只支持已有 provider ref 的 resume 命令构造。
+
+### 留给下一轮
+- 真实 Telegram 复测 Claude session resume,重点查看 `logs/aico.log` 中 `provider_session_mode` 和第二轮上下文是否连续。
+- 评估 `codex exec --json` 是否稳定输出 session id;若稳定,自动捕获并写回 `ProviderSessionRef`。
+- 若无法自动捕获,设计 `/bind <agent> <provider_session_id>` 显式绑定命令。
+
+### 状态变化
+- Phase 5 进度新增 Claude Provider Session Resume MVP。
+- Codex provider resume 从未知状态进入“命令形态已封装,session id 捕获待做”。
+
+## Round 27 — 2026-04-29 — Codex
+
+### 输入
+- 人类反馈 `/codex inspect this` 后一直卡住,询问是否因为 Codex exec 没有稳定“指定新 session id”入口。
+- 人类反馈询问 Claude 技能时,Telegram 只收到“作为 implementer 角色...”开头,后续像被吞掉。
+- 人类确认 `/new`、`/use` 和连续消息已能保持同一 session。
+
+### 思考与讨论
+
+**日志定位**:
+- `logs/aico.log` 显示 Claude/Codex Adapter 仍在产生 stdout chunk,且进程可正常退出;问题发生在 Telegram `editMessageText` 返回 HTTP 400 后。
+- 旧实现先 `response.raise_for_status()`,导致 Telegram Bot API JSON `description` 没被解析,日志只看到泛化 HTTP 400。
+- handler 因 `editMessageText` 异常退出后不再推送后续 stdout;Codex 底层进程继续占用单槽位,所以后续请求表现为 `Adapter busy`。
+
+**方案选择**:
+- 候选 A:继续推进 Codex provider session id 捕获 → ❌ **否决为本轮主线**:本次 `/codex inspect this` 是显式 `/codex` 路由,不依赖 active session 的 provider ref;现象不能用“指定新 session id”解释。
+- 候选 B:把所有 Telegram edit 错误都吞掉 → ❌ **否决**:chat not found、权限、消息过长等真实错误必须继续暴露。
+- 候选 C:只对 Telegram `message is not modified` 做 no-op 容错,并保留其他错误 → ✅ **选定**:这是流式编辑中可恢复的幂等错误,能修复“只收到开头一句”且不掩盖真实故障。
+
+### 产出
+- `TelegramChannel._post()` 改为先解析 Bot API JSON body,保留 HTTP 400 中的 `description`,再判断 `ok` 与 HTTP 状态。
+- `TelegramChannel.edit_message()` 对 `Bad Request: message is not modified` 记录日志并返回,不再中断流式 handler。
+- 新增单测覆盖:
+  - HTTP 400 JSON description 会以 `TelegramAPIError` 暴露。
+  - `message is not modified` edit 失败会被安全忽略。
+- 新增 PITFALL P-012,记录 Telegram no-op edit 400 导致流式 handler 中断的坑。
+- 更新 `STATUS.md`、`CHANGELOG.md`、`docs/human/troubleshooting.md`。
+
+### 关键决策
+- 🔒 **决策 1**:Telegram Bot API 的 HTTP 400 先按业务 JSON 错误解析,不能让 httpx 抢先抹掉平台 description。
+- 🔒 **决策 2**:流式编辑同一条消息时,`message is not modified` 是可恢复 no-op,其他 Telegram API 错误仍然 fail-fast。
+- 🔒 **决策 3**:`/codex inspect this` 的卡住现象本轮判定不是 Codex provider session id 缺失导致,而是 Telegram 出口异常导致 handler 退出后的 busy 后效。
+
+### 留给下一轮
+- 重启服务后在 Telegram 真实复测“Claude 有什么技能”和 `/codex inspect this`,确认不会只收到开头一句。
+- 继续观察非 no-op Telegram 错误是否需要更友好的降级,例如编辑失败时退回 `sendMessage`。
+- Codex provider session id 捕获 / 显式绑定仍是下一轮高优先级,但与本轮 bug 根因分开处理。
+
+### 状态变化
+- Phase 5 进度新增 Telegram 流式输出 no-op edit 容错。
+- 新增 P-012。
+
+## Round 28 — 2026-04-30 — Codex
+
+### 输入
+- 人类要求继续开发迭代“后续两个阶段”,完成后交给人类验收和审查。
+- `STATUS.md` 的后续高优先级中,可本地闭环的开发项是 Codex provider session 显式绑定和 agent 能力/职责可见性。
+
+### 思考与讨论
+
+**范围选择**:
+- 候选 A:直接进入 Phase 6 可观测看板和 Phase 7 共享记忆 → ❌ **否决**:Phase 5 真实协作 smoke test 还没收口,此时跨阶段铺开会违反“不要扩大任务范围”。
+- 候选 B:只做 Telegram 真实复测 → ❌ **否决**:需要人类在真实 IM 中观察,本轮无法独立闭环开发。
+- 候选 C:推进 Phase 5 内两个体验阶段:`/bind` 和 agent capability commands → ✅ **选定**:分别解决 Codex 会话恢复缺口和“体感不到底层模型状态/职责/能力”的痛点。
+
+**设计取舍**:
+- `/bind codex <provider_session_id>` 支持创建并激活 reviewer/Codex session,后续普通消息走 provider `resume`。这保留了 Round 26 的判断:Codex 首轮仍不假装能指定新 session id。
+- `/skills`、`/tools` 不在 AICO 中维护 registry;命令只是把只读探测问题路由给 provider 自己回答,符合 ADR-0010 的薄 harness 边界。
+- `Orchestrator` 已接近 500 行硬上限,因此先把命令输出渲染挪到 `command_messages.py`,再接新命令。
+
+### 产出
+- 新增 `src/aico/core/agent_directory.py`,从 PersonaRegistry + AdapterRegistry 生成 `AgentCard`,支持 alias / adapter / name 解析。
+- `AgentCard` 增加 `aliases`,让 `/agent claude` 能解析到 `implementer`。
+- `CommandName` 新增 `AGENTS`、`AGENT`、`SKILLS`、`TOOLS`、`BIND`,并更新 `/help` 文案。
+- 新增 `/agents`、`/agent <agent>` 展示 agent card、实时 adapter status、capabilities、provider-owned tools/skills 来源。
+- 新增 `/skills <agent>`、`/tools <agent>`,把 provider-owned capability introspection 作为普通只读任务派发给目标 agent。
+- 新增 `/bind <session_id|agent> <provider_session_id>` 和 `/bind <provider_session_id>` active-session 快捷绑定。
+- `Phase1Runtime` 构建并注入 `AgentDirectory`。
+- 新增 / 扩展 `tests/unit/test_commands.py`、`tests/unit/test_agent_session.py`、`tests/unit/test_orchestrator.py`。
+- 更新 daily ops、Phase 5 playbook、CHANGELOG、STATUS。
+
+### 关键决策
+- 🔒 **决策 1**:Codex provider session 先用显式绑定,不把 AICO UUID 伪装成 Codex 已存在 session。
+- 🔒 **决策 2**:AICO 只展示 capability facade 和路由 provider introspection,不复制 Claude/Codex tools/skills registry。
+- 🔒 **决策 3**:命令输出渲染从 `Orchestrator` 拆出,保证后续命令增长不会再次顶破 500 行硬约束。
+
+### 留给下一轮
+- 人类真实验收 `/agents`、`/agent claude`、`/skills claude`、`/tools codex`。
+- 人类使用一个真实 Codex provider session id 验收 `/bind codex <provider_session_id>` 后普通消息是否走 `provider_session_mode=resume`。
+- 若 Codex CLI 的 `--json` 能稳定吐出 session id,下一轮再做自动捕获。
+
+### 状态变化
+- Phase 5 进度新增 Codex provider session 显式绑定命令。
+- Phase 5 进度新增 Agent 能力体验命令。
+
+## Round 29 — 2026-05-04 — Codex
+
+### 输入
+- 人类已真实测试 `/agents`、`/skills`、`/tools`。
+- 人类指出当前更痛的产品问题是:多项目长期迭代时,Telegram 只暴露 session,用户感知不到项目进展、日报/周报、风险和“谁在负责哪个项目”。
+- 人类认可 `Agent 1 --- n Assignment n --- 1 Project` 架构,并要求保存 Project Assignment Layer 设计、同步状态和项目背景文档,准备进入实现。
+
+### 思考与讨论
+
+**核心建模**:
+- Agent 是公司员工,Project 是项目,Assignment 是员工在项目里的岗位/工位。
+- provider session、当前状态、权限、工作目录、role prompt 和最近产出都应该绑定到 Assignment/seat,不裸挂在 Agent 上。
+- 同一个 Agent 可以参与多个 Project,但每个 Project 中必须有独立 Assignment,避免上下文和 session 串线。
+
+**配置方式选择**:
+- 候选 A:用 slash command 创建和修改 Assignment → ❌ **否决**:组织架构会被聊天随手改变,需要权限、回滚、审计和配置持久化,MVP 过重。
+- 候选 B:Assignment 主要用配置文件维护,slash command 只做查看和切换 → ✅ **选定**:组织结构可 review、可追溯,同时保留 Telegram 的轻量操作体验。
+- 候选 C:继续只用 persona/session 表达项目关系 → ❌ **否决**:session 是技术对象,无法稳定表达项目、岗位、周报、风险和跨项目任命。
+
+**Prompt 维护选择**:
+- 候选 A:每个 Assignment 写一整段完整 prompt → ❌ **否决**:一旦员工风格或角色职责变更,需要多处复制修改。
+- 候选 B:四层拼装 Agent Base Prompt + Role Prompt + Project Brief + Runtime Context → ✅ **选定**:新增员工、角色、项目、任命时只改对应层。
+
+**暂缓项**:
+- `/handoff` 暂不进入 MVP。人类判断项目做到一半临时换 Agent 实现难度较大;本轮采纳该边界,避免提前处理上下文迁移。
+- 灵动岛 / Mac 顶部 UI 暂不实现。先稳定 Project/Assignment 状态 API,否则 UI 只能展示裸 session。
+
+### 产出
+- 新增 `docs/decisions/0011-project-assignment-layer.md`,接受 Project Assignment Layer。
+- 新增 `docs/architecture/project-assignment-layer.md`,记录 Agent / Project / Assignment / seat / prompt 分层 / 命令语义。
+- 更新 `docs/decisions/README.md`,加入 ADR-0011。
+- 更新 `docs/architecture/overview.md`,将 Project Assignment 列为核心抽象。
+- 更新 `README.md`,把“Agent 是员工、Project 是项目、Assignment 是岗位”写入 30 秒理解。
+- 更新 `STATUS.md`,记录 Round 29 和下一轮实现建议。
+
+### 关键决策
+- 🔒 **决策 1**:Agent 与 Project 不直接绑定,必须通过 Assignment 表达项目内岗位。
+- 🔒 **决策 2**:provider session 绑定到 Assignment/seat,不是绑定到 Agent 全局状态。
+- 🔒 **决策 3**:Assignment MVP 使用配置文件维护;slash command 只做查看和切换,不做组织架构修改。
+- 🔒 **决策 4**:Prompt 分层维护,不复制完整 assignment prompt。
+- 🔒 **决策 5**:`/handoff` 不进入 Project Assignment Layer MVP。
+
+### 留给下一轮
+- 实现 Project Assignment Layer MVP:
+  - 配置模型:`agents` / `projects` / `assignments`
+  - 配置加载和引用校验
+  - project-scoped session ref / Assignment seat
+  - `/projects`、`/project <id>`、`/use project <id>`、`/assignments [project]`、`/assignment <seat>` 查看和切换命令
+  - Agent Base Prompt + Role Prompt + Project Brief + Runtime Context 分层渲染
+- 保持旧 `/sessions` / `/new` / `/use` 兼容,不要一次性重写 Phase 5。
+- 不实现 `/assign ...` 和 `/handoff`。
+
+### 状态变化
+- Phase 5 进度新增 Project Assignment Layer 设计决策。
+- Agent capability commands 已由人类真实验收。
+- 下一轮最高优先级从裸 session 验收转为 Project Assignment Layer MVP。
+
+## Round 30 — 2026-05-04 — Codex
+
+### 输入
+- 人类要求为项目画两张专业技术视角图,使用 draw.io XML 格式:
+  - 架构分层图:偏基础层在下、偏应用层在上。
+  - 核心概念和角色分工工作流程图。
+- 图要完整结合当前项目设计和实现,用于向用户和读者介绍本项目。
+
+### 思考与讨论
+
+**图一边界**:
+- 候选 A:只画三层 IM / Core / Adapter → ❌ **否决**:这会漏掉 Phase 4/5 已实现的审批审计、session、agent directory、协作和 Project Assignment Layer 设计。
+- 候选 B:按产品语义、应用运行时、公司模型与治理、协议适配器、本地 provider 与持久化五层绘制 → ✅ **选定**:既能解释当前实现,又能展示下一步 Project Assignment Layer 如何接入。
+
+**图二边界**:
+- 候选 A:只画数据模型 ER 图 → ❌ **否决**:用户更需要理解“谁负责什么、任务怎么流转”。
+- 候选 B:概念模型 + 操作流程放在一张图中 → ✅ **选定**:上半部分解释 Human / Project / Agent / Assignment / Provider Session,下半部分解释 `/use project`、任务派发、prompt 构建、审批、Adapter 执行、协作、审计和项目简报。
+
+**状态标识**:
+- 用实线绿色表示当前已实现能力。
+- 用虚线黄色表示已设计/下一步 MVP,避免读者误以为 Project Assignment 命令和报告已经全部落地。
+
+### 产出
+- 新增 `docs/architecture/aico-layered-architecture.drawio`。
+- 新增 `docs/architecture/aico-concepts-workflow.drawio`。
+- 更新 `docs/architecture/overview.md`,加入两张 draw.io 图入口。
+- 更新 `STATUS.md`,记录本轮图产出。
+
+### 关键决策
+- 🔒 **决策 1**:架构图按分层技术架构表达,不是营销图。
+- 🔒 **决策 2**:图中区分已实现与设计中能力。
+- 🔒 **决策 3**:Project Assignment Layer 在图中作为下一步核心产品语义出现,但不伪装成已实现代码。
+
+### 留给下一轮
+- 继续实现 Project Assignment Layer MVP。
+- 如果未来实现 `/brief`、`/risks`、`/daily`、`/weekly`,需要回头把图中相关节点从虚线设计态改成实线实现态。
+
+### 状态变化
+- Phase 5 进度新增面向技术读者的 draw.io 架构图与工作流图。
+
+## Round 31 — 2026-05-04 — Codex
+
+### 输入
+- 人类要求按照优先级开始开发,到达合适验收流程时找人类确认。
+- `STATUS.md` 的最高优先级是 Project Assignment Layer MVP、project-scoped session 和项目/任命查看命令。
+
+### 思考与讨论
+
+**切片选择**:
+- 候选 A:一次性实现配置、prompt 分层、brief/risks、日报/周报 → ❌ **否决**:验收面太大,容易把 Project Assignment 的基础路由问题和报告生成问题混在一起。
+- 候选 B:先实现配置模型、项目命令、active project 和 assignment-scoped session → ✅ **选定**:这是最小可验收产品切片,能在 Telegram 里直接确认“普通消息进入项目办公室默认工位”。
+- 候选 C:先做 `/brief` 和 `/risks` → ❌ **否决**:没有 Project/Assignment 状态底座时,brief 只能重新变成文档摘要,产品语义不稳。
+
+**兼容策略**:
+- 保留旧 `/sessions`、`/new <agent>`、`/use <session_id>`。
+- 新增 `/use project <project>` 时不删除旧 active session;普通消息如果有 active project,优先走项目默认 assignment;显式 `/claude`、`/codex`、`@reviewer` 等路由仍然优先。
+
+**复杂度控制**:
+- `Orchestrator` 在继续接命令后超过 500 行硬约束,因此新增 `orchestrator_commands.py`,把 agent / project / assignment / session 命令处理拆出。
+- Prompt 分层仍是高优先级,但留到下一切片,避免这一轮又把 TaskBus / persona 注入一起改大。
+
+### 产出
+- 新增 `src/aico/core/project_assignment.py`。
+- 新增 `src/aico/core/orchestrator_commands.py`。
+- 新增 `config/projects.example.json`。
+- `Phase1Settings` 新增 `project_config_path`,对应 `AICO_PROJECT_CONFIG_PATH`。
+- `Phase1Runtime` 加载 Project Assignment 配置,并校验 agent provider、assignment agent 和 project 引用。
+- 新增 `/projects`、`/project <project>`、`/use project <project>`、`/assignments [project]`、`/assignment <seat>`。
+- active project 下的普通消息会走项目默认 assignment,并为该 seat 创建/复用 project-scoped provider session。
+- 新增 `tests/unit/test_project_assignment.py`,扩展 commands / orchestrator / phase1 app 单测。
+- 更新 daily ops、CHANGELOG、STATUS。
+
+### 关键决策
+- 🔒 **决策 1**:Project Assignment 第一切片只做配置、查看、切换和 project-scoped session,不做组织架构修改。
+- 🔒 **决策 2**:active project 优先级低于显式 `/claude` / `/codex` / mention 路由,高于旧 active session。
+- 🔒 **决策 3**:prompt 分层留到下一切片,避免本轮扩大到报告和 TaskBus prompt 重构。
+- 🔒 **决策 4**:命令处理继续外拆,`Orchestrator` 必须保持低于 500 行。
+
+### 留给下一轮
+- 人类真实验收:
+  - `/projects`
+  - `/project aico`
+  - `/assignments aico`
+  - `/assignment aico-implementer`
+  - `/use project aico`
+  - 发送普通消息,确认走 `aico-implementer` 且日志中 provider session mode 首轮 new、后续 resume。
+- 若验收通过,继续做 Prompt 分层渲染。
+- 暂不做 `/assign ...`、`/handoff`、`/brief`、`/risks`。
+
+### 状态变化
+- Phase 5 进度新增 Project Assignment Layer MVP 第一切片。
+- 下一轮最高优先级改为 Telegram 真实验收和 Prompt 分层渲染。
+
+## Round 32 — 2026-05-04 — Codex
+
+### 输入
+- 人类还没有正式测试 assignments / projects,因为 `assignment`、`seat`、`/use role` 等概念和命令不符合唯一老板的直觉。
+- 人类希望在正式使用前直接把设计改为老板派发任命的语言:
+  - `/project aico`
+  - `/team`
+  - `/who implementer`
+  - `/appoint claude as implementer`
+  - `/ask reviewer 检查这个方案`
+  - `/lead implementer`
+- 人类同时指出只有 implementer / reviewer 过窄,要求完善 role 体系并落地到设计文档。
+
+### 思考与讨论
+
+**产品语言纠偏**:
+- 候选 A:继续让 `/assignment <seat>` 作为主入口 → ❌ **否决**:`seat` 是内部稳定 id,不是老板会自然说的话。用户不应该记住 `aico-implementer` 才能管理团队。
+- 候选 B:把 Assignment 的产品层表达改为 Appointment / Team → ✅ **选定**:老板进入项目办公室、查看团队、任命员工、把任务交给岗位、设置默认负责人,这符合“像管理真实团队一样”。
+- 候选 C:把这一层扩成完整 HR / 组织架构系统 → ❌ **否决**:部门、职级、汇报线、权限组对个人 dogfooding 过重,不服务当前 Phase 5 的项目协作主线。
+
+**Role 体系选择**:
+- 候选 A:只保留 implementer / reviewer → ❌ **否决**:只能覆盖写代码和审查,不足以支撑项目管理、测试、架构、文档、运维和安全等长期运营。
+- 候选 B:定义通用 RoleTemplate,项目按需启用并覆盖 → ✅ **选定**:role prompt 通用,Project Role Override 表达项目特殊性,Appointment 只表达“谁被任命到哪个岗位”。
+- 候选 C:每个项目每个任命复制一整段 prompt → ❌ **否决**:后续改角色职责要多处同步,违反 Round 29 的 prompt 分层原则。
+
+### 产出
+- 新增 `docs/decisions/0012-boss-facing-team-commands.md`,接受 boss-facing team commands and role system。
+- 重写 `docs/architecture/project-assignment-layer.md`,从 Project Assignment 改为 Project Team and Appointment Layer。
+- 设计新的主路径命令:
+  - `/project <project>`:进入项目办公室。
+  - `/team [project]`:查看项目团队任命。
+  - `/who <role>`:查看当前项目某岗位负责人、权限和资源。
+  - `/appoint <agent> as <role> [permissions]`:任命员工到当前项目岗位。
+- `/ask <role> <task>`:把单次任务交给当前项目某岗位。
+- `/lead <role>`:设置普通消息默认牵头角色。
+- 完善建议 role 体系:implementer、reviewer、tester、pm、architect、security、docs、ops、analyst、designer。
+- 更新 `docs/decisions/README.md` 和 `docs/architecture/overview.md`,加入 ADR-0012 和新的 Appointment / Team 语义。
+- 更新 `STATUS.md`,把下一轮最高优先级改为实现 boss-facing Project Team 命令和配置模型。
+
+### 关键决策
+- 🔒 **决策 1**:`Assignment` 作为内部领域模型保留,但产品层优先叫 `Appointment / 任命`;`seat` 只用于持久化、日志和排障。
+- 🔒 **决策 2**:`/use assignment <seat>` 不作为主路径;交任务用 `/ask <role> <task>`,设置默认负责人用 `/lead <role>`。
+- 🔒 **决策 3**:Role 体系采用 RoleTemplate + Project Role Override + Appointment Contract 的分层结构。
+- 🔒 **决策 4**:新项目默认只建议或启用 implementer / reviewer,其他 role 显示为未任命或可补齐,避免过度复杂。
+
+### 留给下一轮
+- 实现 `/project`、`/team`、`/who`、`/appoint`、`/ask`、`/lead` 的命令解析和最小运行路径。
+- 在配置模型中补 `roles`、project role overrides、appointments,并保持旧 `assignments` 配置兼容或提供迁移。
+- 实现 prompt 分层渲染:Agent Base Prompt + RoleTemplate Prompt + Project Role Override + Appointment Contract + Runtime Context。
+- 将 Round 31 的 `/assignments`、`/assignment <seat>` 降级为兼容或排障命令。
+
+### 状态变化
+- Phase 5 进度新增 Project Team / Appointment 老板视角命令设计与 Role 体系完善。
+- 下一轮最高优先级从 Round 31 的 Telegram 真实验收调整为先实现新的老板视角命令,再做真实验收。
+
+## Round 33 — 2026-05-04 — Codex
+
+### 输入
+- 人类确认 Round 32 的老板视角设计,要求开始开发。
+- 当前最高优先级是实现 `/project`、`/team`、`/who`、`/appoint`、`/ask`、`/lead` 和 RoleTemplate / Appointment 配置模型。
+
+### 思考与讨论
+
+**实现切片选择**:
+- 候选 A:直接完整实现 prompt 分层、持久化写配置、日报/风险 → ❌ **否决**:会把命令语义、配置模型、prompt runtime 和报告生成混在一起,验收面过大。
+- 候选 B:先实现 boss-facing 命令 MVP + roles/appointments 配置模型 → ✅ **选定**:能本地闭环验证老板语言是否跑通,并保持旧 assignment/seat 命令兼容。
+- 候选 C:删除旧 `/assignments` / `/assignment` → ❌ **否决**:Round 31 已有代码和测试,直接删除会扩大回归面;先降级为兼容或排障入口。
+
+**Appointment 持久化选择**:
+- 候选 A:`/appoint` 直接改写配置文件 → ❌ **暂缓**:需要审计、回滚、并发写入和权限模型,不适合本轮。
+- 候选 B:`/appoint` 先做进程内 runtime appointment → ✅ **选定**:足够验证老板任命体验;重启后仍以配置文件为准。
+
+### 产出
+- `CommandName` 新增 `TEAM`、`WHO`、`APPOINT`、`ASK`、`DEFAULT`,并更新 `/help`。
+- `ProjectAssignmentConfig` 新增 `roles`、`appointments`;`ProjectProfile` 新增 `lead_role` / `default_role` 语义和 project role overrides;旧 `assignments` 字段继续兼容。
+- `ProjectAssignmentDirectory` 支持:
+  - `appointments(project)`
+  - `appointment_for_role(project, role)`
+  - `upsert_appointment(...)`
+  - `set_default_role(project, role)`
+- `/project <project>` 现在进入项目办公室并展示团队和默认 role。
+- 新增 `/team`、`/who <role>`、`/appoint <agent> as <role>`、`/ask <role> <task>`、`/lead <role>` 最小命令处理。
+- `/ask <role> <task>` 会走该 role 的 appointment-scoped provider session;`/lead <role>` 后普通消息走新的牵头 role。
+- `config/projects.example.json` 改为 roles / project role overrides / appointments 示例。
+- 更新 `CHANGELOG.md` 和 `docs/human/daily-ops.md`。
+- 扩展 `test_commands.py`、`test_project_assignment.py`、`test_orchestrator.py`、`test_phase1_app.py`。
+
+### 关键决策
+- 🔒 **决策 1**:`/appoint` 本轮只做进程内任命,MVP 不写回配置文件。
+- 🔒 **决策 2**:旧 `assignments` 配置和旧命令继续兼容,新主路径使用 Team / Appointment 命令。
+- 🔒 **决策 3**:`/ask <role>` 是单次派活,不改变牵头 role;`/lead <role>` 才改变普通消息默认接活人。
+
+### 留给下一轮
+- 人类真实 Telegram 验收:
+  - `/project aico`
+  - `/team`
+  - `/who implementer`
+  - `/appoint claude as tester read_repo run_tests`
+  - `/ask tester 设计回归测试`
+  - `/lead tester`
+  - 普通消息是否进入 tester appointment session
+- 实现 prompt 分层渲染,让 role template、project override 和 appointment contract 真正进入 Adapter prompt。
+- 评估 `/appoint` 是否需要持久化写配置;若要写,必须加审计和回滚策略。
+
+### 状态变化
+- Phase 5 进度新增 Project Team / Appointment 命令 MVP。
+- Phase 5 进度新增 RoleTemplate / ProjectRoleOverride / Appointment 配置模型 MVP。
+- 下一轮最高优先级改为 Project Team Telegram 真实验收和 Prompt 分层渲染。
+
+## Round 34 — 2026-05-04 — Codex
+
+### 输入
+- 人类真实执行 `/appoint Claude as tester read_repo run_tests` 后收到:
+  - `Cannot appoint Claude as tester`
+
+### 思考与讨论
+
+**问题定位**:
+- `DirectoryCommandHandler.handle_appoint()` 先用 `AgentDirectory.resolve(agent_ref)` 判断 agent 是否存在。这个解析是大小写不敏感的,所以 `Claude` 能通过。
+- 但随后 `ProjectAssignmentDirectory.upsert_appointment()` 用原始 `agent_id="Claude"` 精确调用 `self.agent(agent_id)`,而配置 key 是小写 `claude`,于是返回 `None` 并拒绝任命。
+- role 也有同类风险:`Tester`、`test_lead` 这类自然输入不应轻易失败。
+
+**方案选择**:
+- 候选 A:只在命令层把 agent_ref lower() → ❌ **否决**:只能修 `/appoint`,其他 project / role lookup 仍可能踩同类坑。
+- 候选 B:在 `ProjectAssignmentDirectory` 内统一做 agent / project / role ref normalization → ✅ **选定**:领域目录负责引用解析,命令层保持轻薄。
+
+### 产出
+- `ProjectAssignmentDirectory` 新增 normalized ref map:
+  - `_agents_by_ref`
+  - `_roles_by_ref`
+  - `_projects_by_ref`
+- `project()`、`agent()`、`role()` 和 `upsert_appointment()` 统一支持大小写不敏感、下划线/横线兼容解析。
+- Runtime appointment 写入 canonical id,例如输入 `Claude` / `Tester` 后实际保存 `claude` / `tester`。
+- 更新 `test_project_assignment.py`,覆盖大小写输入。
+- 更新 `CHANGELOG.md` 和 `STATUS.md`。
+
+### 关键决策
+- 🔒 **决策 1**:老板面向命令中的 agent / role / project ref 必须宽容解析,不要要求用户记住配置 key 的精确大小写。
+- 🔒 **决策 2**:宽容解析放在 `ProjectAssignmentDirectory`,而不是散落在各个命令 handler 里。
+
+### 留给下一轮
+- 重新在 Telegram 里执行 `/appoint Claude as tester read_repo run_tests`。
+- 继续 Project Team Telegram 真实验收和 Prompt 分层渲染。
+
+### 状态变化
+- 修复 boss-facing `/appoint` 大小写输入导致任命失败的问题。
+
+## Round 35 — 2026-05-04 — Codex
+
+### 输入
+- 人类指出 `/default tester` 这个命令含义难理解,偏工程技术视角。
+- 人类要求改为 `/lead`,并继续开发。
+
+### 思考与讨论
+
+**命令语言选择**:
+- 候选 A:继续使用 `/default` → ❌ **否决**:default 是配置/路由语言,不是老板语言。
+- 候选 B:改为 `/lead <role>` → ✅ **选定**:表达“当前项目由哪个岗位牵头”,更接近老板派发负责人。
+- 候选 C:删除 `/default` → ❌ **否决**:刚实现不久,删除会打断已有测试和人类可能的临时用法;保留为兼容别名。
+
+**继续开发切片**:
+- 候选 A:做 `/brief` / `/risks` → ❌ **暂缓**:项目感知摘要依赖 prompt/context 层先真实注入。
+- 候选 B:实现 Appointment Prompt Stack MVP → ✅ **选定**:让任命书、role、project context 真正进入 provider prompt,而不只是命令展示。
+
+### 产出
+- `CommandName` 新增 `LEAD`,支持 `/lead <role>`。
+- `Orchestrator` 将 `/lead` 和兼容 `/default` 都路由到同一个 default role handler。
+- 命令输出改为 `Lead role for <project>: <role> -> <agent>`。
+- 新增 `src/aico/core/prompt_stack.py`,实现 `render_appointment_prompt()`。
+- `Orchestrator._task_for_assignment()` 在 project appointment 路由中渲染:
+  - Agent section
+  - RoleTemplate section
+  - Project / ProjectRoleOverride section
+  - Appointment Contract
+  - Current task
+- `RoleProfile` 增加 `inline_prompt`,`ProjectRoleProfile` 增加 `inline_prompt_override`,`ProjectProfile` 增加 `brief`。
+- 默认 implementer / reviewer role 增加简短 inline prompt。
+- 更新 `CHANGELOG.md`、`STATUS.md`、`docs/human/daily-ops.md`、设计文档中的 `/lead` 语言。
+- 扩展单测断言 appointment 路由的 payload 包含 `Role`、`Appointment contract` 和 `Current task`。
+
+### 关键决策
+- 🔒 **决策 1**:`/lead <role>` 是主路径,`/default <role>` 只作为兼容别名。
+- 🔒 **决策 2**:Prompt stack 只注入 project appointment 路由;显式 `/claude`、`/codex`、`@reviewer` 保持旧 persona prompt,避免扩大行为面。
+- 🔒 **决策 3**:本轮 prompt stack 支持 inline prompt 和 prompt path 显示,但不读取外部 prompt 文件内容;文件读取/模板化可在下一轮细化。
+
+### 留给下一轮
+- Telegram 真实验收 Project Team / Appointment:
+  - `/project aico`
+  - `/team`
+  - `/who implementer`
+  - `/appoint Claude as tester read_repo run_tests`
+  - `/ask tester 设计回归测试`
+  - `/lead tester`
+  - 普通消息是否交给 tester,日志中是否使用 appointment provider session。
+- 后续做 `/brief` / `/risks`,从 project config、STATUS/ROUNDS、audit/task snapshot 生成项目摘要。
+- 评估 prompt stack 是否需要读取 `base_prompt` / `role.prompt` / `project_role.prompt_override` 文件内容,以及是否需要模板变量。
+
+### 状态变化
+- Phase 5 进度新增 Appointment Prompt Stack MVP。
+- Prompt 分层渲染从待办改为完成 MVP。
+- 下一轮最高优先级改为 Project Team Telegram 真实验收。
+
+## Round 36 — 2026-05-04 — Codex
+
+### 输入
+- 人类要求继续向后开发,之后一起验证和验收。
+- Round 35 后 Project Team 命令和 Appointment Prompt Stack 已完成 MVP,下一项中优先级最高的是 Project brief / risks。
+
+### 思考与讨论
+
+**简报能力边界**:
+- 候选 A:让 Claude/Codex 生成自然语言项目简报 → ❌ **暂缓**:这会依赖 provider 和 prompt 质量,还可能编造本地状态之外的信息。
+- 候选 B:先做本地状态摘要 `/brief` / `/risks` → ✅ **选定**:可稳定测试,只基于 Project 配置、team appointments、recent task snapshots 和 audit events。
+- 候选 C:直接读取 STATUS/ROUNDS/PITFALLS 并做复杂总结 → ❌ **暂缓**:这是下一步项目记忆/报告层,本轮先提供可验收的项目办公室本地状态。
+
+### 产出
+- `CommandName` 新增 `BRIEF` 和 `RISKS`。
+- `/brief [project]` 输出:
+  - Project id/name/repo/phase
+  - north star / status / journal 引用
+  - lead role
+  - team appointments
+  - recent tasks
+  - recent audit events
+- `/risks [project]` 输出最近本地状态中的风险:
+  - waiting_approval / failed / rejected / interrupted tasks
+  - 非 read-only 风险任务
+  - approval requested / denied / task failed / rejected / interrupted audit events
+- 新增 `project_brief_message()` 和 `project_risks_message()`。
+- 扩展 `DirectoryCommandHandler` 和 `Orchestrator` 命令分发。
+- 扩展 `test_commands.py` 和 `test_orchestrator.py`。
+- 更新 `CHANGELOG.md`、`STATUS.md`、`docs/human/daily-ops.md`。
+
+### 关键决策
+- 🔒 **决策 1**:`/brief` 和 `/risks` 当前只做本地状态摘要,不调用 provider,不假装拥有共享记忆层。
+- 🔒 **决策 2**:项目风险先来自 task/audit 状态,后续再接 STATUS/ROUNDS/PITFALLS 和 AI 生成摘要。
+
+### 留给下一轮
+- 人类真实 Telegram 验收:
+  - `/project aico`
+  - `/brief`
+  - `/risks`
+  - `/team`
+  - `/who implementer`
+  - `/appoint Claude as tester read_repo run_tests`
+  - `/ask tester 设计回归测试`
+  - `/lead tester`
+  - 普通消息是否交给 tester appointment session。
+- 若验收通过,继续做 Codex bind 真实验收、Claude resume/长文本复测和 Phase 5 协作 smoke test。
+
+### 状态变化
+- Phase 5 进度新增 Project brief / risks MVP。
+- 下一轮最高优先级仍是 Project Team Telegram 真实验收,但验收清单加入 `/brief` 和 `/risks`。
+
+## Round 37 — 2026-05-04 — Codex
+
+### 输入
+- 人类开始验证,同时要求继续开发。
+- Round 36 的 `/brief` / `/risks` 已能基于本地 runtime 状态输出,但还没有读取项目文档片段。
+
+### 思考与讨论
+
+**增强方向选择**:
+- 候选 A:让 `/brief` 调 provider 总结 STATUS/ROUNDS → ❌ **暂缓**:会引入 provider 不稳定和可能编造的问题。
+- 候选 B:读取项目配置声明的文档短片段 → ✅ **选定**:仍是本地只读、可控长度、可测试,但比只展示文档路径更有用。
+- 候选 C:一次性解析整份 STATUS/ROUNDS/PITFALLS → ❌ **否决**:长文本会撑爆 Telegram,而且需要更明确的摘要策略。
+
+### 产出
+- 新增 `src/aico/core/project_docs.py`:
+  - `brief_document_snippets(project)`
+  - `risk_document_snippets(project)`
+  - `ProjectDocumentSnippet`
+- `ProjectProfile` 新增 `blockers_doc` / `pitfalls_doc`。
+- 默认 AICO project 和 `config/projects.example.json` 增加:
+  - `blockers_doc: docs/journal/BLOCKERS.md`
+  - `pitfalls_doc: docs/journal/PITFALLS.md`
+- `/brief` 追加 north star / status / journal 文档短片段。
+- `/risks` 追加 blockers / pitfalls 文档短片段。
+- 文档读取策略:
+  - 相对路径按 `project.repo` 解析。
+  - 文件不存在或读取失败时跳过。
+  - 每个文件最多展示 4 条非空行。
+  - 单行最多 140 字符。
+- 新增 `tests/unit/test_project_docs.py`。
+- 更新 `CHANGELOG.md`、`STATUS.md`、`docs/human/daily-ops.md`。
+
+### 关键决策
+- 🔒 **决策 1**:Project document snippets 是本地只读辅助信息,不是共享记忆层。
+- 🔒 **决策 2**:文档片段必须有长度上限,避免 Telegram 长文本和噪声问题。
+- 🔒 **决策 3**:缺失文档不让命令失败,因为项目配置可能跨仓库复用。
+
+### 留给下一轮
+- 人类继续 Telegram 验收 `/brief` / `/risks` 是否有用且不吵。
+- 后续如果要更智能的日报/周报,需要设计摘要策略,不要直接把整份 journal 塞给 provider。
+
+### 状态变化
+- Project brief / risks 从 runtime-only 摘要增强为 runtime + bounded project document snippets。
+
+## Round 38 — 2026-05-04 — Codex
+
+### 输入
+- 人类继续在 Telegram 里验证 Project Team / Appointment,同时要求“继续开发”。
+- Round 37 已经把 `/brief` / `/risks` 增强为 runtime + 受限文档片段,但老板日常最直觉的“日报 / 周报”入口还只是设计态。
+
+### 思考与讨论
+
+**日报 / 周报边界**:
+- 候选 A:让 provider 读取 journal 后生成自然语言日报 / 周报 → ❌ **暂缓**:目前还没有稳定共享记忆层,直接调 provider 容易编造或把上下文塞太长。
+- 候选 B:先做本地项目报告 `/daily` / `/weekly` → ✅ **选定**:能复用 Project Team / Appointment、task snapshot、audit event 和文档 snippet,可测试且适合 Telegram 验收。
+- 候选 C:等真实验收全部完成后再做 → ❌ **未选**:用户正在验证,此时补老板日常命令能扩大验收面,也符合北极星里的“远程指挥虚拟公司”。
+
+### 产出
+- `CommandName` 新增 `DAILY` 和 `WEEKLY`。
+- 新增 `/daily [project]` 和 `/weekly [project]`:
+  - `/daily` 使用最近 24 小时本地 AICO 状态窗口。
+  - `/weekly` 使用最近 7 天本地 AICO 状态窗口。
+  - 输出团队、牵头 role、完成项、未完成项、风险和项目文档短片段。
+- 新增 `project_report_message()`,由日报 / 周报共用。
+- `DirectoryCommandHandler` 增加 `handle_daily()`、`handle_weekly()` 和内部 `_handle_report()`。
+- 更新 `docs/architecture/project-assignment-layer.md`、`docs/human/daily-ops.md`、`CHANGELOG.md`。
+- 更新两张 draw.io 图,把 `/daily` / `/weekly` 从 future/next 表述推进到已实现项目状态面。
+- 扩展 `tests/unit/test_commands.py` 和 `tests/unit/test_orchestrator.py`。
+- 本地 137 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check` 全绿;draw.io XML 解析通过。
+
+### 关键决策
+- 🔒 **决策 1**:`/daily` / `/weekly` 当前是本地报告,不调用 provider,不声称拥有跨进程长期记忆。
+- 🔒 **决策 2**:日报 / 周报先做“结构化状态面”,未来接共享记忆层或持久化 timeline 后再升级摘要质量。
+- 🔒 **决策 3**:报告窗口基于 `TaskSnapshot.updated_at` 和 `AuditEvent.timestamp`;当前 task/audit 仍以内存为主,重启后历史会丢失。
+
+### 留给下一轮
+- 人类在 Telegram 里验证:
+  - `/daily`
+  - `/weekly`
+  - `/daily aico`
+  - `/weekly aico`
+  - 看输出是否“有用且不吵”。
+- 若报告过长,优先调整 snippet 数量和 progress/open/risk 行数,不要直接引入 provider 总结。
+
+### 状态变化
+- Phase 5 进度新增 Project daily / weekly 本地报告 MVP。
+- Project awareness draw.io 节点从“future/next”推进为已实现状态面。
+
+## Round 39 — 2026-05-05 — Codex
+
+### 输入
+- 人类真实执行 `/risks`,看到输出包含:
+  - `unknown adapter or persona: risky`
+  - `risk=write_files`
+  - `audit approval_requested ... write_files`
+- 人类指出这些不应直接算“项目风险”,要求 `/risks` 只展示真正项目风险,然后继续开发后续功能。
+
+### 思考与讨论
+
+**风险语义重划分**:
+- 候选 A:继续把 task/audit 风险信号全部塞进 `/risks` → ❌ **否决**:这是工程监控视角,不是老板关心的项目交付风险。
+- 候选 B:`/risks` 只展示项目交付风险,把等待审批和系统噪音移到 `/blockers` → ✅ **选定**:符合“项目风险”和“当前卡点”的自然区分。
+- 候选 C:让 LLM 判断哪些是真风险 → ❌ **暂缓**:当前没有稳定事实包和记忆层,先用确定性规则收窄语义。
+
+### 产出
+- `/risks` 收窄为真正项目风险:
+  - 失败 / 中断任务。
+  - 破坏性任务。
+  - blockers / pitfalls 文档片段。
+- `/risks` 不再展示:
+  - 普通 `write_files` 审批请求。
+  - `approval_requested` 审计事件。
+  - `unknown adapter or persona` 路由噪音。
+- 新增 `/blockers [project]`:
+  - 等待审批任务,并提示 `/approve <short_id>` / `/reject <short_id>`。
+  - 失败 / 拒绝 / 中断任务。
+  - 未知 persona 等系统/执行问题。
+  - blockers 文档短片段。
+- 新增 `blocker_document_snippets(project)`。
+- 扩展命令解析、Orchestrator handler 和项目消息渲染。
+- 新增回归测试覆盖人类遇到的 `write_files + unknown persona` 噪音场景。
+- 更新 `CHANGELOG.md`、`STATUS.md`、`docs/human/daily-ops.md`、`docs/architecture/project-assignment-layer.md`。
+- 更新两张 draw.io 图,把 `/blockers` 纳入项目状态面。
+- 本地 138 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check` 全绿;draw.io XML 解析通过。
+
+### 关键决策
+- 🔒 **决策 1**:`/risks` 是项目交付风险,不是审计日志和风险规则 debug 输出。
+- 🔒 **决策 2**:普通写文件审批是正常开发流程,默认放进 `/blockers`,不算项目风险。
+- 🔒 **决策 3**:`unknown adapter/persona` 是系统/操作卡点,应出现在 `/blockers`,不计入项目交付风险。
+
+### 留给下一轮
+- 人类在 Telegram 里复测:
+  - `/risks` 是否不再展示 `write_files` / `approval_requested` / unknown persona 噪音。
+  - `/blockers` 是否能承接这些卡点且足够清楚。
+- 后续若 `/blockers` 输出过长,优先按 waiting decisions / failed work / documented blockers 分组限流。
+
+### 状态变化
+- Phase 5 进度新增 Project blockers MVP。
+- Project risk semantics 从“底层信号列表”收敛为“老板视角项目交付风险”。
+
+## Round 40 — 2026-05-05 — Codex
+
+### 输入
+- 人类确认 `/risks` 新语义验收没问题,要求继续开发后续能力。
+- Round 39 后项目状态面继续增长,`command_messages.py` 和 `DirectoryCommandHandler` 已接近结构边界。
+
+### 思考与讨论
+
+**下一步能力选择**:
+- 候选 A:直接接 LLM 总结日报/周报 → ❌ **暂缓**:事实包和长期记忆层还不稳,容易把模板报告变成不可靠自然语言。
+- 候选 B:先做确定性 `/next` 下一步动作建议 → ✅ **选定**:老板真正需要“下一步做什么”,且可以基于本地 task/team 状态稳定生成。
+- 候选 C:继续只做更多状态报告 → ❌ **未选**:报告已经能看状态,缺的是行动入口。
+
+**结构整理**:
+- `command_messages.py` 原本同时放通用命令和 Project/Team/Report 输出,继续加命令会越来越难维护。
+- 先拆出 `project_messages.py`,再加 `/next`,避免把项目状态面继续塞进通用消息模块。
+
+### 产出
+- 新增 `src/aico/core/project_messages.py`,承载 Project/Team/Appointment/Report 输出渲染。
+- `command_messages.py` 回到通用命令消息:status、audit、agent card、approval 等。
+- `DirectoryCommandHandler` 的 report 发送辅助逻辑移出类体,让类体保持在 500 行硬约束以内。
+- 新增 `/next [project]`:
+  - 有等待审批时提示 `/approve <short_id>` / `/reject <short_id>`。
+  - 有失败/中断/拒绝任务时提示恢复动作。
+  - 有未知 persona 这类系统噪音时提示先看 `/blockers`。
+  - 没有卡点时建议把最高优先级任务交给当前 lead role。
+- `/next` 只支持 slash command;普通英文 `next` 不作为命令,避免误吞任务。
+- 扩展 `tests/unit/test_commands.py` 和 `tests/unit/test_orchestrator.py`。
+- 更新 `CHANGELOG.md`、`STATUS.md`、`docs/human/daily-ops.md`、`docs/architecture/project-assignment-layer.md` 和两张 draw.io 图。
+- 本地 139 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check` 全绿;draw.io XML 解析通过。
+
+### 关键决策
+- 🔒 **决策 1**:`/next` 是确定性行动建议,不调用 LLM。
+- 🔒 **决策 2**:`next` 不支持无斜杠触发,因为它是常见英文词,误触发风险高。
+- 🔒 **决策 3**:项目状态面渲染独立成 `project_messages.py`,不要继续堆在通用命令消息模块里。
+
+### 留给下一轮
+- 人类在 Telegram 里验证:
+  - `/next`
+  - `/next aico`
+  - 普通消息 `next` 是否仍作为任务交给当前 project lead,而不是被命令解析吞掉。
+- 后续可考虑让 `/next` 读取持久化 timeline 或事实包,但不应直接让 LLM 自由生成。
+
+### 状态变化
+- Phase 5 进度新增 Project next actions MVP。
+- Project 状态输出模块完成一次小切分,降低后续状态面扩展成本。
+
+## Round 41 — 2026-05-05 — Codex
+
+### 输入
+- 人类授权“没有重大决定就一直开发”,并建议必要时设置小时级定时任务催促项目进度。
+- 当前 Project Team 已有 `/team`、`/who`、`/appoint`,但缺少一个直接查看“岗位模板和缺口”的入口。
+
+### 思考与讨论
+
+**持续推进机制**:
+- 候选 A:只在当前 turn 继续开发 → ❌ **不足**:人类明确希望有小时级催促机制。
+- 候选 B:设置当前线程 heartbeat 自动化 → ✅ **选定**:它能每小时唤醒当前线程,检查新消息和工作树,继续推进小步可验证开发。
+
+**功能选择**:
+- 候选 A:持久化 `/appoint` 写配置 → ❌ **暂缓**:涉及审计、回滚和配置写入策略,属于较大决策。
+- 候选 B:新增 `/roles` 岗位视图 → ✅ **选定**:小步能力,能直接帮助老板理解项目还缺哪些角色,不改变运行时语义。
+
+### 产出
+- 创建 heartbeat 自动化 `AICO hourly progress nudge`,每小时唤醒当前线程继续推进和汇报。
+- 新增 `CommandName.ROLES` 和 `/roles [project]`。
+- 新增 `roles_message()`:
+  - 展示 role id / title。
+  - 展示默认权限。
+  - 标记 `agent` 或 `unappointed`。
+- 新增 `ProjectCommandHandler`,把项目办公室命令从 `DirectoryCommandHandler` 拆出,避免命令类超过 500 行硬约束。
+- `ProjectCommandHandler` 和 `Orchestrator` 接入 roles 命令。
+- 扩展单测覆盖:
+  - `/roles aico` 解析。
+  - `/roles` 输出 implementer 已任命、tester 未任命。
+- 更新 `CHANGELOG.md`、`STATUS.md`、`docs/human/daily-ops.md`、`docs/architecture/project-assignment-layer.md` 和两张 draw.io 图。
+- 完整验证通过:140 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`;draw.io XML 解析通过。
+
+### 关键决策
+- 🔒 **决策 1**:小时级推进使用 thread heartbeat,不是 detached cron,因为目标是延续当前开发线程。
+- 🔒 **决策 2**:`/roles` 只做只读视图,不创建或修改任命。
+- 🔒 **决策 3**:持久化任命暂不顺手做,避免在没有审计/回滚策略时扩大范围。
+
+### 留给下一轮
+- 人类在 Telegram 里验证:
+  - `/roles`
+  - `/roles aico`
+  - `/appoint claude as tester ...` 后 `/roles` 是否显示 tester 已任命。
+- 后续可考虑 `/unappoint` 或持久化 appointment,但需要先定审计/回滚策略。
+
+### 状态变化
+- Phase 5 进度新增 Project roles view MVP。
+- 当前线程新增 hourly heartbeat 自动化,用于持续推进。
+
+## Round 42 — 2026-05-05 — Codex
+
+### 输入
+- Hourly heartbeat 唤醒当前开发线程,要求无重大决策时继续推进小步可验证能力。
+- 上一轮 `/roles` 已能看到岗位缺口,但老板任命闭环还缺“撤销任命”。
+
+### 思考与讨论
+
+**功能选择**:
+- 候选 A:持久化 appointment 到配置文件 → ❌ **暂缓**:涉及配置写入、审计、回滚和多进程一致性,仍需要单独设计。
+- 候选 B:新增进程内 `/unappoint <role>` → ✅ **选定**:和现有 `/appoint` 的进程内语义一致,能让老板在当前项目办公室完成任命 / 撤任闭环。
+
+### 产出
+- 新增 `CommandName.UNAPPOINT` 和 `/unappoint <role>` help 文案。
+- `ProjectAssignmentDirectory` 新增 `remove_appointment_for_role()`:
+  - 按当前 project + role 找到 appointment。
+  - 删除对应 seat。
+  - 如果撤销的是当前 lead role,回退到剩余 appointment 或清空 lead。
+- `ProjectCommandHandler` 新增撤任 handler。
+- 新增 `appointment_removed_message()` 撤任确认输出。
+- 扩展单测覆盖:
+  - `/unappoint tester` 命令解析。
+  - 撤任 tester 后 appointment/seat 消失,默认 lead 回退到 implementer。
+  - Orchestrator 中 `/unappoint tester` 后 `/roles` 显示 tester 回到 `unappointed`, `/who tester` 显示未任命。
+- 更新 `CHANGELOG.md`、`STATUS.md`、`docs/human/daily-ops.md` 和 `docs/architecture/project-assignment-layer.md`。
+- 完整验证通过:142 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`;draw.io XML 解析通过。
+
+### 关键决策
+- 🔒 **决策 1**:`/unappoint` 只修改当前进程内 appointment 状态,不写配置文件。
+- 🔒 **决策 2**:撤销当前 lead role 时自动回退到剩余 appointment,避免普通消息路由进入无负责人状态。
+
+### 留给下一轮
+- 人类在 Telegram 里验证:
+  - `/appoint claude as tester read_repo run_tests`
+  - `/roles`
+  - `/unappoint tester`
+  - `/roles`
+  - `/who tester`
+- 后续若要让任命跨重启生效,需要单独设计持久化和审计策略。
+
+### 状态变化
+- Phase 5 进度新增 Project unappoint MVP。
+
+## Round 43 — 2026-05-05 — Codex
+
+### 输入
+- Hourly heartbeat 再次唤醒当前开发线程,要求无重大决策时继续推进。
+- 当前下一步最高优先级是 Project Team Telegram 真实验收,但需要人类重启服务和在 Telegram 中发命令。
+
+### 思考与讨论
+
+**功能选择**:
+- 候选 A:继续扩展持久化 appointment → ❌ **暂缓**:仍属于配置写入 / 审计 / 回滚的大决策。
+- 候选 B:让 `/project` 支持查看当前 active project → ✅ **选定**:符合老板“回到项目办公室看一眼”的直觉,改动很小,能本地验证。
+
+### 产出
+- `/project <project>` 保持原语义:进入指定项目办公室。
+- `/project` 新增语义:
+  - 已有 active project 时重新展示当前项目办公室。
+  - 没有 active project 时提示先使用 `/project <project>`。
+- `ProjectCommandHandler` 抽出 `_send_project_office()` 复用办公室输出。
+- 更新 help 文案为 `/project [project] - enter or show the project office`。
+- 新增 Orchestrator 单测覆盖 `/project` 无 active project 提示、进入项目后 `/project` 复显、且不派发 Adapter 任务。
+- 更新 `CHANGELOG.md`、`STATUS.md`、`docs/human/daily-ops.md` 和 `docs/architecture/project-assignment-layer.md`。
+- 完整验证通过:143 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`;draw.io XML 解析通过。
+
+### 关键决策
+- 🔒 **决策 1**:`/project` 是当前项目办公室的“复显”入口,不是创建新项目或切换默认项目。
+- 🔒 **决策 2**:没有 active project 时继续明确提示 `/project <project>`,避免系统猜默认项目。
+
+### 留给下一轮
+- 人类在 Telegram 里验证:
+  - `/project`
+  - `/project aico`
+  - `/project`
+- 继续推进前仍优先做 Project Team Telegram 真实验收。
+
+### 状态变化
+- Project office 入口体验更接近自然语言心智:进办公室后可以直接 `/project` 看当前办公室。
+
+## Round 44 — 2026-05-05 — Codex
+
+### 输入
+- Hourly heartbeat 唤醒当前开发线程,要求继续推进小步可验证能力。
+- 最高优先级仍是 Project Team Telegram 真实验收,但需要人类重启服务并在 Telegram 中操作。
+
+### 思考与讨论
+
+**功能选择**:
+- 候选 A:继续新增 slash 命令 → ❌ **暂缓**:`Orchestrator` 已接近 500 行边界,继续扩命令会增加结构压力。
+- 候选 B:补 Project Team 本地 acceptance flow → ✅ **选定**:能把 Telegram 验收前的主流程行为固定下来,降低真实验收时的排障成本。
+
+### 产出
+- 新增 `test_orchestrator_project_team_acceptance_flow`:
+  - 先跑 `/project aico` 和 `/project` 复显。
+  - 依次跑 `/brief`、`/risks`、`/blockers`、`/next`、`/daily`、`/weekly`、`/roles`、`/team`、`/who implementer`。
+  - 任命 tester,用 `/ask tester ...` 派活。
+  - 设置 `/lead tester`,确认普通消息走 tester appointment。
+  - `/unappoint tester` 后确认 `/roles` 显示 tester 未任命、`/who tester` 提示未任命。
+  - 撤任后普通消息回退到 implementer appointment。
+- 验收流断言状态面不派发 Adapter 任务,项目任务通过 assignment metadata 区分 tester / implementer。
+- 新增 `_metadata_value()` 测试辅助函数。
+- 更新 `CHANGELOG.md` 和 `docs/human/daily-ops.md`,记录本地验收流命令。
+- 完整验证通过:144 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`;draw.io XML 解析通过。
+
+### 关键决策
+- 🔒 **决策 1**:本轮不新增 runtime command,避免扩大命令面和 `Orchestrator` 体积。
+- 🔒 **决策 2**:验收流断言 project role metadata,不把底层 provider target 当作项目 role;同一个 Claude agent 可以被任命为 tester 或 implementer。
+
+### 留给下一轮
+- 人类在 Telegram 里按同一条命令流真实验收。
+- 如果真实验收失败,先对照本地 acceptance flow 判断是核心行为问题、Telegram 通道问题还是 provider CLI 问题。
+
+### 状态变化
+- Phase 5 进度新增 Project Team 本地验收流。
+
+## Round 45 — 2026-05-05 — Codex
+
+### 输入
+- Hourly heartbeat 唤醒当前开发线程,要求继续推进小步可验证能力。
+- 下一步真实 Telegram 验收仍需人类环境配合。
+- `Orchestrator` 类体已接近 500 行硬约束,继续新增命令会很容易踩线。
+
+### 思考与讨论
+
+**功能选择**:
+- 候选 A:继续新增 runtime 命令 → ❌ **暂缓**:命令面继续扩大前,需要先释放 `Orchestrator` 类体空间。
+- 候选 B:瘦身命令分发结构 → ✅ **选定**:行为不变、风险低,能降低后续迭代被 500 行约束卡住的概率。
+
+### 产出
+- `Orchestrator._handle_command()` 改为薄代理。
+- 大段 command if/elif 分发移到模块级 `_handle_command()` 函数。
+- 分发行为保持不变:
+  - help / status / audit 仍在 Orchestrator 层直接响应。
+  - Project 命令仍走 `ProjectCommandHandler`。
+  - agent/session/provider introspection 仍走 `DirectoryCommandHandler`。
+- approve / reject / broadcast 仍走 Orchestrator 既有内部路径。
+- `Orchestrator` 实际类体按缩进边界统计从 491 行降到 422 行。
+- 完整验证通过:144 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`;draw.io XML 解析通过。
+
+### 关键决策
+- 🔒 **决策 1**:本轮只做结构性瘦身,不改变命令语义。
+- 🔒 **决策 2**:暂不新建更多 runtime command,优先保持后续扩展空间。
+
+### 留给下一轮
+- 继续优先做 Project Team Telegram 真实验收。
+- 如果后续还要新增命令,优先考虑继续拆分命令 dispatcher,不要把逻辑塞回 `Orchestrator` 类体。
+
+### 状态变化
+- `Orchestrator` 类体回到安全区间,后续扩展不再贴着 500 行硬约束走。
+
+## Round 46 — 2026-05-05 — Codex
+
+### 输入
+- 人类 Telegram 验收发现多次 `/appoint ... as tester ...` 后 `/team` 出现多个 tester。
+- 人类追问 role 如何扩展、`/lead` 后 `/team` 是否应看到 lead、Telegram Markdown 不好看的可扩展适配方式,以及 `/brief` / `/risks` / `/blockers` / `/next` 是否能在顶部增加 LLM 总结。
+
+### 思考与讨论
+
+**重复 appointment 语义判断**:
+- 候选 A:只在 `/team` 输出时按 role 去重 → ❌ **否决**:这会遮住底层状态问题,`/who`、`/lead`、普通消息路由仍可能看到另一个 appointment。
+- 候选 B:在 `ProjectAssignmentDirectory` 下沉唯一约束 → ✅ **选定**:老板语义是“一个项目里的一个 role 只有一个负责人”,底层应按 `project + role` 唯一。
+
+**lead 可见性**:
+- 候选 A:只保留 `/lead` 成功消息 → ❌ **否决**:用户回头看 `/team` 时无法知道谁是当前牵头。
+- 候选 B:`/team` 顶部显示 lead,并在成员行标记 `[lead]` → ✅ **选定**:最小改动,不改变路由行为。
+
+**本轮暂缓项**:
+- Role 创建确认流、IM 富文本渲染层、状态命令顶部 LLM 总结都涉及命令协议、provider 调用或 channel render contract。直接塞进现有命令会扩大范围,因此本轮记录为下一轮高优先级切片。
+
+### 产出
+- `ProjectAssignmentDirectory` 初始化和 upsert appointment 时,对同一 `project + role` 保持唯一负责人;重复 role 时最后一个 appointment 生效。
+- `/team` 输出新增 `lead: <role> -> <agent>`,并在对应成员行追加 `[lead]`。
+- 新增单测覆盖配置/历史重复 role 去重、重复 `/appoint tester` 后 `/team` 只显示一个 tester、`/lead tester` 后 `/team` 可见 lead。
+- 新增 PITFALL P-013。
+- 更新 `STATUS.md`、`CHANGELOG.md` 和 `docs/human/daily-ops.md`。
+
+### 关键决策
+- 🔒 **决策 1**:Project Team 任命唯一键是 `project + role`,不是内部 `seat`。
+- 🔒 **决策 2**:`/team` 是老板看团队的主视图,必须直接展示当前 lead。
+- 🔒 **决策 3**:LLM 生成 role、IM 富文本、项目状态 LLM 总结都需要独立设计,不要在修重复 appointment 时混入。
+
+### 留给下一轮
+- 真实 Telegram 复测:
+  - 连续执行两次 `/appoint claude as tester read_repo run_tests`
+  - 执行 `/team`,确认只有一个 tester
+  - 执行 `/lead tester`
+  - 再执行 `/team`,确认顶部有 `lead: tester -> claude`,tester 行有 `[lead]`
+- 设计并实现 `/role propose <诉求>` / `/role confirm` 的 LLM 草案确认流。
+- 设计 IM render contract,先让 Telegram 支持更好看的 HTML 文案,但不要把 Telegram parse mode 写进核心语义。
+- 为 `/brief` / `/risks` / `/blockers` / `/next` 做“本地事实包 + provider 只读总结 + 原始事实保留”的老板摘要 MVP。
+
+### 状态变化
+- Phase 5 进度新增 Project appointment 同 role 去重与 `/team` lead 可见性。
+- 下一轮建议将 role 创建确认流、IM 文案渲染层和状态命令 LLM 总结提升为高优先级。
+
+## Round 47 — 2026-05-05 — Codex
+
+### 输入
+- 人类确认上一轮修复已测试通过,要求继续执行。
+- `STATUS.md` 下一轮高优先级包含 Role 创建确认流、IM 文案渲染层和项目状态命令 LLM 总结。
+
+### 思考与讨论
+
+**功能选择**:
+- 候选 A:先做 Telegram 富文本渲染 → ❌ **暂缓**:需要设计跨 IM render contract,且当前 `Orchestrator` 已接近 500 行,贸然扩会踩结构边界。
+- 候选 B:先做 `/brief` 等 LLM 总结 → ❌ **暂缓**:需要稳定事实包和 provider 调用策略,否则容易生成不可审计摘要。
+- 候选 C:先做 `/role propose` / `/role confirm` 确认流 → ✅ **选定**:最贴近用户刚提出的 role 扩展诉求,且可以通过现有 Adapter/TaskBus 本地闭环测试。
+
+**确认流边界**:
+- 候选 A:LLM 输出后直接新增 role → ❌ **否决**:违反“AI 行为可审批、可审计”,也容易把坏 JSON 或错误权限静默写进项目。
+- 候选 B:LLM 只起草,用户 `/role confirm` 后进程内新增 → ✅ **选定**:老板可以确认,且不碰持久化配置写入。
+- 候选 C:确认后直接写 `config/projects.example.json` → ❌ **暂缓**:需要配置写入、审计和回滚策略,超出本轮小步范围。
+
+**风险识别边界**:
+- Role proposal 是只读 LLM 生成任务,但用户诉求可能包含“跑测试/写文档”等词。为避免误触发审批,内部 role proposal task 添加 `aico.intent=role_proposal` 元数据,风险识别将其视为 read-only。这个标记由 Orchestrator 内部生成,不是用户文本可直接设置的通道。
+
+### 产出
+- 新增 `src/aico/core/role_proposal.py`,负责生成 role proposal prompt 和解析 LLM JSON 输出为 `RoleProfile`。
+- 新增 `/role propose <诉求>`、`/role confirm`、`/role discard` 命令。
+- `ProjectAssignmentDirectory` 支持 runtime project role,确认后 `/roles` 会显示新增 role 且默认为 unappointed。
+- `Orchestrator` 新增 role proposal 任务收集路径,复用当前项目 lead appointment/provider session。
+- `TextRiskAssessor` 对内部 role proposal task 按 read-only 处理。
+- 新增/更新单测覆盖命令解析、role proposal JSON 解析、runtime role 新增、风险跳过和 Orchestrator 提议/确认闭环。
+- 更新 `STATUS.md`、`CHANGELOG.md`、`docs/human/daily-ops.md` 和 Project Assignment Layer 文档。
+
+### 关键决策
+- 🔒 **决策 1**:LLM 只能起草 role,不能绕过人类确认直接改项目结构。
+- 🔒 **决策 2**:`/role confirm` 当前只改进程内 role registry,不写项目配置文件。
+- 🔒 **决策 3**:内部 role proposal task 是 read-only 任务,用元数据标记表达意图,避免文本规则误判。
+
+### 留给下一轮
+- Telegram 真实验收:
+  - `/project aico`
+  - `/role propose 需要一个增长分析岗位`
+  - 查看草案是否清楚、权限是否合理
+  - `/role confirm`
+  - `/roles` 确认新增 role 显示为 unappointed
+- `Orchestrator` 类体已接近 500 行;下一轮继续新增能力前,先把 role proposal / collect output helper 拆出。
+- 下一步再做 IM render contract 或 `/brief` / `/risks` / `/blockers` / `/next` 顶部 LLM 总结。
+
+### 状态变化
+- Phase 5 进度新增 Role proposal confirmation MVP。
+- 下一轮建议新增 Role 创建确认流真实验收与 Orchestrator 结构拆分。

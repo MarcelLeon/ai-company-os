@@ -10,6 +10,7 @@ from aico.core import (
     OutputType,
     PersonaProfile,
     PersonaRegistry,
+    RequesterOrListedApproverPolicy,
     RiskLevel,
     Task,
     TaskAck,
@@ -24,9 +25,17 @@ class RecordingAdapter:
         self,
         name: str = "recording",
         output_type: OutputType = OutputType.TEXT,
+        capabilities: frozenset[Capability] | None = None,
     ) -> None:
         self._name = name
         self._output_type = output_type
+        self._capabilities = capabilities or frozenset(
+            {
+                Capability.CODE_EDIT,
+                Capability.SHELL_EXEC,
+                Capability.STREAM_OUTPUT,
+            }
+        )
         self.received_tasks: list[Task] = []
         self.interrupted_task_ids: list[str] = []
 
@@ -35,7 +44,7 @@ class RecordingAdapter:
         return self._name
 
     def capabilities(self) -> frozenset[Capability]:
-        return frozenset({Capability.STREAM_OUTPUT})
+        return self._capabilities
 
     async def receive_task(self, task: Task) -> TaskAck:
         self.received_tasks.append(task)
@@ -180,7 +189,53 @@ async def test_task_bus_waits_for_approval_before_dispatching_risky_task() -> No
     ]
 
 
+async def test_task_bus_rejects_risky_task_for_read_only_adapter() -> None:
+    adapter = RecordingAdapter(
+        "codex",
+        capabilities=frozenset({Capability.CODE_REVIEW, Capability.STREAM_OUTPUT}),
+    )
+    bus = TaskBus(AdapterRegistry([adapter]))
+    task = Task(
+        task_id="task-codex-write",
+        payload="create /tmp/readme.md",
+        requester_id="user-1",
+        target_persona="codex",
+    )
+
+    ack = await bus.submit(task)
+
+    assert ack.status is AckStatus.REJECTED
+    assert ack.reason == "adapter codex cannot handle write_files tasks; use /claude"
+    assert adapter.received_tasks == []
+    assert bus.task_snapshots()[0].status is TaskStatus.REJECTED
+    assert bus.audit_events()[-1].event_type is AuditEventType.TASK_REJECTED
+
+
 async def test_task_bus_approval_dispatches_waiting_task() -> None:
+    adapter = RecordingAdapter("claude-code")
+    bus = TaskBus(AdapterRegistry([adapter]))
+    task = Task(
+        task_id="task-approval",
+        payload="run pytest",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+
+    await bus.submit(task)
+    ack = await bus.approve(task.task_id, reviewer_id="user-1")
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert adapter.received_tasks == [task]
+    assert bus.task_snapshots()[0].status is TaskStatus.RUNNING
+    assert [event.event_type for event in bus.audit_events()] == [
+        AuditEventType.TASK_SUBMITTED,
+        AuditEventType.APPROVAL_REQUESTED,
+        AuditEventType.APPROVAL_APPROVED,
+        AuditEventType.ADAPTER_DISPATCHED,
+    ]
+
+
+async def test_task_bus_denies_approval_from_unlisted_reviewer() -> None:
     adapter = RecordingAdapter("claude-code")
     bus = TaskBus(AdapterRegistry([adapter]))
     task = Task(
@@ -193,15 +248,93 @@ async def test_task_bus_approval_dispatches_waiting_task() -> None:
     await bus.submit(task)
     ack = await bus.approve(task.task_id, reviewer_id="user-2")
 
+    assert ack.status is AckStatus.REJECTED
+    assert ack.reason == "approver not authorized"
+    assert adapter.received_tasks == []
+    assert bus.task_snapshots()[0].status is TaskStatus.WAITING_APPROVAL
+    assert bus.audit_events()[-1].event_type is AuditEventType.APPROVAL_DENIED
+    assert bus.audit_events()[-1].actor_id == "user-2"
+
+
+async def test_task_bus_allows_configured_reviewer_to_approve_task() -> None:
+    adapter = RecordingAdapter("claude-code")
+    bus = TaskBus(
+        AdapterRegistry([adapter]),
+        approval_policy=RequesterOrListedApproverPolicy(("admin-1",)),
+    )
+    task = Task(
+        task_id="task-approval",
+        payload="run pytest",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+
+    await bus.submit(task)
+    ack = await bus.approve(task.task_id, reviewer_id="admin-1")
+
     assert ack.status is AckStatus.ACCEPTED
     assert adapter.received_tasks == [task]
-    assert bus.task_snapshots()[0].status is TaskStatus.RUNNING
-    assert [event.event_type for event in bus.audit_events()] == [
-        AuditEventType.TASK_SUBMITTED,
-        AuditEventType.APPROVAL_REQUESTED,
-        AuditEventType.APPROVAL_APPROVED,
-        AuditEventType.ADAPTER_DISPATCHED,
-    ]
+
+
+async def test_task_bus_approval_without_id_dispatches_only_pending_task() -> None:
+    adapter = RecordingAdapter("claude-code")
+    bus = TaskBus(AdapterRegistry([adapter]))
+    task = Task(
+        task_id="task-approval",
+        payload="run pytest",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+
+    await bus.submit(task)
+    ack = await bus.approve(None, reviewer_id="user-1")
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert ack.task_id == "task-approval"
+    assert adapter.received_tasks == [task]
+
+
+async def test_task_bus_approval_accepts_short_task_id_prefix() -> None:
+    adapter = RecordingAdapter("claude-code")
+    bus = TaskBus(AdapterRegistry([adapter]))
+    task = Task(
+        task_id="abcdef12-3456",
+        payload="run pytest",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+
+    await bus.submit(task)
+    ack = await bus.approve("abcdef12", reviewer_id="user-1")
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert ack.task_id == "abcdef12-3456"
+    assert adapter.received_tasks == [task]
+
+
+async def test_task_bus_approval_without_id_lists_multiple_pending_approvals() -> None:
+    adapter = RecordingAdapter("claude-code")
+    bus = TaskBus(AdapterRegistry([adapter]))
+    first = Task(
+        task_id="abcdef12-3456",
+        payload="run pytest",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+    second = Task(
+        task_id="12345678-abcd",
+        payload="modify src/aico/core/task_bus.py",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+
+    await bus.submit(first)
+    await bus.submit(second)
+    ack = await bus.approve(None, reviewer_id="user-1")
+
+    assert ack.status is AckStatus.REJECTED
+    assert ack.reason == "multiple pending approvals: abcdef12, 12345678"
+    assert adapter.received_tasks == []
 
 
 async def test_task_bus_rejects_waiting_approval_without_dispatching() -> None:
@@ -215,7 +348,7 @@ async def test_task_bus_rejects_waiting_approval_without_dispatching() -> None:
     )
 
     await bus.submit(task)
-    ack = await bus.reject_approval(task.task_id, reviewer_id="user-2", reason="too broad")
+    ack = await bus.reject_approval(task.task_id, reviewer_id="user-1", reason="too broad")
 
     assert ack.status is AckStatus.REJECTED
     assert ack.reason == "too broad"
@@ -223,6 +356,44 @@ async def test_task_bus_rejects_waiting_approval_without_dispatching() -> None:
     assert bus.task_snapshots()[0].status is TaskStatus.REJECTED
     assert bus.task_snapshots()[0].reason == "too broad"
     assert bus.audit_events()[-1].event_type is AuditEventType.TASK_REJECTED
+
+
+async def test_task_bus_denies_rejection_from_unlisted_reviewer() -> None:
+    adapter = RecordingAdapter("claude-code")
+    bus = TaskBus(AdapterRegistry([adapter]))
+    task = Task(
+        task_id="task-approval",
+        payload="delete src/aico/core/models.py",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+
+    await bus.submit(task)
+    ack = await bus.reject_approval(task.task_id, reviewer_id="user-2")
+
+    assert ack.status is AckStatus.REJECTED
+    assert ack.reason == "approver not authorized"
+    assert bus.task_snapshots()[0].status is TaskStatus.WAITING_APPROVAL
+    assert bus.audit_events()[-1].event_type is AuditEventType.APPROVAL_DENIED
+
+
+async def test_task_bus_rejects_only_pending_approval_without_id() -> None:
+    adapter = RecordingAdapter("claude-code")
+    bus = TaskBus(AdapterRegistry([adapter]))
+    task = Task(
+        task_id="task-approval",
+        payload="delete src/aico/core/models.py",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+
+    await bus.submit(task)
+    ack = await bus.reject_approval(None, reviewer_id="user-1")
+
+    assert ack.status is AckStatus.REJECTED
+    assert ack.task_id == "task-approval"
+    assert adapter.received_tasks == []
+    assert bus.task_snapshots()[0].status is TaskStatus.REJECTED
 
 
 async def test_task_bus_marks_task_done_after_done_output() -> None:

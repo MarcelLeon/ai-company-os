@@ -93,6 +93,8 @@ def test_risk_approval_and_audit_models_are_explicit() -> None:
 
     assert risk.requires_approval is True
     assert event.event_type is AuditEventType.APPROVAL_REQUESTED
+    assert AuditEventType.APPROVAL_DENIED.value == "approval_denied"
+    assert AuditEventType.COLLABORATION_REQUESTED.value == "collaboration_requested"
     assert ApprovalStatus.PENDING.value == "pending"
 
 

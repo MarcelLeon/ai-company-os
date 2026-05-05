@@ -1,0 +1,125 @@
+<mxfile host="app.diagrams.net" modified="2026-05-04T00:00:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="aico-concepts-workflow" name="Concepts and Workflow">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="title" value="AI Company OS — Core Concepts and Role Workflow" style="text;html=1;strokeColor=none;fillColor=none;fontSize=24;fontStyle=1;align=left;verticalAlign=middle;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="24" width="740" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="This diagram explains the company model: Agent = employee, Project = work context, Assignment/seat = role + session + permissions." style="text;html=1;strokeColor=none;fillColor=none;fontSize=12;align=left;verticalAlign=middle;fontColor=#6B7280;" vertex="1" parent="1">
+          <mxGeometry x="42" y="62" width="880" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="legendDone" value="Implemented / current" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=12;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="34" width="160" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="legendNext" value="Designed / next MVP" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=12;fontColor=#78350F;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="34" width="170" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="conceptArea" value="Company Concepts" style="swimlane;html=1;rounded=0;startSize=32;fontStyle=1;fontSize=14;horizontal=1;fillColor=#F8FAFC;strokeColor=#475569;fontColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="1480" height="330" as="geometry"/>
+        </mxCell>
+        <mxCell id="workflowArea" value="Operating Workflow" style="swimlane;html=1;rounded=0;startSize=32;fontStyle=1;fontSize=14;horizontal=1;fillColor=#F8FAFC;strokeColor=#475569;fontColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="40" y="460" width="1480" height="640" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="human" value="Human Manager&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;sets project context,&lt;br&gt;assigns work by IM,&lt;br&gt;approves dangerous actions&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#2563EB;fillColor=#DBEAFE;fontSize=13;fontColor=#1E3A8A;" vertex="1" parent="1">
+          <mxGeometry x="80" y="160" width="210" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="project" value="Project&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;AI Company OS (aico)&lt;br&gt;repo path + north star&lt;br&gt;STATUS + journal + risks&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="150" width="240" height="108" as="geometry"/>
+        </mxCell>
+        <mxCell id="agentCatalog" value="Agent Catalog&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;claude: Senior Implementer&lt;br&gt;codex: Code Reviewer&lt;br&gt;future OpenClaw / internal CLI&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=13;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="670" y="150" width="250" height="108" as="geometry"/>
+        </mxCell>
+        <mxCell id="assignment1" value="Assignment / Seat&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;seat: aico-implementer&lt;br&gt;agent: claude&lt;br&gt;role: implementer&lt;br&gt;session: project-scoped&lt;br&gt;risk: approval_required&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="980" y="125" width="230" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="assignment2" value="Assignment / Seat&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;seat: aico-reviewer&lt;br&gt;agent: codex&lt;br&gt;role: reviewer&lt;br&gt;session: bind_or_resume&lt;br&gt;risk: read_only&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="980" y="275" width="230" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="providerSessions" value="Provider Sessions&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Claude --session-id / --resume&lt;br&gt;Codex exec resume session id&lt;br&gt;stored behind assignment seat&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=13;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="190" width="220" height="112" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="promptStack" value="Prompt Context Stack&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;1. Agent Base Prompt&lt;br&gt;2. Role Prompt&lt;br&gt;3. Project Brief&lt;br&gt;4. Runtime Context&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="295" width="240" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="projectState" value="Project State Surfaces&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;/brief /risks /blockers /next&lt;br&gt;/daily /weekly&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;" vertex="1" parent="1">
+          <mxGeometry x="670" y="305" width="250" height="92" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="step1" value="1. Select Project Context&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;/projects&lt;br&gt;/project aico&lt;br&gt;/use project aico&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="520" width="210" height="92" as="geometry"/>
+        </mxCell>
+        <mxCell id="step2" value="2. Inspect Roles / Team&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;/roles /team /who&lt;br&gt;/assignment for debugging&lt;br&gt;status: idle / working / blocked&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="330" y="520" width="230" height="92" as="geometry"/>
+        </mxCell>
+        <mxCell id="step3" value="3. Send Work&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;ordinary message uses active project&lt;br&gt;explicit /claude or @reviewer still works&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#2563EB;fillColor=#DBEAFE;fontSize=13;fontColor=#1E3A8A;" vertex="1" parent="1">
+          <mxGeometry x="600" y="520" width="230" height="92" as="geometry"/>
+        </mxCell>
+        <mxCell id="step4" value="4. Resolve Assignment&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;project context + route target&lt;br&gt;selects assignment seat&lt;br&gt;attaches provider session ref&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="520" width="230" height="92" as="geometry"/>
+        </mxCell>
+        <mxCell id="step5" value="5. Build Prompt&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Agent base + role prompt&lt;br&gt;+ project brief + runtime context&lt;br&gt;+ user task&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="520" width="230" height="92" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="core1" value="Orchestrator&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;command handling,&lt;br&gt;routing, streaming,&lt;br&gt;collaboration trigger detection&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=13;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="120" y="700" width="220" height="96" as="geometry"/>
+        </mxCell>
+        <mxCell id="core2" value="TaskBus + Governance&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;risk assessment&lt;br&gt;adapter capability gate&lt;br&gt;approval / rejection&lt;br&gt;task lifecycle&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=13;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="390" y="690" width="230" height="116" as="geometry"/>
+        </mxCell>
+        <mxCell id="approval" value="Human Approval Gate&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;write_files / shell_exec / destructive&lt;br&gt;/approve or /reject&lt;br&gt;requester or listed reviewer only&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=13;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="670" y="690" width="250" height="116" as="geometry"/>
+        </mxCell>
+        <mxCell id="adapterExec" value="Adapter Execution&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;ClaudeCodeAdapter&lt;br&gt;CodexAdapter&lt;br&gt;provider-owned tools / skills / slash / MCP&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=13;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="970" y="690" width="250" height="116" as="geometry"/>
+        </mxCell>
+        <mxCell id="localWork" value="Local Work Happens&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;repo inspection&lt;br&gt;file changes after approval&lt;br&gt;shell execution after approval&lt;br&gt;code review / analysis&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#6B7280;fillColor=#FFFFFF;fontSize=13;fontColor=#374151;" vertex="1" parent="1">
+          <mxGeometry x="1270" y="690" width="210" height="116" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="collabFlow" value="Optional AI-to-AI Collaboration&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;implementer output contains line-start @reviewer request&lt;br&gt;Orchestrator consumes directive and creates reviewer child task through TaskBus&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=13;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="330" y="850" width="500" height="84" as="geometry"/>
+        </mxCell>
+        <mxCell id="auditFlow" value="Audit + Status Timeline&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;task_submitted, approval_requested,&lt;br&gt;adapter_dispatched, task_completed,&lt;br&gt;collaboration_requested, task_failed&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=13;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="880" y="850" width="300" height="84" as="geometry"/>
+        </mxCell>
+        <mxCell id="reportFlow" value="Project Awareness Output&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Telegram streamed replies&lt;br&gt;/status /audit today&lt;br&gt;/brief /risks /blockers /next&lt;br&gt;/daily /weekly&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;" vertex="1" parent="1">
+          <mxGeometry x="1230" y="850" width="250" height="84" as="geometry"/>
+        </mxCell>
+        <mxCell id="feedback" value="6. Feedback Loop&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;human sees progress, approvals,&lt;br&gt;results, risks and next suggested work&lt;br&gt;then continues the project asynchronously&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#2563EB;fillColor=#DBEAFE;fontSize=13;fontColor=#1E3A8A;" vertex="1" parent="1">
+          <mxGeometry x="80" y="970" width="330" height="88" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="c1" value="manages" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;endArrow=block;endFill=1;fontSize=11;" edge="1" parent="1" source="human" target="project"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c2" value="staff pool" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F766E;endArrow=block;endFill=1;fontSize=11;" edge="1" parent="1" source="agentCatalog" target="assignment1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c3" value="staff pool" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F766E;endArrow=block;endFill=1;fontSize=11;" edge="1" parent="1" source="agentCatalog" target="assignment2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c4" value="project context" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#B45309;endArrow=block;endFill=1;fontSize=11;dashed=1;" edge="1" parent="1" source="project" target="assignment1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c5" value="project context" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#B45309;endArrow=block;endFill=1;fontSize=11;dashed=1;" edge="1" parent="1" source="project" target="assignment2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c6" value="binds session" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F766E;endArrow=block;endFill=1;fontSize=11;" edge="1" parent="1" source="assignment1" target="providerSessions"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c7" value="binds session" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F766E;endArrow=block;endFill=1;fontSize=11;" edge="1" parent="1" source="assignment2" target="providerSessions"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c8" value="feeds prompt" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#B45309;endArrow=block;endFill=1;fontSize=11;dashed=1;" edge="1" parent="1" source="project" target="promptStack"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="c9" value="feeds reports" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#B45309;endArrow=block;endFill=1;fontSize=11;dashed=1;" edge="1" parent="1" source="project" target="projectState"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="w1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;endArrow=block;endFill=1;" edge="1" parent="1" source="step1" target="step2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;endArrow=block;endFill=1;" edge="1" parent="1" source="step2" target="step3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;endArrow=block;endFill=1;" edge="1" parent="1" source="step3" target="step4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;endArrow=block;endFill=1;" edge="1" parent="1" source="step4" target="step5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;endArrow=block;endFill=1;" edge="1" parent="1" source="step5" target="core1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;endArrow=block;endFill=1;" edge="1" parent="1" source="core1" target="core2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;endArrow=block;endFill=1;" edge="1" parent="1" source="core2" target="approval"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w8" value="approved or read-only" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;endArrow=block;endFill=1;fontSize=11;" edge="1" parent="1" source="approval" target="adapterExec"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;endArrow=block;endFill=1;" edge="1" parent="1" source="adapterExec" target="localWork"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w10" value="@reviewer optional" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F766E;endArrow=block;endFill=1;fontSize=11;" edge="1" parent="1" source="adapterExec" target="collabFlow"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w11" value="child task" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F766E;endArrow=block;endFill=1;fontSize=11;" edge="1" parent="1" source="collabFlow" target="core2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0F766E;endArrow=block;endFill=1;" edge="1" parent="1" source="core2" target="auditFlow"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#B45309;endArrow=block;endFill=1;dashed=1;" edge="1" parent="1" source="auditFlow" target="reportFlow"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="w14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;endArrow=block;endFill=1;" edge="1" parent="1" source="reportFlow" target="feedback"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

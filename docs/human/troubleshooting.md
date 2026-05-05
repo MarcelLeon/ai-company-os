@@ -9,7 +9,7 @@
 
 遇到问题,**按以下顺序处理**:
 
-1. **看日志**:`tail -f logs/aico.log`,搜 `ERROR` 和 `WARN`
+1. **看日志**:`tail -f logs/aico.log`,搜 `ERROR`、`WARN`、`Adapter busy`、`Adapter process exited`
 2. **看状态**:运行健康检查命令
 3. **查 PITFALLS**:[`docs/journal/PITFALLS.md`](../journal/PITFALLS.md) grep 关键词
 4. **查 BLOCKERS**:[`docs/journal/BLOCKERS.md`](../journal/BLOCKERS.md) 看是不是已知问题
@@ -42,7 +42,7 @@ lsof -i :8080
 
 ### Bot 发不出消息
 1. 检查群是否开启了"禁止 Bot 发言"
-2. 检查消息长度是否超过 4096 字符限制
+2. 检查是否使用的是最新版本;当前长输出会自动拆成多条消息,旧版本可能因超过 4096 字符限制发送失败
 
 ---
 
@@ -56,6 +56,19 @@ lsof -i :8080
 ### Adapter 输出乱码
 - 检查环境变量 `LANG=zh_CN.UTF-8` 或 `LC_ALL=en_US.UTF-8`
 - 检查 stdin/stdout 编码
+
+### 长任务没有 Telegram 结果
+1. `/status` 看 Adapter 是否 `busy`。
+2. `tail -f logs/aico.log` 看是否有 `Adapter process starting` 和 `Adapter process exited`。
+3. 如果有 `Adapter busy`,说明当前 Claude/Codex Adapter 执行槽位已被占用,等待旧任务结束或重启进程。
+4. 如果有 `Adapter process starting` 但长期没有 `Stream output`,说明 CLI 没有产生 stdout chunk 或还没结束。
+5. 如果有 `Stream message split` 但 Telegram 没收到后续消息,检查 `Telegram sendMessage` / `editMessageText` 附近是否有异常。
+
+### 只收到回复开头一句
+1. 先确认服务已包含 Round 27 修复。
+2. `grep -n "message is not modified\\|Telegram incoming message handler failed" logs/aico.log`。
+3. 如果只看到 `Telegram editMessageText ignored no-op`,这是正常的可恢复 no-op。
+4. 如果仍看到 `Telegram incoming message handler failed`,继续看同一段日志里的 Telegram `description`,区分 chat 权限、消息长度、网络等真实错误。
 
 ---
 
@@ -88,7 +101,13 @@ lsof -i :8080
 
 ## 已修复历史问题(归档)
 
-(本节随时间累积,记录已修复但有教学价值的问题)
+### Telegram 长文本只收到一部分
+
+原因通常是旧版本把所有流式输出编辑到同一条消息里,超过 Telegram 4096 字符限制后 Bot API 请求失败。当前版本已在核心流式输出层按安全长度拆分为多条消息。
+
+### Telegram 回复停在第一句
+
+原因可能是旧版本在流式编辑过程中遇到 Telegram `Bad Request: message is not modified`。这类 no-op edit 已在当前版本中忽略,不会再中断后续输出。
 
 ---
 

@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 
 from aico.channel import IMChannel
@@ -35,7 +37,9 @@ async def test_telegram_channel_parses_text_update_and_advances_offset() -> None
         channel.on_incoming(lambda message: _record(received, message))
 
         await channel.poll_once()
+        await asyncio.sleep(0)
         await channel.poll_once()
+        await asyncio.sleep(0)
 
     assert isinstance(channel, IMChannel)
     assert len(received) == 2
@@ -45,6 +49,52 @@ async def test_telegram_channel_parses_text_update_and_advances_offset() -> None
     assert received[0].content == MessageContent(text="@lao_zhang please inspect")
     assert requests[0].read() == b'{"timeout":1}'
     assert requests[1].read() == b'{"timeout":1,"offset":42}'
+
+
+async def test_telegram_channel_does_not_block_polling_on_long_handler() -> None:
+    requests: list[bytes] = []
+    received: list[str] = []
+    release_handler = asyncio.Event()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.read())
+        update_id = len(requests)
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "result": [
+                    {
+                        "update_id": update_id,
+                        "message": {
+                            "message_id": update_id,
+                            "chat": {"id": -1001},
+                            "from": {"id": 99},
+                            "text": f"message {update_id}",
+                        },
+                    }
+                ],
+            },
+        )
+
+    async def incoming_handler(message: IncomingMessage) -> None:
+        received.append(message.content.text)
+        await release_handler.wait()
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client, poll_timeout_seconds=1)
+        channel.on_incoming(incoming_handler)
+
+        await channel.poll_once()
+        await asyncio.sleep(0)
+        await channel.poll_once()
+        await asyncio.sleep(0)
+        release_handler.set()
+        await asyncio.sleep(0)
+        await channel.stop()
+
+    assert received == ["message 1", "message 2"]
+    assert requests == [b'{"timeout":1}', b'{"timeout":1,"offset":2}']
 
 
 async def test_telegram_channel_send_edit_and_delete_use_bot_api_methods() -> None:
@@ -128,6 +178,59 @@ async def test_telegram_channel_raises_when_api_returns_not_ok() -> None:
             assert str(exc) == "chat not found"
         else:
             raise AssertionError("expected TelegramAPIError")
+
+
+async def test_telegram_channel_surfaces_telegram_description_on_http_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        _ = request
+        return httpx.Response(
+            400,
+            json={"ok": False, "description": "Bad Request: chat not found"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+
+        try:
+            await channel.send_message(
+                ChannelTarget(channel_name="telegram", target_id="missing"),
+                MessageContent(text="hello"),
+            )
+        except TelegramAPIError as exc:
+            assert str(exc) == "Bad Request: chat not found"
+        else:
+            raise AssertionError("expected TelegramAPIError")
+
+
+async def test_telegram_channel_ignores_noop_edit_http_error() -> None:
+    calls: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, request.read()))
+        description = (
+            "Bad Request: message is not modified: specified new message content and reply "
+            "markup are exactly the same as a current content and reply markup of the message"
+        )
+        return httpx.Response(
+            400,
+            json={
+                "ok": False,
+                "description": description,
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+
+        await channel.edit_message(target, "123", MessageContent(text="same"))
+
+    assert calls == [
+        (
+            "/bottoken/editMessageText",
+            b'{"chat_id":"chat-1","message_id":"123","text":"same"}',
+        )
+    ]
 
 
 async def _record(received: list[IncomingMessage], message: IncomingMessage) -> None:

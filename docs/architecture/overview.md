@@ -53,7 +53,14 @@
 
 ---
 
-## 三个核心抽象
+## 可编辑架构图
+
+- [`aico-layered-architecture.drawio`](aico-layered-architecture.drawio):分层技术架构图,偏基础层在下、偏应用层在上。
+- [`aico-concepts-workflow.drawio`](aico-concepts-workflow.drawio):核心概念、角色分工与项目工作流图。
+
+---
+
+## 四个核心抽象
 
 ### 1. IMChannel — IM 通道接口
 统一 IM 平台差异。
@@ -68,6 +75,13 @@
 - 当前最小实现是 `PersonaRegistry`:职责名 / alias → Adapter + role instruction
 - 后续再演进为更完整的 system prompt + 行为策略
 
+### 4. Project Team / Appointment — 项目团队与任命层
+把 Agent、Role、Project 和 provider session 连接成“老板任命员工推进项目”的产品语义。
+- Agent 是员工,Role 是通用岗位模板,Project 是项目办公室,Appointment 是具体任命。
+- provider session、资源、权限、role prompt、工作目录和当前状态都绑定到任命,不裸挂在 Agent 上。
+- `seat` 只是内部稳定 id;主路径命令应使用 `/project`、`/team`、`/who`、`/appoint`、`/ask`、`/default`。
+- 详见 [`project-assignment-layer.md`](project-assignment-layer.md)、ADR-0011 和 ADR-0012。
+
 ---
 
 ## 编排核心的职责
@@ -77,6 +91,7 @@
 | **Router** | 把 IM 消息解析成 Task,根据 @ 谁、人格、能力路由到 Adapter |
 | **TaskBus** | 任务的提交、状态机、重试、中断 |
 | **Persona Engine** | 渲染 AI 的职责上下文,注入身份 |
+| **Project Team / Appointment** | 管理项目团队、岗位模板、员工任命、项目内 session 和 prompt 上下文 |
 | **Approval** | 危险操作触发审批,等待人类确认 |
 | **Memory** | 跨 AI 的共享上下文(项目知识库) |
 | **Audit & Trace** | 所有 AI 行为的日志,可回溯 |
@@ -127,7 +142,10 @@
 - ADR-0002:Adapter / Channel 协议(Accepted)
 - ADR-0003:Phase 3 Persona 与 Broadcast 边界(Accepted)
 - ADR-0004:Persona 外部配置(Accepted)
-- ADR-0005:状态机持久化方案(待写)
+- ADR-0005:Phase 4 审批与审计边界(Accepted)
+- ADR-0010:Agent Session 与 Harness 边界(Accepted)
+- ADR-0011:Project Assignment Layer(Accepted)
+- ADR-0012:Boss-Facing Team Commands and Role System(Accepted)
 
 详见 [`../decisions/`](../decisions/)。
 

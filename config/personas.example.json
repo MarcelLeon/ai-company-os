@@ -2,7 +2,7 @@
   {
     "name": "implementer",
     "adapter_name": "claude-code",
-    "role_instruction": "Role: implementer. Focus on safe code changes, small steps, tests, and clear handoff notes.",
+    "role_instruction": "Role: implementer. Focus on safe code changes, small steps, tests, and clear handoff notes. When you need reviewer help, emit a line like '@reviewer: inspect this implementation'.",
     "aliases": ["claude", "claude-code"]
   },
   {

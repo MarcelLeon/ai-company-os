@@ -74,6 +74,7 @@ Playbook = "可执行的步骤清单",特点:
 - [x] [`phase-2-multi-adapter.md`](phase-2-multi-adapter.md) — Phase 2 多 Adapter 状态与路由验收步骤
 - [x] [`phase-3-persona-broadcast.md`](phase-3-persona-broadcast.md) — Phase 3 Persona 与 Broadcast 验收步骤
 - [x] [`phase-4-approval-audit.md`](phase-4-approval-audit.md) — Phase 4 审批与审计 smoke test
+- [x] [`phase-5-collaboration.md`](phase-5-collaboration.md) — Phase 5 AI 间协作 smoke test
 - [ ] `test-new-telegram-bot.md` — 验证新 Telegram Bot 配置
 - [ ] `test-claude-code-adapter.md` — 验证 Claude Code Adapter
 

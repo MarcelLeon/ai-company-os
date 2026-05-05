@@ -1,7 +1,31 @@
 """Core protocol models for AI Company OS."""
 
 from aico.core.adapter_registry import AdapterRegistry
-from aico.core.audit import InMemoryAuditLog
+from aico.core.agent_directory import AgentDirectory, agent_cards_from_personas
+from aico.core.agent_session import (
+    AgentCard,
+    AgentSession,
+    AgentSessionStatus,
+    InMemoryAgentSessionStore,
+    ProviderCapabilitySource,
+    ProviderSessionMode,
+    ProviderSessionRef,
+    ProviderTaskSession,
+    provider_session_from_task,
+    task_with_provider_session,
+)
+from aico.core.approval import (
+    ApprovalDecision,
+    ApprovalPolicy,
+    RequesterOrListedApproverPolicy,
+)
+from aico.core.audit import InMemoryAuditLog, JsonlAuditSink
+from aico.core.collaboration import (
+    CollaborationDirective,
+    collaboration_payload,
+    parse_collaboration_directive,
+)
+from aico.core.commands import Command, CommandName, parse_command, reject_parts
 from aico.core.models import (
     AckStatus,
     AdapterSnapshot,
@@ -30,8 +54,20 @@ from aico.core.models import (
 )
 from aico.core.orchestrator import Orchestrator
 from aico.core.persona_registry import PersonaRegistry
+from aico.core.project_assignment import (
+    AssignmentProfile,
+    CompanyAgentProfile,
+    ProjectAssignmentConfig,
+    ProjectAssignmentDirectory,
+    ProjectProfile,
+    ProjectRoleProfile,
+    RoleProfile,
+    task_with_assignment_context,
+)
+from aico.core.prompt_stack import render_appointment_prompt
 from aico.core.risk import TextRiskAssessor
 from aico.core.router import MessageRouter
+from aico.core.streaming import STREAM_MESSAGE_TEXT_LIMIT, StreamedMessageWriter
 from aico.core.task_bus import TaskBus
 
 __all__ = [
@@ -39,15 +75,28 @@ __all__ = [
     "AdapterRegistry",
     "AdapterSnapshot",
     "AdapterStatus",
+    "AgentCard",
+    "AgentDirectory",
+    "AgentSession",
+    "AgentSessionStatus",
+    "AssignmentProfile",
+    "ApprovalDecision",
+    "ApprovalPolicy",
     "ApprovalRequest",
     "ApprovalStatus",
     "AuditEvent",
     "AuditEventType",
     "Capability",
     "ChannelTarget",
+    "Command",
+    "CommandName",
+    "CollaborationDirective",
+    "CompanyAgentProfile",
     "HealthStatus",
     "IncomingMessage",
+    "InMemoryAgentSessionStore",
     "InMemoryAuditLog",
+    "JsonlAuditSink",
     "MessageContent",
     "MessageKind",
     "MessageRouter",
@@ -56,9 +105,21 @@ __all__ = [
     "OutputType",
     "PersonaProfile",
     "PersonaRegistry",
+    "ProjectAssignmentConfig",
+    "ProjectAssignmentDirectory",
+    "ProjectProfile",
+    "ProjectRoleProfile",
+    "ProviderCapabilitySource",
+    "ProviderSessionRef",
+    "ProviderSessionMode",
+    "ProviderTaskSession",
+    "RequesterOrListedApproverPolicy",
     "RiskAssessment",
     "RiskLevel",
+    "RoleProfile",
+    "STREAM_MESSAGE_TEXT_LIMIT",
     "SentMessage",
+    "StreamedMessageWriter",
     "Task",
     "TaskAck",
     "TaskBus",
@@ -66,4 +127,13 @@ __all__ = [
     "TaskSnapshot",
     "TaskStatus",
     "TextRiskAssessor",
+    "agent_cards_from_personas",
+    "collaboration_payload",
+    "parse_collaboration_directive",
+    "parse_command",
+    "provider_session_from_task",
+    "reject_parts",
+    "render_appointment_prompt",
+    "task_with_provider_session",
+    "task_with_assignment_context",
 ]

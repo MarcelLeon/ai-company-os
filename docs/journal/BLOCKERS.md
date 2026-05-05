@@ -18,12 +18,18 @@
 
 ## 当前活跃卡点
 
+(暂无)
+
+---
+
+## 已归档卡点
+
 ### [B-002] AI 间协作协议形态待定
 
-**状态**:🟡 DEFERRED(Phase 5 之前解决即可)
+**状态**:🟢 RESOLVED(ADR-0009 Accepted)
 **提出于**:Round 1
-**最后更新**:2026-04-26
-**影响**:不阻塞 Phase 1-4,但 Phase 5(AI 间协作)之前必须有方向
+**最后更新**:2026-04-28
+**影响**:曾阻塞 Phase 5 启动;Round 19 已确定最小协议形态
 
 **问题描述**
 当 AI A 想 @ AI B 协作时,通信机制是什么?
@@ -32,18 +38,19 @@
 - 选项 3:走 RPC 调用 → 失去"群聊感"
 
 **已尝试的方向**
-- (无)
+- Phase 1-4 暂时绕开了 AI 间协作,只做“人类 → 单/多 Adapter”任务派发。
+- Round 18 后 Phase 4 收口,该问题从延后卡点升级为 Phase 5 入口卡点。
+- Round 19 选择内部 A2A-inspired 轻量协作指令:`@persona: request`,暂不直接实现 HTTP A2A,也不把 IM 当内部总线。
 
 **需要什么才能解开**
-- 调研 A2A、ACP 等开放协议的成熟度
-- 跑一个最小 demo:AI A 发消息 → AI B 接收 → AI B 处理 → 返回到群
+- 已解决:见 ADR-0009 和 `docs/playbooks/phase-5-collaboration.md`。
 
 **当前 workaround**
-- Phase 1-4 均不依赖此协议,先单 AI 跑通
+- 无。
 
----
-
-## 已归档卡点
+**相关链接**
+- ADR-0009
+- ROUNDS Round 19
 
 ### [B-001] 技术栈选型
 

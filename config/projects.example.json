@@ -1,0 +1,98 @@
+{
+  "agents": {
+    "claude": {
+      "id": "claude",
+      "provider": "claude-code",
+      "title": "Senior Implementer",
+      "base_prompt": "prompts/agents/claude.md",
+      "capabilities": ["code_edit", "shell_exec", "long_running"]
+    },
+    "codex": {
+      "id": "codex",
+      "provider": "codex",
+      "title": "Code Reviewer",
+      "base_prompt": "prompts/agents/codex.md",
+      "capabilities": ["code_review"]
+    }
+  },
+  "roles": {
+    "implementer": {
+      "id": "implementer",
+      "title": "Implementation Lead",
+      "prompt": "prompts/roles/implementer.md",
+      "summary": "Implement features, fix bugs, update tests, and keep project status current.",
+      "default_permissions": ["read_repo", "write_code", "run_tests", "write_docs"],
+      "approval_required": ["shell_exec", "destructive"]
+    },
+    "reviewer": {
+      "id": "reviewer",
+      "title": "Review Lead",
+      "prompt": "prompts/roles/reviewer.md",
+      "summary": "Review design risk, code quality, test gaps, and maintainability.",
+      "default_permissions": ["read_repo", "read_docs", "read_audit"]
+    },
+    "tester": {
+      "id": "tester",
+      "title": "Test Lead",
+      "prompt": "prompts/roles/tester.md",
+      "summary": "Design test strategy, add test cases, run verification, and explain failures.",
+      "default_permissions": ["read_repo", "run_tests", "write_tests"]
+    },
+    "pm": {
+      "id": "pm",
+      "title": "Project Manager",
+      "prompt": "prompts/roles/pm.md",
+      "summary": "Break down work, summarize progress, maintain reports, and surface blockers.",
+      "default_permissions": ["read_docs", "write_docs"]
+    }
+  },
+  "projects": {
+    "aico": {
+      "id": "aico",
+      "name": "AI Company OS",
+      "repo": "/Users/wangzq/VsCodeProjects/ai-company-os",
+      "north_star": "NORTH_STAR.md",
+      "status_doc": "STATUS.md",
+      "journal": "docs/journal/ROUNDS.md",
+      "blockers_doc": "docs/journal/BLOCKERS.md",
+      "pitfalls_doc": "docs/journal/PITFALLS.md",
+      "current_phase": "Phase 5 - AI 间协作",
+      "default_role": "implementer",
+      "roles": {
+        "implementer": {
+          "role": "implementer",
+          "prompt_override": "prompts/projects/aico/implementer.md",
+          "resources": ["AGENTS.md", "NORTH_STAR.md", "STATUS.md"]
+        },
+        "reviewer": {
+          "role": "reviewer",
+          "prompt_override": "prompts/projects/aico/reviewer.md"
+        },
+        "pm": {
+          "role": "pm",
+          "prompt_override": "prompts/projects/aico/pm.md"
+        }
+      }
+    }
+  },
+  "appointments": [
+    {
+      "project": "aico",
+      "agent": "claude",
+      "role": "implementer",
+      "seat": "aico-implementer",
+      "session_policy": "project_scoped",
+      "risk_policy": "approval_required",
+      "permissions": ["read_repo", "write_code", "run_tests", "write_docs"]
+    },
+    {
+      "project": "aico",
+      "agent": "codex",
+      "role": "reviewer",
+      "seat": "aico-reviewer",
+      "session_policy": "bind_or_resume",
+      "risk_policy": "read_only",
+      "permissions": ["read_repo", "read_docs", "read_audit"]
+    }
+  ]
+}

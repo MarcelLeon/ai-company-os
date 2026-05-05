@@ -36,14 +36,61 @@
 - ADR-0004 Persona 外部配置
 - `AICO_PERSONA_CONFIG_PATH` 配置入口和 `config/personas.example.json` 示例文件
 - ADR-0005 Phase 4 审批与审计边界
+- ADR-0006 审批权限策略
+- ADR-0007 远程审批与 Adapter 能力边界
+- ADR-0009 Phase 5 AI 间协作协议
 - 危险任务风险识别模型,覆盖 `read_only` / `write_files` / `shell_exec` / `destructive`
 - `/approve <task_id>` 与 `/reject <task_id>` 审批命令
 - 内存审计事件模型,记录任务提交、审批结果、Adapter 派发和任务完成/失败/中断
+- `/audit` 只读命令,可在 IM 中查看最近审计事件
+- `AICO_APPROVAL_REVIEWER_IDS` 配置入口,可指定额外审批人
+- Adapter 风险能力门禁,read-only Adapter 会拒绝写文件 / shell / destructive 任务
+- `AICO_AUDIT_LOG_PATH` 配置入口,可将审计事件追加写入 JSONL 文件
+- Phase 5 轻量协作指令,支持 Adapter 输出 `@persona: request` 触发目标 persona 子任务
+- `collaboration_requested` 审计事件,记录 AI 间协作的 parent task 与 child task 关系
+- 独立 command parser,统一解析 `/help`、`/status`、`/audit`、`/broadcast`、`/approve`、`/reject`
+- 后台运行日志,默认写入 `logs/aico.log`,覆盖 Telegram 入站、命令 / 任务路由、Adapter 进程、流式输出和长文本分片
+- ADR-0010 Agent Session 与 Harness 边界,明确 AICO 薄 harness 只做会话和能力门面
+- `AgentCard` / `AgentSession` / `ProviderSessionRef` 与内存 `AgentSessionStore` 骨架
+- `/sessions`、`/new <agent>`、`/use <session_id>` 会话命令 MVP,支持在 IM 中创建会话引用并把普通消息续到当前 active session
+- Claude provider session resume MVP:`/new claude` 创建的 AICO session 会在首次普通消息使用 `--session-id`,后续普通消息使用 `--resume`
+- Codex provider resume 命令构造支持:当 session 已有 Codex provider ref 时,Adapter 会使用 `codex exec resume <session_id> <prompt>`
+- `/bind <session_id|agent> <provider_session_id>` 显式 provider session 绑定,用于把已有 Codex/Claude 会话挂到 AICO session
+- `/agents`、`/agent <agent>`、`/skills <agent>`、`/tools <agent>` agent 体验命令;skills/tools 由底层 provider 自己回答
+- Project Assignment Layer MVP:新增 `agents` / `projects` / `assignments` 配置模型、`AICO_PROJECT_CONFIG_PATH`、`config/projects.example.json` 和项目任命查看命令
+- `/projects`、`/project <project>`、`/use project <project>`、`/assignments [project]`、`/assignment <seat>` 项目/工位命令
+- project-scoped session 绑定:普通消息在 active project 下会路由到默认 assignment seat,provider session ref 挂在 assignment 上
+- Project Team / Appointment 命令 MVP:新增 `/team`、`/who <role>`、`/appoint <agent> as <role>`、`/ask <role> <task>`、`/lead <role>`
+- RoleTemplate / ProjectRoleOverride / Appointment 配置模型,内置 implementer、reviewer、tester、pm、architect、security、docs、ops、analyst、designer 等岗位模板
+- Appointment prompt stack MVP:project-scoped 任务会注入 Agent、RoleTemplate、Project、Appointment Contract 和当前任务上下文
+- `/brief [project]` 和 `/risks [project]` 项目办公室只读简报命令,基于本地 project/team/task/audit 状态生成摘要和风险列表
+- `/brief` 现在会读取配置中的 north star / status / journal 文档短片段,`/risks` 会读取 blockers / pitfalls 文档短片段
+- `/daily [project]` 和 `/weekly [project]` 本地项目报告命令,按 24 小时 / 7 天窗口聚合团队、完成项、未完成项、风险和项目文档短片段
+- `/blockers [project]` 项目卡点命令,用于展示等待审批、失败/拒绝/中断任务和未知 persona 等当前卡住的工作
+- `/next [project]` 下一步动作建议命令,基于本地 project/team/task/audit 状态给出待审批、失败恢复或 lead role 派工建议
+- `/roles [project]` 项目岗位命令,展示 role 模板、默认权限和已任命 / 未任命状态
+- `/role propose <诉求>`、`/role confirm`、`/role discard` 岗位草案确认流,由当前项目 lead role 起草新 role,用户确认后加入当前项目进程内 roles
+- `/unappoint <role>` 项目撤任命令,用于撤销当前项目某个 role 的进程内 appointment
 
 ### Changed
 - 将扁平化文档归位到 `docs/agent` / `docs/journal` / `docs/architecture` / `docs/human`
 - `/status` 现在会展示 Adapter 状态和最近任务状态
 - 危险任务现在会先进入 `waiting_approval`,批准后才派发给 Adapter
+- 审批交互支持直接发送 `/approve` / `/reject` 处理唯一待审批任务,并支持短 task id
+- Claude Code 默认命令使用 `--permission-mode bypassPermissions`,由 AICO `/approve` 作为远程审批入口
+- `/audit` 输出改为多行块格式,提高 Telegram 可读性
+- 流式长输出超过单条消息安全长度时会拆成多条 IM 消息继续发送
+- 风险识别改为可测试规则表,后续新增中英文风险 marker 不需要改核心判断流程
+- 将 agent / project / assignment 命令处理拆到 `orchestrator_commands.py`,保持 `Orchestrator` 小于 500 行硬约束
+- `/project <project>` 现在作为进入项目办公室的主入口;旧 `/use project`、`/assignments`、`/assignment <seat>` 保留为兼容或排障命令
+- `/default <role>` 改为兼容别名,主路径使用老板视角更自然的 `/lead <role>`
+- `/risks` 收窄为真正项目交付风险,不再把普通 `write_files` 审批请求或 `unknown adapter/persona` 路由噪音直接当成项目风险
+- Project/Team/Report 命令消息渲染拆到 `project_messages.py`,保持通用命令消息和项目状态面解耦
+- `/project` 在已有 active project 时会重新展示当前项目办公室;`/project <project>` 仍用于进入指定项目
+- Project Team 主流程新增本地 acceptance flow 单测,覆盖项目办公室、状态面、任命、派活、牵头 role、撤任和普通消息回退
+- `Orchestrator` 命令分发瘦身,大段 command dispatch 移出类体,保持单类行数低于硬约束
+- Project appointment 现在按 project + role 保持唯一负责人;重复 `/appoint` 同一 role 会覆盖原任命,不会在 `/team` 里追加重复成员
+- `/team` 现在展示当前 lead role,并在对应团队成员行标记 `[lead]`
 
 ### Deprecated
 - (无)
@@ -52,7 +99,13 @@
 - (无)
 
 ### Fixed
-- (无)
+- 修复 `/appoint Claude as tester ...` 因 agent / role 输入大小写与配置 key 不一致而返回 `Cannot appoint` 的问题
+- 修复多次任命同一 role 或配置中出现同 project+role 多个 seat 时,`/team` 可能显示多个 tester 的问题
+- 修复真实 Telegram 审批时完整 task id 难复制,容易返回 `unknown pending approval` 的问题
+- 修复 Codex/read-only Adapter 经审批后才报沙箱写权限错误的问题
+- 修复 Claude Code 任务经 Telegram 审批后仍要求本机二次授权的问题
+- 修复 Telegram 长文本流式返回超过 4096 字符后像“被吞掉”的问题
+- 修复 Telegram `editMessageText` no-op 400 导致流式输出只收到开头、Adapter 看起来 busy 的问题
 
 ### Security
-- (无)
+- 默认只有任务发起人或配置的额外审批人可以批准 / 拒绝危险任务,未授权尝试会记录 `approval_denied` 审计事件

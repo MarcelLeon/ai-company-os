@@ -24,7 +24,13 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0003 | Phase 3 Persona 与 Broadcast 边界 | Accepted | 2026-04-28 |
 | ADR-0004 | Persona 外部配置 | Accepted | 2026-04-28 |
 | ADR-0005 | Phase 4 审批与审计边界 | Accepted | 2026-04-28 |
-| ADR-0006 | 状态机持久化方案 | 待写 | TBD |
+| ADR-0006 | 审批权限策略 | Accepted | 2026-04-28 |
+| ADR-0007 | 远程审批与 Adapter 能力边界 | Accepted | 2026-04-28 |
+| ADR-0008 | 审计事件 JSONL 持久化 | Accepted | 2026-04-28 |
+| ADR-0009 | Phase 5 AI 间协作协议 | Accepted | 2026-04-28 |
+| ADR-0010 | Agent Session 与 Harness 边界 | Accepted | 2026-04-29 |
+| ADR-0011 | Project Assignment Layer | Accepted | 2026-05-04 |
+| ADR-0012 | Boss-Facing Team Commands and Role System | Accepted | 2026-05-04 |
 
 **状态图例**:
 - `Proposed`(提议中)

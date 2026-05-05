@@ -3,8 +3,18 @@ import sys
 from pathlib import Path
 
 from aico.adapter import AIAdapter
-from aico.adapter.claude_code import ClaudeCodeAdapter
-from aico.core import AckStatus, AdapterStatus, HealthStatus, OutputType, Task, TaskOutput
+from aico.adapter.claude_code import DEFAULT_CLAUDE_COMMAND, ClaudeCodeAdapter
+from aico.core import (
+    AckStatus,
+    AdapterStatus,
+    HealthStatus,
+    OutputType,
+    ProviderSessionMode,
+    ProviderSessionRef,
+    Task,
+    TaskOutput,
+    task_with_provider_session,
+)
 
 
 class FakeLineReader:
@@ -52,6 +62,17 @@ class FakeProcess:
         return self._return_code
 
 
+def test_claude_code_adapter_default_command_is_non_interactive_for_remote_approval() -> None:
+    assert DEFAULT_CLAUDE_COMMAND == (
+        "claude",
+        "-p",
+        "--output-format",
+        "text",
+        "--permission-mode",
+        "bypassPermissions",
+    )
+
+
 async def test_claude_code_adapter_streams_stdout_and_done() -> None:
     calls: list[tuple[tuple[str, ...], Path | None]] = []
 
@@ -80,6 +101,83 @@ async def test_claude_code_adapter_streams_stdout_and_done() -> None:
         ]
     )
     assert adapter.status() is AdapterStatus.IDLE
+
+
+async def test_claude_code_adapter_uses_session_id_for_new_provider_session() -> None:
+    calls: list[tuple[str, ...]] = []
+
+    async def factory(command: tuple[str, ...], cwd: Path | None) -> FakeProcess:
+        _ = cwd
+        calls.append(command)
+        return FakeProcess(stdout=[b"ok\n"])
+
+    adapter = ClaudeCodeAdapter(command=("claude", "-p"), process_factory=factory)
+    task = task_with_provider_session(
+        _task("task-1", "first"),
+        ProviderSessionRef(provider_name="claude-code", session_id="provider-session-1"),
+        ProviderSessionMode.NEW,
+    )
+
+    ack = await adapter.receive_task(task)
+    _ = [output async for output in adapter.stream_output(task.task_id)]
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert calls == [
+        ("claude", "-p", "--session-id", "provider-session-1", "first"),
+    ]
+
+
+async def test_claude_code_adapter_resumes_initialized_provider_session() -> None:
+    calls: list[tuple[str, ...]] = []
+
+    async def factory(command: tuple[str, ...], cwd: Path | None) -> FakeProcess:
+        _ = cwd
+        calls.append(command)
+        return FakeProcess(stdout=[b"ok\n"])
+
+    adapter = ClaudeCodeAdapter(command=("claude", "-p"), process_factory=factory)
+    task = task_with_provider_session(
+        _task("task-1", "next"),
+        ProviderSessionRef(
+            provider_name="claude-code",
+            session_id="provider-session-1",
+            initialized=True,
+        ),
+        ProviderSessionMode.RESUME,
+    )
+
+    ack = await adapter.receive_task(task)
+    _ = [output async for output in adapter.stream_output(task.task_id)]
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert calls == [
+        ("claude", "-p", "--resume", "provider-session-1", "next"),
+    ]
+
+
+async def test_claude_code_adapter_keeps_explicit_session_command_unchanged() -> None:
+    calls: list[tuple[str, ...]] = []
+
+    async def factory(command: tuple[str, ...], cwd: Path | None) -> FakeProcess:
+        _ = cwd
+        calls.append(command)
+        return FakeProcess(stdout=[b"ok\n"])
+
+    adapter = ClaudeCodeAdapter(
+        command=("claude", "-p", "--continue"),
+        process_factory=factory,
+    )
+    task = task_with_provider_session(
+        _task("task-1", "next"),
+        ProviderSessionRef(provider_name="claude-code", session_id="provider-session-1"),
+        ProviderSessionMode.RESUME,
+    )
+
+    ack = await adapter.receive_task(task)
+    _ = [output async for output in adapter.stream_output(task.task_id)]
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert calls == [("claude", "-p", "--continue", "next")]
 
 
 async def test_claude_code_adapter_rejects_second_task_while_busy() -> None:

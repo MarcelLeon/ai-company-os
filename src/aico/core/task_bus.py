@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 
 from aico.adapter import AIAdapter
 from aico.core.adapter_registry import AdapterRegistry
+from aico.core.approval import ApprovalPolicy, RequesterOrListedApproverPolicy
 from aico.core.audit import InMemoryAuditLog
 from aico.core.models import (
     AckStatus,
@@ -27,6 +28,7 @@ from aico.core.models import (
 )
 from aico.core.persona_registry import PersonaRegistry
 from aico.core.risk import TextRiskAssessor
+from aico.core.risk_capability import unsupported_risk_reason
 
 
 class TaskBus:
@@ -38,6 +40,7 @@ class TaskBus:
         persona_registry: PersonaRegistry | None = None,
         risk_assessor: TextRiskAssessor | None = None,
         audit_log: InMemoryAuditLog | None = None,
+        approval_policy: ApprovalPolicy | None = None,
     ) -> None:
         self._single_adapter_mode = not isinstance(adapter, AdapterRegistry)
         self._registry = (
@@ -46,6 +49,7 @@ class TaskBus:
         self._persona_registry = persona_registry
         self._risk_assessor = risk_assessor or TextRiskAssessor()
         self._audit_log = audit_log or InMemoryAuditLog()
+        self._approval_policy = approval_policy or RequesterOrListedApproverPolicy()
         self._task_adapters: dict[str, str] = {}
         self._tasks: dict[str, TaskSnapshot] = {}
         self._task_records: dict[str, Task] = {}
@@ -81,6 +85,27 @@ class TaskBus:
             adapter_name=adapter.name,
             risk_level=risk.risk_level,
         )
+        unsupported_reason = unsupported_risk_reason(adapter, risk)
+        if unsupported_reason is not None:
+            self._record_task(
+                task,
+                adapter_name=adapter.name,
+                status=TaskStatus.REJECTED,
+                reason=unsupported_reason,
+                risk_level=risk.risk_level,
+            )
+            self._audit_log.record(
+                AuditEventType.TASK_REJECTED,
+                task,
+                adapter_name=adapter.name,
+                risk_level=risk.risk_level,
+                detail=unsupported_reason,
+            )
+            return TaskAck(
+                task_id=task.task_id,
+                status=AckStatus.REJECTED,
+                reason=unsupported_reason,
+            )
         if risk.requires_approval:
             self._approvals[task.task_id] = ApprovalRequest(task=task, risk=risk)
             self._record_task(
@@ -105,9 +130,13 @@ class TaskBus:
 
         return await self._dispatch(task, adapter, risk)
 
-    async def approve(self, task_id: str, reviewer_id: str) -> TaskAck:
-        approval = self._approvals.get(task_id)
-        if approval is None or approval.status is not ApprovalStatus.PENDING:
+    async def approve(self, task_id: str | None, reviewer_id: str) -> TaskAck:
+        approval = self._resolve_pending_approval(task_id)
+        if isinstance(approval, TaskAck):
+            return approval
+
+        task_id = approval.task.task_id
+        if approval.status is not ApprovalStatus.PENDING:
             return TaskAck(
                 task_id=task_id,
                 status=AckStatus.REJECTED,
@@ -115,6 +144,21 @@ class TaskBus:
             )
 
         task = approval.task
+        decision = self._approval_policy.can_review(approval, reviewer_id)
+        if not decision.allowed:
+            self._audit_log.record(
+                AuditEventType.APPROVAL_DENIED,
+                task,
+                actor_id=reviewer_id,
+                risk_level=approval.risk.risk_level,
+                detail=decision.reason,
+            )
+            return TaskAck(
+                task_id=task_id,
+                status=AckStatus.REJECTED,
+                reason=decision.reason or "approver not authorized",
+            )
+
         adapter = self._adapter_for_pending_task(task)
         if adapter is None:
             self._update_task(task_id, TaskStatus.REJECTED, reason="adapter unavailable")
@@ -142,13 +186,17 @@ class TaskBus:
 
     async def reject_approval(
         self,
-        task_id: str,
+        task_id: str | None,
         reviewer_id: str,
         *,
         reason: str | None = None,
     ) -> TaskAck:
-        approval = self._approvals.get(task_id)
-        if approval is None or approval.status is not ApprovalStatus.PENDING:
+        approval = self._resolve_pending_approval(task_id)
+        if isinstance(approval, TaskAck):
+            return approval
+
+        task_id = approval.task.task_id
+        if approval.status is not ApprovalStatus.PENDING:
             return TaskAck(
                 task_id=task_id,
                 status=AckStatus.REJECTED,
@@ -156,6 +204,21 @@ class TaskBus:
             )
 
         task = approval.task
+        decision = self._approval_policy.can_review(approval, reviewer_id)
+        if not decision.allowed:
+            self._audit_log.record(
+                AuditEventType.APPROVAL_DENIED,
+                task,
+                actor_id=reviewer_id,
+                risk_level=approval.risk.risk_level,
+                detail=decision.reason,
+            )
+            return TaskAck(
+                task_id=task_id,
+                status=AckStatus.REJECTED,
+                reason=decision.reason or "approver not authorized",
+            )
+
         reject_reason = reason or "approval rejected"
         self._approvals[task_id] = approval.model_copy(
             update={
@@ -251,8 +314,22 @@ class TaskBus:
         )
         return tuple(reversed(snapshots[:limit]))
 
-    def audit_events(self, *, limit: int = 10) -> tuple[AuditEvent, ...]:
+    def audit_events(self, *, limit: int | None = 10) -> tuple[AuditEvent, ...]:
         return self._audit_log.events(limit=limit)
+
+    def record_collaboration_requested(self, source_task: Task, child_task: Task) -> None:
+        self._audit_log.record(
+            AuditEventType.COLLABORATION_REQUESTED,
+            child_task,
+            actor_id=source_task.target_persona,
+            detail=f"parent_task={source_task.task_id}",
+        )
+
+    def task_record(self, task_id: str) -> Task | None:
+        return self._task_records.get(task_id)
+
+    def pending_approvals(self) -> tuple[ApprovalRequest, ...]:
+        return tuple(a for a in self._approvals.values() if a.status is ApprovalStatus.PENDING)
 
     def broadcast_targets(self) -> tuple[str, ...]:
         if self._persona_registry is not None:
@@ -364,6 +441,38 @@ class TaskBus:
             detail=detail,
         )
 
+    def _resolve_pending_approval(self, task_ref: str | None) -> ApprovalRequest | TaskAck:
+        pending = self.pending_approvals()
+        if not task_ref:
+            if len(pending) == 1:
+                return pending[0]
+            if not pending:
+                return TaskAck(
+                    task_id="approval",
+                    status=AckStatus.REJECTED,
+                    reason="no pending approvals",
+                )
+            return TaskAck(
+                task_id="approval",
+                status=AckStatus.REJECTED,
+                reason=f"multiple pending approvals: {_pending_task_refs(pending)}",
+            )
+
+        matches = [approval for approval in pending if approval.task.task_id.startswith(task_ref)]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            return TaskAck(
+                task_id=task_ref,
+                status=AckStatus.REJECTED,
+                reason=f"multiple pending approvals match: {_pending_task_refs(matches)}",
+            )
+        return TaskAck(
+            task_id=task_ref,
+            status=AckStatus.REJECTED,
+            reason="unknown pending approval",
+        )
+
 
 async def _unknown_task_output(task_id: str) -> AsyncIterator[TaskOutput]:
     yield TaskOutput(
@@ -377,3 +486,11 @@ async def _unknown_task_output(task_id: str) -> AsyncIterator[TaskOutput]:
 def _approval_reason(risk: RiskAssessment) -> str:
     reasons = ", ".join(risk.reasons) if risk.reasons else "risk requires approval"
     return f"approval required: {risk.risk_level.value} - {reasons}"
+
+
+def _pending_task_refs(approvals: tuple[ApprovalRequest, ...] | list[ApprovalRequest]) -> str:
+    return ", ".join(_short_task_id(approval.task.task_id) for approval in approvals)
+
+
+def _short_task_id(task_id: str) -> str:
+    return task_id[:8]

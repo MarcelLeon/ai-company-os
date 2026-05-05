@@ -2,26 +2,27 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from aico.core.models import RiskAssessment, RiskLevel, Task
+from aico.core.role_proposal import ROLE_PROPOSAL_INTENT, ROLE_PROPOSAL_INTENT_KEY
 
 
 class TextRiskAssessor:
     """Classify task text into the smallest useful Phase 4 risk levels."""
 
     def assess(self, task: Task) -> RiskAssessment:
+        if _is_role_proposal_task(task):
+            return RiskAssessment(risk_level=RiskLevel.READ_ONLY)
+
         text = task.payload.lower()
         reasons: list[str] = []
         level = RiskLevel.READ_ONLY
 
-        if _contains_any(text, _WRITE_MARKERS):
-            level = RiskLevel.WRITE_FILES
-            reasons.append("mentions file or code changes")
-        if _contains_any(text, _SHELL_MARKERS):
-            level = RiskLevel.SHELL_EXEC
-            reasons.append("mentions shell or command execution")
-        if _contains_any(text, _DESTRUCTIVE_MARKERS):
-            level = RiskLevel.DESTRUCTIVE
-            reasons.append("mentions destructive operations")
+        for rule in RISK_RULES:
+            if _contains_any(text, rule.markers):
+                level = rule.risk_level
+                reasons.append(rule.reason)
 
         return RiskAssessment(
             risk_level=level,
@@ -34,46 +35,72 @@ def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
     return any(marker in text for marker in markers)
 
 
-_WRITE_MARKERS = (
-    "edit ",
-    "modify ",
-    "change ",
-    "write ",
-    "create ",
-    "update ",
-    "patch ",
-    "refactor ",
-    "修改",
-    "写入",
-    "创建",
-    "更新",
-    "重构",
-)
+def _is_role_proposal_task(task: Task) -> bool:
+    return any(
+        entry.key == ROLE_PROPOSAL_INTENT_KEY and entry.value == ROLE_PROPOSAL_INTENT
+        for entry in task.metadata
+    )
 
-_SHELL_MARKERS = (
-    "run ",
-    "execute ",
-    "shell",
-    "command",
-    "pytest",
-    "mypy",
-    "ruff",
-    "npm ",
-    "uv ",
-    "git ",
-    "执行",
-    "命令",
-)
 
-_DESTRUCTIVE_MARKERS = (
-    "rm -rf",
-    "delete ",
-    "remove ",
-    "drop ",
-    "overwrite",
-    "reset --hard",
-    "git push",
-    "删除",
-    "移除",
-    "覆盖",
+@dataclass(frozen=True)
+class RiskRule:
+    risk_level: RiskLevel
+    reason: str
+    markers: tuple[str, ...]
+
+
+RISK_RULES = (
+    RiskRule(
+        RiskLevel.WRITE_FILES,
+        "mentions file or code changes",
+        (
+            "edit ",
+            "modify ",
+            "change ",
+            "write ",
+            "create ",
+            "update ",
+            "patch ",
+            "refactor ",
+            "修改",
+            "写入",
+            "创建",
+            "更新",
+            "重构",
+        ),
+    ),
+    RiskRule(
+        RiskLevel.SHELL_EXEC,
+        "mentions shell or command execution",
+        (
+            "run ",
+            "execute ",
+            "shell",
+            "command",
+            "pytest",
+            "mypy",
+            "ruff",
+            "npm ",
+            "uv ",
+            "git ",
+            "执行",
+            "命令",
+        ),
+    ),
+    RiskRule(
+        RiskLevel.DESTRUCTIVE,
+        "mentions destructive operations",
+        (
+            "rm -rf",
+            "delete ",
+            "remove ",
+            "drop ",
+            "overwrite",
+            "reset --hard",
+            "git push",
+            "删除",
+            "移除",
+            "覆盖",
+        ),
+    ),
 )

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from aico.core.agent_session import ProviderSessionMode, provider_session_from_task
 from aico.core.models import (
     AckStatus,
     AdapterStatus,
@@ -24,7 +25,14 @@ from aico.core.models import (
 
 log = logging.getLogger(__name__)
 
-DEFAULT_CLAUDE_COMMAND = ("claude", "-p", "--output-format", "text")
+DEFAULT_CLAUDE_COMMAND = (
+    "claude",
+    "-p",
+    "--output-format",
+    "text",
+    "--permission-mode",
+    "bypassPermissions",
+)
 _FINISHED = object()
 
 
@@ -106,6 +114,7 @@ class ClaudeCodeAdapter:
 
     async def receive_task(self, task: Task) -> TaskAck:
         if self.status() is AdapterStatus.BUSY:
+            log.info("Adapter busy: adapter=%s rejected_task=%s", self._name, task.task_id)
             return TaskAck(task_id=task.task_id, status=AckStatus.BUSY, reason="adapter is busy")
         if task.task_id in self._tasks:
             return TaskAck(
@@ -117,6 +126,12 @@ class ClaudeCodeAdapter:
         queue: asyncio.Queue[QueueItem] = asyncio.Queue()
         runner = asyncio.create_task(self._run_task(task, queue))
         self._tasks[task.task_id] = _TaskHandle(queue=queue, runner=runner)
+        log.info(
+            "Adapter accepted task: adapter=%s task_id=%s payload_chars=%s",
+            self._name,
+            task.task_id,
+            len(task.payload),
+        )
         return TaskAck(task_id=task.task_id, status=AckStatus.ACCEPTED)
 
     async def stream_output(self, task_id: str) -> AsyncIterator[TaskOutput]:
@@ -181,10 +196,34 @@ class ClaudeCodeAdapter:
         handle = self._tasks[task.task_id]
         sequence = 0
         try:
-            process = await self._process_factory((*self._command, task.payload), self._cwd)
+            log.info(
+                "Adapter process starting: adapter=%s task_id=%s cwd=%s",
+                self._name,
+                task.task_id,
+                self._cwd,
+            )
+            command = self._command_for_task(task)
+            provider_session = provider_session_from_task(task)
+            log.info(
+                "Adapter command prepared: adapter=%s task_id=%s argc=%s "
+                "provider_session_mode=%s provider_session_id=%s",
+                self._name,
+                task.task_id,
+                len(command),
+                None if provider_session is None else provider_session.mode.value,
+                None if provider_session is None else provider_session.session_id[:8],
+            )
+            process = await self._process_factory(command, self._cwd)
             handle.process = process
             sequence = await self._stream_reader(task.task_id, process.stdout, queue, sequence)
             return_code = await process.wait()
+            log.info(
+                "Adapter process exited: adapter=%s task_id=%s return_code=%s stdout_chunks=%s",
+                self._name,
+                task.task_id,
+                return_code,
+                sequence,
+            )
             if handle.interrupted:
                 await queue.put(
                     _output(task.task_id, sequence, OutputType.ERROR, "task interrupted")
@@ -205,6 +244,7 @@ class ClaudeCodeAdapter:
         finally:
             handle.done = True
             await queue.put(_FINISHED)
+            log.info("Adapter task finished: adapter=%s task_id=%s", self._name, task.task_id)
 
     async def _stream_reader(
         self,
@@ -221,6 +261,15 @@ class ClaudeCodeAdapter:
             await queue.put(_output(task_id, sequence, OutputType.TEXT, _decode(line)))
             sequence += 1
         return sequence
+
+    def _command_for_task(self, task: Task) -> tuple[str, ...]:
+        provider_session = provider_session_from_task(task)
+        if provider_session is None or _has_claude_session_option(self._command):
+            return (*self._command, task.payload)
+
+        if provider_session.mode is ProviderSessionMode.NEW:
+            return (*self._command, "--session-id", provider_session.session_id, task.payload)
+        return (*self._command, "--resume", provider_session.session_id, task.payload)
 
 
 async def _create_process(command: tuple[str, ...], cwd: Path | None) -> AdapterProcess:
@@ -255,3 +304,7 @@ def _output(task_id: str, sequence: int, output_type: OutputType, content: str) 
 
 def _decode(line: bytes) -> str:
     return line.decode("utf-8", errors="replace")
+
+
+def _has_claude_session_option(command: tuple[str, ...]) -> bool:
+    return any(part in {"--session-id", "--resume", "-r", "--continue", "-c"} for part in command)

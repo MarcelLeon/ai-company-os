@@ -81,6 +81,8 @@ class AuditEventType(StrEnum):
     APPROVAL_REQUESTED = "approval_requested"
     APPROVAL_APPROVED = "approval_approved"
     APPROVAL_REJECTED = "approval_rejected"
+    APPROVAL_DENIED = "approval_denied"
+    COLLABORATION_REQUESTED = "collaboration_requested"
     ADAPTER_DISPATCHED = "adapter_dispatched"
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"
