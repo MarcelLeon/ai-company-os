@@ -59,6 +59,7 @@ tail -f logs/aico.log
 ```text
 /help
 /status
+/metrics
 /tasks
 /task <short_task_id>
 /audit
@@ -103,6 +104,8 @@ codex: summarize this repo in one sentence
 ```
 
 写文件、shell 执行和破坏性任务会先进入审批状态。Telegram 返回 `Approval required: <short_task_id>` 后,如果当前只有一个待审批任务,任务发起人或配置的额外审批人可直接发送 `/approve` 继续,或发送 `/reject` 拒绝。若同时有多个待审批任务,使用提示里的短 ID,如 `/approve abcdef12`。未授权用户审批会返回 `approver not authorized`,任务不会派发。
+
+看本地进程内运营指标时用 `/metrics`。当前会展示最近 24h / 7d 的任务总数、状态分布、agent/adaptor 接活数、open work、协作触发次数和平均终态耗时。token/cost 当前依赖底层 CLI 暴露能力,拿不到时会明确显示 unavailable。
 
 长任务卡住或 Adapter 长时间 busy 时,可先用 `/tasks` 找到最近任务,再用 `/task <short_task_id>` 查看状态和可用动作。running 任务会提示 `/interrupt <short_task_id>`,待审批任务会提示 `/approve <short_task_id>` / `/reject <short_task_id>`。协作任务还会在 `/task` 详情里展示 parent / child trace,可从 implementer 父任务跳到 reviewer 子任务,也可从子任务回看是谁发起。中断示例:`/interrupt 31e559c3`。中断会调用底层 Adapter 的 interrupt 能力,任务状态变为 `interrupted`,并记录审计事件。
 

@@ -9,6 +9,7 @@ from enum import StrEnum
 class CommandName(StrEnum):
     HELP = "help"
     STATUS = "status"
+    METRICS = "metrics"
     TASKS = "tasks"
     TASK = "task"
     AUDIT = "audit"
@@ -57,6 +58,7 @@ def parse_command(text: str) -> Command | None:
     if lowered in {
         CommandName.HELP,
         CommandName.STATUS,
+        CommandName.METRICS,
         CommandName.TASKS,
         CommandName.AUDIT,
         CommandName.PROJECTS,
@@ -96,6 +98,7 @@ def help_text() -> str:
     return (
         "Commands:\n"
         "/status - show adapter status\n"
+        "/metrics - show local task and agent metrics\n"
         "/tasks [limit] - show recent tasks\n"
         "/task <task_id> - show one task and available actions\n"
         "/audit - show recent audit events\n"

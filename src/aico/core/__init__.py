@@ -26,6 +26,7 @@ from aico.core.collaboration import (
     parse_collaboration_directive,
 )
 from aico.core.commands import Command, CommandName, parse_command, reject_parts
+from aico.core.metrics import MetricsSummary, MetricsWindow, build_metrics_summaries
 from aico.core.models import (
     AckStatus,
     AdapterSnapshot,
@@ -107,6 +108,8 @@ __all__ = [
     "MessageTextSpan",
     "MessageTextStyle",
     "MetadataEntry",
+    "MetricsSummary",
+    "MetricsWindow",
     "Orchestrator",
     "OutputType",
     "PersonaProfile",
@@ -134,6 +137,7 @@ __all__ = [
     "TaskStatus",
     "TextRiskAssessor",
     "agent_cards_from_personas",
+    "build_metrics_summaries",
     "collaboration_payload",
     "parse_collaboration_directive",
     "parse_command",

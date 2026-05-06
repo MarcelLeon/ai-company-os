@@ -80,6 +80,8 @@
 - Codex output idle timeout MVP,默认 90 秒无 stdout 自动终止底层 CLI 并释放 `codex: busy`
 - `/tasks [limit]` 和 `/task <task_id>` 任务追踪命令,用于在 IM 中查看最近任务、单任务详情和可用动作
 - `/task <task_id>` 详情现在展示协作 parent / child trace,可从父任务跳到 reviewer 子任务,也可从子任务回看发起它的 persona 和父任务
+- ADR-0014 Phase 6 可观测范围决策,确定先做 IM-first `/metrics` MVP,再评估 Mac / Web 可视入口
+- `/metrics` 本地可观测命令,展示 24h / 7d 任务状态、agent 接活数、open work、协作次数和平均终态耗时
 
 ### Changed
 - 将扁平化文档归位到 `docs/agent` / `docs/journal` / `docs/architecture` / `docs/human`

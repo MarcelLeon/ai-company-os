@@ -32,6 +32,7 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0011 | Project Assignment Layer | Accepted | 2026-05-04 |
 | ADR-0012 | Boss-Facing Team Commands and Role System | Accepted | 2026-05-04 |
 | ADR-0013 | Platform-Neutral IM Render Contract | Accepted | 2026-05-05 |
+| ADR-0014 | Phase 6 Observability Scope | Accepted | 2026-05-07 |
 
 **状态图例**:
 - `Proposed`(提议中)

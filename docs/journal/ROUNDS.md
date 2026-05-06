@@ -2850,3 +2850,59 @@
 
 ### 状态变化
 - Phase 5 进度新增 `/task` collaboration parent / child trace。
+
+## Round 61 — 2026-05-07 — Codex
+
+### 输入
+- 人类反馈 `/task parent` / `/task child` 用户价值不大,询问 Phase 5 后续是否还有大功能,并确认可以进入 Phase 6。
+- 人类要求先 commit/push 当前代码,然后开启 Phase 6。
+- 人类补充产品形态思考:项目起初也想对齐 CodeIsland / macOS Dynamic Island 那种多个 agent 在本机干活的掌控感,希望判断 MVP 是否只有 IM。
+
+### 思考与讨论
+- Phase 5 判断:
+  - 继续围绕 `/task` 协作树加功能 → ❌ **否决**:更像排障细节,不是“老板管理 AI 公司”的主路径。
+  - 把 Phase 5 关掉,真实协作 smoke test 作为后续回归项 → ✅ **选定**:协作协议、child task、审计、中断和 idle timeout 已成型,继续堆功能边际价值低。
+- Phase 6 第一切片:
+  - 直接做 Mac Dynamic Island / 菜单栏 → ❌ **暂缓**:很有产品味,但会先绑定本地桌面,且状态数据源还没稳定。
+  - 直接做 Web dashboard / HTTP API → ❌ **暂缓**:指标口径未 dogfood 前做前端会偏重。
+  - 先做 IM-first `/metrics` → ✅ **选定**:延续远程异步主路径,复用 TaskSnapshot / AuditEvent,快速验证哪些指标有用。
+- 产品入口判断:
+  - MVP 不应是“只有 IM”,而应是“IM 主控 + macOS glance + CLI 排障”。
+  - 实现顺序必须先把 IM 指标和观测模型稳定下来,再让 Mac 状态岛消费同一份状态。
+
+### 产出
+- 提交并推送 Phase 5 收口 commit:
+  - `031e41e Complete phase 5 collaboration observability`
+- 新增 `docs/decisions/0014-phase-6-observability-scope.md`:
+  - Phase 6 第一切片选择 IM-first `/metrics`。
+  - token/cost 当前明确 unavailable,不伪造。
+- 新增 `src/aico/core/metrics.py`:
+  - 汇总 24h / 7d 任务数、状态分布、adapter 接活数、open work、协作请求数、平均终态耗时。
+- 新增 `/metrics` 命令:
+  - 更新 command parser、help、Orchestrator 分发和 IM 文本渲染。
+  - `TaskBus.task_snapshots(limit=None)` 可返回当前进程内全部 task snapshot,供 metrics 使用。
+- 新增 `docs/architecture/product-entrypoints.md`:
+  - 记录 MVP 产品入口为 IM 主控 + macOS glance + CLI 排障。
+- 新增 `docs/playbooks/phase-6-observability.md`:
+  - 记录 `/metrics` Telegram smoke test 步骤。
+- 更新 `STATUS.md`、`CHANGELOG.md`、`docs/human/daily-ops.md`、ADR 索引。
+- 新增/更新单测:
+  - 命令解析支持 `metrics`。
+  - Orchestrator `/metrics` 不派发 Adapter 任务,展示状态分布、open work 和 collaboration 数。
+
+### 关键决策
+- 🔒 **决策 1**:Phase 5 标记为 feature complete,真实 Telegram 协作 smoke test 后续作为 Phase 6 回归项。
+- 🔒 **决策 2**:Phase 6 第一切片不做 Mac GUI / Web dashboard,先做 IM-first `/metrics`。
+- 🔒 **决策 3**:Mac Status Island 后续定位为本地 glance 入口,消费 Phase 6 观测模型,不成为唯一主控台。
+
+### 留给下一轮
+- 重启 AICO 后真实验收 `/metrics`:
+  - 先制造 done / waiting approval / running / collaboration 几类任务。
+  - 发送 `/metrics`,确认 24h / 7d 指标和 open work 符合预期。
+- 设计 Phase 6 观测状态持久化,解决重启后 24h / 7d 指标丢失的问题。
+- 若开始 Mac Status Island 原型,只做 glance / approve / interrupt / jump,不要把完整项目管理搬进本地 UI。
+
+### 状态变化
+- Phase 5:进行中 → 完成(feature complete;真实 smoke test 作为回归项保留)。
+- Phase 6:未开始 → 进行中。
+- Phase 6 进度新增 ADR-0014、`/metrics` MVP、产品入口判断文档和 smoke test playbook。

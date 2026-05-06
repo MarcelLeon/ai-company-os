@@ -3,6 +3,7 @@ from aico.core import CommandName, parse_command, reject_parts
 
 def test_parse_command_accepts_plain_readonly_commands() -> None:
     status = parse_command("status")
+    metrics = parse_command("metrics")
     tasks = parse_command("tasks")
     help_command = parse_command("help")
     audit = parse_command("audit")
@@ -18,6 +19,7 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     sessions = parse_command("sessions")
 
     assert status is not None
+    assert metrics is not None
     assert tasks is not None
     assert help_command is not None
     assert audit is not None
@@ -32,6 +34,7 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     assert assignments is not None
     assert sessions is not None
     assert status.name is CommandName.STATUS
+    assert metrics.name is CommandName.METRICS
     assert tasks.name is CommandName.TASKS
     assert help_command.name is CommandName.HELP
     assert audit.name is CommandName.AUDIT

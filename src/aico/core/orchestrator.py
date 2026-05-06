@@ -21,6 +21,7 @@ from aico.core.command_messages import (
     ack_failure_message,
     approval_required_message,
     audit_message,
+    metrics_message,
     short_id_text,
     status_message,
 )
@@ -534,6 +535,14 @@ async def _handle_command(
             status_message(
                 orchestrator._task_bus.snapshots(),
                 orchestrator._task_bus.task_snapshots(),
+            ),
+        )
+    elif command.name is CommandName.METRICS:
+        await orchestrator._channel.send_message(
+            message.source,
+            metrics_message(
+                orchestrator._task_bus.task_snapshots(limit=None),
+                orchestrator._task_bus.audit_events(limit=None),
             ),
         )
     elif command.name is CommandName.TASKS:

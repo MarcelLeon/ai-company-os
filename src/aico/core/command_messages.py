@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from aico.core.agent_session import AgentCard
+from aico.core.metrics import MetricsSummary, build_metrics_summaries
 from aico.core.models import (
     AckStatus,
     AdapterSnapshot,
@@ -63,6 +64,17 @@ def tasks_message(task_snapshots: tuple[TaskSnapshot, ...]) -> MessageContent:
     lines.append("")
     lines.append("Use /task <task_id> for details.")
     return MessageContent(text="\n".join(lines))
+
+
+def metrics_message(
+    task_snapshots: tuple[TaskSnapshot, ...],
+    audit_events: tuple[AuditEvent, ...],
+) -> MessageContent:
+    summaries = build_metrics_summaries(task_snapshots, audit_events)
+    blocks = ["Metrics (local process)"]
+    blocks.extend(_metrics_window_block(summary) for summary in summaries)
+    blocks.append("token/cost: unavailable from current CLI adapters")
+    return MessageContent(text="\n\n".join(blocks))
 
 
 def task_detail_message(
@@ -144,6 +156,42 @@ def agent_card_message(
 
 def short_id_text(value: str) -> str:
     return value[:8]
+
+
+def _metrics_window_block(summary: MetricsSummary) -> str:
+    lines = [
+        summary.window.label,
+        f"tasks: {summary.total_tasks}",
+        f"status: {_status_count_text(summary)}",
+        f"agents: {_adapter_count_text(summary)}",
+        f"collaboration: {summary.collaboration_requests}",
+        f"avg terminal duration: {_duration_text(summary.avg_terminal_seconds)}",
+        "open work:",
+    ]
+    lines.extend(_metrics_open_work_lines(summary.open_tasks))
+    return "\n".join(lines)
+
+
+def _status_count_text(summary: MetricsSummary) -> str:
+    return ", ".join(f"{status.value}={count}" for status, count in summary.status_counts)
+
+
+def _adapter_count_text(summary: MetricsSummary) -> str:
+    if not summary.adapter_counts:
+        return "-"
+    return ", ".join(f"{adapter}={count}" for adapter, count in summary.adapter_counts)
+
+
+def _duration_text(seconds: float | None) -> str:
+    if seconds is None:
+        return "-"
+    return f"{seconds:.0f}s"
+
+
+def _metrics_open_work_lines(task_snapshots: tuple[TaskSnapshot, ...]) -> tuple[str, ...]:
+    if not task_snapshots:
+        return ("- none",)
+    return tuple(f"- {_task_status_line(snapshot)}" for snapshot in task_snapshots)
 
 
 def _task_status_line(snapshot: TaskSnapshot) -> str:

@@ -320,12 +320,14 @@ class TaskBus:
     def snapshots(self) -> tuple[AdapterSnapshot, ...]:
         return self._registry.snapshots()
 
-    def task_snapshots(self, *, limit: int = 5) -> tuple[TaskSnapshot, ...]:
+    def task_snapshots(self, *, limit: int | None = 5) -> tuple[TaskSnapshot, ...]:
         snapshots = sorted(
             self._tasks.values(),
             key=lambda snapshot: snapshot.updated_at,
             reverse=True,
         )
+        if limit is None:
+            return tuple(reversed(snapshots))
         return tuple(reversed(snapshots[:limit]))
 
     def task_snapshot(self, task_ref: str) -> TaskSnapshot | TaskAck:

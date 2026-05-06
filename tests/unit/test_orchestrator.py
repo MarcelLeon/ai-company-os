@@ -211,6 +211,44 @@ async def test_orchestrator_status_includes_recent_tasks() -> None:
     )
 
 
+async def test_orchestrator_reports_local_metrics_without_submitting_task() -> None:
+    adapter = ScriptedAdapter()
+    channel = RecordingChannel()
+    task_ids = iter(("task-done", "task-approval"))
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="scripted", task_id_factory=lambda: next(task_ids)),
+        task_bus=bus,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="ship this", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="modify src/aico/core/task_bus.py", mentions=())
+    )
+    parent_task = bus.task_record("task-done")
+    child_task = Task(
+        task_id="task-child",
+        payload="review it",
+        requester_id="user-1",
+        target_persona="codex",
+    )
+    assert parent_task is not None
+    bus.record_collaboration_requested(parent_task, child_task)
+    await orchestrator.handle_incoming(_incoming_message(text="/metrics"))
+
+    metrics = channel.sent_messages[-1].text
+    assert metrics.startswith("Metrics (local process)\n\n24h\n")
+    assert "tasks: 2\n" in metrics
+    assert "done=1" in metrics
+    assert "waiting_approval=1" in metrics
+    assert "agents: scripted=2" in metrics
+    assert "collaboration: 1" in metrics
+    assert "open work:\n- task-approval [scripted]: waiting_approval" in metrics
+    assert "token/cost: unavailable from current CLI adapters" in metrics
+    assert len(adapter.received_tasks) == 1
+
+
 async def test_orchestrator_lists_recent_tasks_without_submitting_task() -> None:
     adapter = ScriptedAdapter()
     channel = RecordingChannel()

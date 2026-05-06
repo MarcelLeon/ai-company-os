@@ -3,9 +3,9 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-05-06
-**当前轮次**:Round 60(Task Collaboration Trace)
-**当前阶段**:🟡 Phase 5 进行中 — AI 间协作
+**最后更新**:2026-05-07
+**当前轮次**:Round 61(Phase 6 Metrics MVP)
+**当前阶段**:🟡 Phase 6 进行中 — 可观测看板
 
 ---
 
@@ -24,8 +24,8 @@
 | Phase 2 | 多 Adapter + 状态机 | 🟢 完成 | 至少 2 个 AI 接入,状态可在 IM 中查询 |
 | Phase 3 | 人格化层 + 群聊编排 | 🟢 完成 | AI 有差异化人设,群聊能 broadcast 任务 |
 | Phase 4 | 审批与审计 | 🟢 完成 | 危险操作可推送审批,所有行为有 trace |
-| Phase 5 | AI 间协作 | 🟡 进行中 | AI 之间可以互相 @ 协作,任务编排成型 |
-| Phase 6 | 可观测看板 | ⚪ 未开始 | 工时/KPI/token 消耗可视化 |
+| Phase 5 | AI 间协作 | 🟢 完成 | AI 之间可以互相 @ 协作,任务编排成型 |
+| Phase 6 | 可观测看板 | 🟡 进行中 | 工时/KPI/token 消耗可视化 |
 | Phase 7 | 共享记忆层 | ⚪ 未开始 | 所有 AI 共享上下文记忆 |
 | Phase 8 | 离线托管模式 | ⚪ 未开始 | 睡前下任务,早上看结果 |
 
@@ -144,12 +144,35 @@
 - [x] Project Facts Markdown heading render spans
 - [x] Task trace commands(`/tasks` / `/task`)
 - [x] `/task` collaboration parent / child trace
-- [ ] Telegram 真实协作 smoke test
+- [x] Phase 5 feature complete handoff
+- [ ] Telegram 真实协作 smoke test(作为 Phase 6 回归验收保留)
 - [x] Prompt 分层渲染
+
+### Phase 6 进度
+
+- [x] ADR-0014 Phase 6 Observability Scope
+- [x] IM-first `/metrics` MVP
+- [x] MVP product entrypoints 判断(IM 主控 + macOS glance + CLI 排障)
+- [x] Phase 6 `/metrics` smoke test playbook
+- [ ] `/metrics` Telegram 真实验收
+- [ ] 可观测状态持久化
+- [ ] macOS Status Island / glance 原型
+- [ ] token / cost 数据接入(等待 Adapter 可稳定提供 usage)
 
 ---
 
 ## 上一轮做了什么
+
+**Round 61**(2026-05-07,Codex):
+- 人类认为 `/task` parent / child trace 用户价值不大,询问 Phase 5 是否还有大功能,并同意进入 Phase 6。
+- 已提交并推送 Phase 5 收口提交:`031e41e Complete phase 5 collaboration observability`。
+- 开启 Phase 6:
+  - 新增 ADR-0014,确定第一切片先做 IM-first `/metrics`,不直接跳 Mac GUI / Web dashboard。
+  - 新增 `src/aico/core/metrics.py`,基于当前进程内 `TaskSnapshot` / `AuditEvent` 汇总 24h / 7d 指标。
+  - 新增 `/metrics` 命令,展示任务数、状态分布、agent/adaptor 接活数、open work、协作次数和平均终态耗时;token/cost 当前明确显示 unavailable。
+  - 记录 MVP 产品入口判断:IM 主控 + macOS glance + CLI 排障;Mac 状态岛后续消费 Phase 6 指标模型。
+  - 新增 Phase 6 `/metrics` smoke test playbook。
+- 新增命令解析和 Orchestrator 单测覆盖 `/metrics` 不派发 Adapter 任务。
 
 **Round 60**(2026-05-06,Codex):
 - 人类已验证 `/task` / `/tasks` 相关命令,要求继续后续功能开发。
@@ -545,18 +568,18 @@
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【高】重启后复测 Phase 5 真实协作 smoke test**:先用 `/tasks` / `/task <short_id>` 查看当前 stuck reviewer task,必要时 `/interrupt 1481a413` 收口旧进程,再重启 AICO。重启到 Round 60 后重新跑 `@reviewer ...`;用 `/task <parent_short_id>` / `/task <child_short_id>` 确认协作 parent-child trace 可见。若 Codex 仍无 stdout,预期 90 秒后返回 `adapter output idle timeout after 90s` 并恢复 `codex: idle`。
-2. **【高】Project status render 最后一轮抽样**:`/brief` 已复验良好;可继续抽样 `/next`、`/daily`、`/weekly` 的 `Facts` 区域,确认 bullet、inline Markdown 和 heading 均不再裸露。
-3. **【中】Codex bind 真实验收**:用已有 Codex provider session id 执行 `/bind codex <provider_session_id>`,随后发普通消息,确认日志中 `provider_session_mode=resume`。
-4. **【中】Telegram Claude resume 与长文本复测**:继续确认 project-scoped appointment session 不破坏已有 resume 和长文本分片行为。
-5. **【中】继续结构拆分**:如果下一轮要扩团队任命 / assignment 命令,优先拆 Project team/assignment handler,不要把新职责塞回 `ProjectCommandHandler`。
-6. **【低】灵动岛 / Mac 顶部 UI 原型**:先不做,等 Project/Appointment 状态 API 稳定后再评估移动端或桌面入口。
+1. **【高】重启后真实验收 `/metrics`**:跑几条 done / waiting approval / running / collaboration 任务后发送 `/metrics`,确认 24h / 7d、状态分布、open work 和 collaboration 数符合预期。
+2. **【高】Phase 6 观测状态持久化设计**:当前 `/metrics` 只看进程内状态;下一步建议设计轻量 Task/Audit repository 或复用 JSONL 读取,让重启后仍能看 24h / 7d。
+3. **【中】Mac Status Island 原型边界**:先消费 `/metrics` 同一套观测模型,只做 glance / approve / interrupt / jump,不要把完整项目管理搬进本地 UI。
+4. **【中】Phase 5 真实协作 smoke test 作为回归项**:重新跑 `@reviewer ...`,确认 child task accepted 后要么有 reviewer 输出,要么 90 秒 idle timeout 后恢复 `codex: idle`。
+5. **【中】Codex bind / Claude resume / 长文本复测**:继续确认 session 和长文本分片不被 Phase 6 命令影响。
+6. **【低】token / cost 接入**:等 Claude/Codex Adapter 能稳定提供 usage 后再接入,当前不要伪造数据。
 
 ---
 
 ## 当前卡点
 
-参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。B-001、B-002 均已解决;当前没有阻塞 Phase 5 的活跃卡点。
+参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。B-001、B-002 均已解决;当前没有阻塞 Phase 6 的活跃卡点。
 
 ---
 
