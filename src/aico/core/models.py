@@ -94,6 +94,23 @@ class MessageKind(StrEnum):
     TEXT = "text"
 
 
+class MessageTextStyle(StrEnum):
+    BOLD = "bold"
+    ITALIC = "italic"
+    CODE = "code"
+
+
+class MessageTextSpan(FrozenModel):
+    offset: int = Field(ge=0)
+    length: int = Field(ge=1)
+    style: MessageTextStyle
+
+
+class MessageAction(FrozenModel):
+    label: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+
+
 class MetadataEntry(FrozenModel):
     key: str = Field(min_length=1)
     value: str | int | float | bool | None
@@ -178,6 +195,8 @@ class PersonaProfile(FrozenModel):
 class MessageContent(FrozenModel):
     kind: MessageKind = MessageKind.TEXT
     text: str = Field(min_length=1)
+    spans: tuple[MessageTextSpan, ...] = ()
+    actions: tuple[MessageAction, ...] = ()
 
 
 class ChannelTarget(FrozenModel):

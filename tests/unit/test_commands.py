@@ -3,6 +3,7 @@ from aico.core import CommandName, parse_command, reject_parts
 
 def test_parse_command_accepts_plain_readonly_commands() -> None:
     status = parse_command("status")
+    tasks = parse_command("tasks")
     help_command = parse_command("help")
     audit = parse_command("audit")
     agents = parse_command("agents")
@@ -17,6 +18,7 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     sessions = parse_command("sessions")
 
     assert status is not None
+    assert tasks is not None
     assert help_command is not None
     assert audit is not None
     assert agents is not None
@@ -30,6 +32,7 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     assert assignments is not None
     assert sessions is not None
     assert status.name is CommandName.STATUS
+    assert tasks.name is CommandName.TASKS
     assert help_command.name is CommandName.HELP
     assert audit.name is CommandName.AUDIT
     assert agents.name is CommandName.AGENTS
@@ -50,6 +53,26 @@ def test_parse_command_accepts_slash_command_with_bot_suffix() -> None:
     assert command is not None
     assert command.name is CommandName.APPROVE
     assert command.payload == "abcdef12"
+
+
+def test_parse_command_accepts_interrupt_command() -> None:
+    command = parse_command("/interrupt abcdef12")
+
+    assert command is not None
+    assert command.name is CommandName.INTERRUPT
+    assert command.payload == "abcdef12"
+
+
+def test_parse_command_accepts_task_trace_commands() -> None:
+    tasks_command = parse_command("/tasks 20")
+    task_command = parse_command("/task abcdef12")
+
+    assert tasks_command is not None
+    assert task_command is not None
+    assert tasks_command.name is CommandName.TASKS
+    assert tasks_command.payload == "20"
+    assert task_command.name is CommandName.TASK
+    assert task_command.payload == "abcdef12"
 
 
 def test_parse_command_ignores_persona_routes() -> None:

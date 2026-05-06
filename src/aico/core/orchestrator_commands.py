@@ -14,11 +14,14 @@ from aico.core.agent_session import (
 from aico.core.command_messages import (
     SKILLS_PROMPT,
     TOOLS_PROMPT,
+    ack_failure_message,
     agent_card_message,
     agent_list_message,
     short_id_text,
+    task_detail_message,
+    tasks_message,
 )
-from aico.core.models import IncomingMessage, MessageContent, Task
+from aico.core.models import IncomingMessage, MessageContent, Task, TaskAck
 from aico.core.project_assignment import ProjectAssignmentDirectory
 from aico.core.router import MessageRouter
 from aico.core.session_commands import (
@@ -63,6 +66,31 @@ class DirectoryCommandHandler:
         await self._channel.send_message(
             message.source,
             agent_list_message(self._agent_directory.list(), self._task_bus.snapshots()),
+        )
+
+    async def handle_tasks(self, message: IncomingMessage, limit_text: str) -> None:
+        await self._channel.send_message(
+            message.source,
+            tasks_message(self._task_bus.task_snapshots(limit=_task_limit(limit_text))),
+        )
+
+    async def handle_task(self, message: IncomingMessage, task_ref: str) -> None:
+        if not task_ref:
+            await self._channel.send_message(
+                message.source,
+                MessageContent(text="Usage: /task <task_id>"),
+            )
+            return
+        snapshot = self._task_bus.task_snapshot(task_ref)
+        if isinstance(snapshot, TaskAck):
+            await self._channel.send_message(
+                message.source,
+                ack_failure_message(snapshot.status, snapshot.reason),
+            )
+            return
+        await self._channel.send_message(
+            message.source,
+            task_detail_message(snapshot, self._task_bus.audit_events(limit=None)),
         )
 
     async def handle_agent(self, message: IncomingMessage, agent_ref: str) -> None:
@@ -214,3 +242,13 @@ def _project_ref_from_use_payload(payload: str) -> str | None:
     if len(parts) == 2 and parts[0].lower() == "project":
         return parts[1]
     return None
+
+
+def _task_limit(limit_text: str, *, default: int = 10, maximum: int = 20) -> int:
+    if not limit_text:
+        return default
+    try:
+        value = int(limit_text.strip())
+    except ValueError:
+        return default
+    return max(1, min(value, maximum))

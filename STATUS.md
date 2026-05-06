@@ -3,8 +3,8 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-05-05
-**当前轮次**:Round 47(Role Proposal Confirmation Flow)
+**最后更新**:2026-05-06
+**当前轮次**:Round 60(Task Collaboration Trace)
 **当前阶段**:🟡 Phase 5 进行中 — AI 间协作
 
 ---
@@ -124,13 +124,188 @@
 - [x] Project next actions MVP(`/next`)
 - [x] Project Team 本地验收流
 - [x] Project appointment 同 role 去重与 `/team` lead 可见性
+- [x] Project Team / Appointment Telegram 真实验收
+- [x] Role proposal confirmation Telegram 真实验收
+- [x] Orchestrator role proposal helper 拆分
+- [x] Platform-neutral IM render contract 第一切片(`spans` / `actions`)
+- [x] Project office key messages 使用 render hints
+- [x] Telegram callback query 转入现有命令通路
+- [x] Project status LLM summary MVP(`/brief` / `/risks` / `/blockers` / `/next`)
+- [x] Project summary Markdown 转 render spans
+- [x] Project report LLM summary MVP(`/daily` / `/weekly`)
+- [x] Project status Facts 小节 / slash command render spans
+- [x] IM 远程中断命令(`/interrupt`)
+- [x] ProjectRoleCommandHandler 结构拆分
+- [x] ProjectStatusCommandHandler 结构拆分
+- [x] `/interrupt` Telegram 真实复验
+- [x] `/blockers` Telegram 真实复验
+- [x] Codex output idle timeout MVP
+- [x] Project Facts bullet / inline Markdown render spans
+- [x] Project Facts Markdown heading render spans
+- [x] Task trace commands(`/tasks` / `/task`)
+- [x] `/task` collaboration parent / child trace
 - [ ] Telegram 真实协作 smoke test
-- [ ] Project Team / Appointment Telegram 真实验收
 - [x] Prompt 分层渲染
 
 ---
 
 ## 上一轮做了什么
+
+**Round 60**(2026-05-06,Codex):
+- 人类已验证 `/task` / `/tasks` 相关命令,要求继续后续功能开发。
+- 增强 `/task <task_id>` 协作追踪详情:
+  - child task 详情会展示 `requested by` 和 parent task 的 `/task <short_id>` 入口。
+  - parent task 详情会展示已触发的 child task 列表、目标 persona 和对应 `/task <short_id>` 入口。
+  - 该能力复用既有 `collaboration_requested` 审计事件,没有改 TaskBus 存储模型或引入新仓储。
+- 新增 Orchestrator 单测覆盖 `@reviewer` 协作后查询 parent / child task 详情。
+- 定向验证通过:43 个 `test_orchestrator.py` 单测、改动文件 `ruff check`。
+
+**Round 59**(2026-05-06,Codex):
+- 人类在 Telegram 验证 Project Facts heading render 效果良好,要求继续开发后续能力。
+- 新增 IM 任务追踪命令:
+  - `/tasks [limit]`:展示最近任务,默认 10 条,最多 20 条。
+  - `/task <task_id>`:支持完整或短 task id 前缀,展示单个任务详情。
+  - waiting approval 任务会给出 `/approve <short_id>` / `/reject <short_id>` 动作提示。
+  - running 任务会给出 `/interrupt <short_id>` 动作提示。
+- `TaskBus` 新增只读 `task_snapshot(task_ref)` 查询入口,复用既有 task id 前缀匹配语义。
+- 更新 help、daily ops 和 changelog;新增命令解析与 Orchestrator 单测。
+- 完整验证通过:170 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 58**(2026-05-06,Codex):
+- 人类复验 `/brief` 后反馈整体好了很多,但文档 snippet 中的 Markdown 标题仍裸露,截图中可见 `# NORTH_STAR.md`、`## 第一句`、`### 状态变化`。
+- 修复 Project Facts Markdown heading 渲染:
+  - `_heading_message()` 现在会识别行首 `#` / `##` / `###` 等 Markdown 标题。
+  - 标题会去掉 `#` 前缀,保留原标题文本并生成 `MessageTextSpan(BOLD)`。
+  - 该能力作用于 `/brief`、`/risks`、`/blockers`、`/next`、`/daily`、`/weekly` 的 facts 文档片段。
+- 新增单测覆盖文档 snippet 中的 Markdown heading 渲染。
+- 完整验证通过:166 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 57**(2026-05-06,Codex):
+- 人类复测 Phase 5 `@reviewer` 真实协作 smoke test:
+  - Telegram 收到 `Task accepted: 1481a413-f886-46bc-b7d4-98cccf295218 [reviewer]`。
+  - `/status` 显示 `claude-code: idle`, `codex: busy`。
+  - 结论:协作解析和 child task 创建成功,卡点仍是 Codex CLI accepted 后长期无 stdout。
+- 修复 Codex busy 自动释放:
+  - `ClaudeCodeAdapter` 增加可选 `output_idle_timeout_seconds`。
+  - `CodexAdapter` 默认 90 秒无 stdout 自动终止底层 CLI,输出 `adapter output idle timeout after 90s`,并释放 busy。
+  - `Phase1Settings` 新增 `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS`。
+- 修复 Project Facts 无序列表 / inline Markdown 渲染:
+  - `_heading_message()` 现在会规范化 facts 中的 `- ` / `* ` 为 `• `。
+  - facts 中 `**bold**`、`` `code` ``、`*italic*` 也会转成 render spans,不再裸露 Markdown 标记。
+- 更新 PITFALL P-014、Phase 5 collaboration playbook 和 daily ops。
+- 完整验证通过:165 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 56**(2026-05-06,Codex):
+- 人类已完成真实复验:
+  - `/interrupt` 可用。
+  - `/blockers` 格式可用。
+- 收口 Round 55 的结构拆分验证:
+  - `ProjectStatusCommandHandler` 拆分后仍保持 `/brief`、`/risks`、`/blockers`、`/next`、`/daily`、`/weekly` 用户语义不变。
+  - 完整验证通过:162 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+- 代码侧下一步不建议继续堆项目命令;若继续开发,优先二选一:
+  - 完成 Phase 5 `@reviewer` collaboration smoke test,若 Codex 子任务仍无 stdout,再设计 timeout / heartbeat。
+  - 拆 Project team/assignment handler,继续降低 `ProjectCommandHandler` 门面复杂度。
+
+**Round 55**(2026-05-06,Codex):
+- 人类要求继续开发后续功能;真实复验仍需人类重启 AICO 服务并在 Telegram 操作。
+- 继续处理 Project 命令结构债:
+  - 新增 `ProjectStatusCommandHandler`,承接 `/brief`、`/risks`、`/blockers`、`/next`、`/daily`、`/weekly`。
+  - 状态 / 报告 handler 集中负责本地 facts 构造、文档 snippet 聚合、summary callback 和 summary 失败降级。
+  - `ProjectCommandHandler` 保持 Orchestrator 的项目命令门面,对应 handle 方法改为薄代理。
+- 结构结果:
+  - `src/aico/core/project_commands.py` 从 476 行降到 349 行。
+  - `src/aico/core/project_status_commands.py` 为 195 行。
+  - `src/aico/core/project_role_commands.py` 保持 108 行。
+- 完整验证已在 Round 56 补齐。
+
+**Round 54**(2026-05-06,Codex):
+- 人类要求继续开发;真实 `/interrupt`、Project status render 和 Phase 5 collaboration smoke 复验都需要人类重启服务和 Telegram 操作。
+- 按下一轮代码侧高优先级处理结构债:
+  - 新增 `ProjectRoleCommandHandler`,承接 `/role propose`、`/role confirm`、`/role discard` 以及 role draft 暂存。
+  - `ProjectCommandHandler.handle_role()` 改为薄代理,用户可见语义不变。
+  - `ProjectCommandHandler` 不再持有 `_role_drafts` 和 `_propose_role` 运行细节。
+- 结构结果:
+  - `src/aico/core/project_commands.py` 从 544 行降到 475 行。
+  - `src/aico/core/project_role_commands.py` 为 108 行。
+- 完整验证通过:162 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`。
+
+**Round 53**(2026-05-06,Codex):
+- 人类执行 Phase 5 协作 smoke test 后反馈:
+  - Telegram 收到 `Collaboration requested: claude -> reviewer`。
+  - 随后停在 `Task accepted: 31e559c3-bd7c-4e1b-9385-024431f8635a [reviewer]`。
+- 日志定位:
+  - 协作解析和 child task 创建成功。
+  - reviewer 子任务已派发到 `codex`,并进入 `Stream start`。
+  - 没有后续 `Stream output` / `Adapter process exited`,进程表显示 Codex CLI 子进程仍在运行。
+  - 根因不是 Telegram render 或协作协议,而是底层 Codex CLI 长时间无 stdout。
+- 修复远程可中断缺口:
+  - 新增 `/interrupt <task_id>` 命令。
+  - `TaskBus.interrupt()` 支持 task id 前缀匹配,会拒绝 unknown / ambiguous / non-running task。
+  - Orchestrator 返回 `Task interrupted: <short_id>` 或明确失败原因。
+  - 中断 running 任务会继续更新 `interrupted` 状态并记录 `task_interrupted` 审计事件。
+- 新增 PITFALL P-014,记录 reviewer accepted 后 Codex 长时间无 stdout 且 IM 无中断入口的问题。
+- 更新 Phase 5 collaboration playbook 和 daily ops。
+- 验证通过:定向 66 个单测;完整验证见本轮交接。
+
+**Round 52**(2026-05-06,Codex):
+- 人类补充真实 Telegram 验收结果:
+  - `/project`、`/team`、`/roles` 首行加粗和 `/role propose` Confirm / Discard 按钮均已验证通过。
+  - `/blockers` 仍缺少格式。
+  - `/brief`、`/next` 的 `Boss summary` 部分格式正确,但 `Facts` 部分缺少结构化样式。
+- 修复项目状态 Facts 渲染:
+  - `_heading_message()` 不再只给首行加粗,会为项目消息中的小节标题生成 `MessageTextSpan(BOLD)`。
+  - 对事实文本里的 slash command 片段生成 `MessageTextSpan(CODE)`,例如 `/approve`、`/reject`、`/ask`、`/blockers`。
+  - `project_summary_message()` 继续把 facts spans 平移到 `Facts` 区域,因此 summary + facts 组合消息也能保留 facts 样式。
+- 新增 `tests/unit/test_project_messages.py` 覆盖 `/blockers` 小节 / 命令 spans,以及 summary 组合消息保留 facts spans。
+- 在 `docs/human/daily-ops.md` 补充 Phase 5 `@reviewer` 真实协作 smoke test 推荐 prompt。
+- 验证通过:159 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`。
+
+**Round 51**(2026-05-06,Codex):
+- 人类验证 `/brief` 等 Boss summary 能力有效,指出主要问题是 summary 内部 `**bold**`、反引号、无序列表等 Markdown 文法没有渲染。
+- 修复 `project_summary_message()`:
+  - summary 里的 `- ` / `* ` 列表前缀转换为 `• `。
+  - `**bold**` 转为干净文本 + `MessageTextSpan(BOLD)`。
+  - `` `code` `` 转为干净文本 + `MessageTextSpan(CODE)`。
+  - `*italic*` 转为干净文本 + `MessageTextSpan(ITALIC)`。
+  - 继续保留 `Boss summary` / `Facts` heading spans 和完整 Facts 原文。
+- 在已验证短状态 summary 基本可用后,将同样 summary 机制扩展到 `/daily` / `/weekly`;仍保留完整 Facts。
+- 新增 `tests/unit/test_project_messages.py`,覆盖 summary Markdown 到 spans 的转换。
+- 本地定向测试已通过;完整验证见本轮交接。
+
+**Round 50**(2026-05-06,Codex):
+- 人类确认 Round 49 的 Telegram render / button 能力有效,要求继续开发后续能力。
+- 新增 `ProjectSummaryCoordinator`,为 `/brief`、`/risks`、`/blockers`、`/next` 生成顶部 `Boss summary`:
+  - 输入只使用现有本地事实消息。
+  - 通过当前项目 lead appointment/provider session 发起只读 summary task。
+  - 输出保留完整 `Facts` 原文,摘要只是顶部管理视角说明。
+- 新增 `aico.intent=project_summary` 内部元数据,风险识别将 project summary task 视为 read-only,避免事实文本中出现 `/approve`、`run tests`、`write docs` 等词时误触发审批。
+- summary task 如果没有 lead、provider busy、adapter 拒绝或输出失败,命令会直接发送原本的事实消息,不让摘要失败影响状态查询。
+- `project_summary_message()` 会把 `Boss summary` 和 `Facts` 作为独立 heading span,Telegram 可加粗展示。
+- 本轮未给 `/daily` / `/weekly` 加 LLM summary,避免扩大范围;它们仍是本地事实报告。
+- 本地 156 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests` 全绿。
+
+**Round 49**(2026-05-06,Codex):
+- 按下一轮最高优先级,将 ADR-0013 的 IM render contract 用到项目办公室关键消息。
+- `project_messages.py` 为项目办公室、团队、岗位、任命、撤任、lead、role proposal 等消息首行增加 `MessageTextSpan(BOLD)`,Telegram 会映射为 HTML 加粗;纯文本 `text` 保持不变。
+- `role_proposal_message()` 增加 `MessageAction`:
+  - `Confirm` → `/role confirm`
+  - `Discard` → `/role discard`
+- Telegram Channel 支持 `callback_query`:按钮点击会被转换为 `IncomingMessage(content.text=<callback data>)`,复用现有命令解析;同时调用 `answerCallbackQuery` 避免 Telegram 客户端一直转圈。
+- 新增回归测试覆盖 role proposal actions 和 callback query 转入命令消息。
+- 本地 154 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests` 全绿。
+
+**Round 48**(2026-05-05,Codex):
+- 人类确认 Project Team / Appointment 与 Role proposal confirmation 的真实 Telegram 验收均已通过:
+  - 重复 `/appoint ... as tester ...` 不再让 `/team` 出现多个 tester。
+  - `/lead tester` 后 `/team` 能看到 lead。
+  - `/role propose` 后 `/role confirm`,新增 role 能在 `/roles` 中看到。
+- 按下一轮高优先级先做结构拆分,新增 `RoleProposalCoordinator`,把 role proposal 的内部任务提交、输出收集、provider session busy/idle 和 JSON 解析流程从 `Orchestrator` 移到 `src/aico/core/role_proposal.py`。
+- `Orchestrator` 只保留接线逻辑,类体从 482 行降到 439 行,继续满足单类 <500 行硬约束。
+- 修复拆分时暴露的 `risk -> role_proposal -> task_bus -> risk` 循环导入,`TaskBus` 在 role proposal 模块中改为 type-checking only import。
+- 本轮没有改变 `/role propose`、`/role confirm`、`/role discard` 的用户可见语义。
+- 继续完成 IM 文案渲染层第一切片: `MessageContent` 增加平台无关 `MessageTextSpan` / `MessageAction`,Telegram Channel 将 spans 映射为 HTML、actions 映射为 inline keyboard;纯文本消息不变。
+- 新增 ADR-0013,记录不把 Telegram HTML / reply_markup 写进核心消息层的决策。
+- 本地 153 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests` 全绿。
 
 **Round 19**(2026-04-28,Codex):
 - 调研 A2A / ACP / MCP 当前状态,决定 Phase 5 MVP 采用内部 A2A-inspired 轻量协作指令,不直接实现 HTTP A2A。
@@ -370,15 +545,12 @@
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【高】Project Team Telegram 真实验收复测**:重启服务后验证重复 `/appoint claude as tester read_repo run_tests` 不会让 `/team` 出现多个 tester,`/lead tester` 后 `/team` 顶部显示 lead 且 tester 行带 `[lead]`。
-2. **【高】Role 创建确认流 Telegram 真实验收**:验证 `/role propose 需要一个增长分析岗位` 会生成 role 草案,`/role confirm` 后 `/roles` 展示新增 role,且重启后不会伪装成已持久化。
-3. **【高】先拆分 Orchestrator role proposal helper**:`Orchestrator` 类体接近 500 行,继续新增能力前应把 role proposal / collect output 流程拆出。
-4. **【高】IM 文案渲染层设计**:为 `MessageContent` 或 Channel 出口增加平台无关的 render contract,让 Telegram 可以用 HTML/按钮式文案,未来 Feishu/Kim/其他 IM 可独立适配。
-5. **【中】项目状态命令 LLM 总结**:为 `/brief`、`/risks`、`/blockers`、`/next` 增加顶部老板摘要,建议先做“本地事实包 + lead/pm provider 只读总结 + 原始事实保留”的 MVP。
-6. **【中】Codex bind 真实验收**:用已有 Codex provider session id 执行 `/bind codex <provider_session_id>`,随后发普通消息,确认日志中 `provider_session_mode=resume`。
-7. **【中】Telegram Claude resume 与长文本复测**:继续确认 project-scoped appointment session 不破坏已有 resume 和长文本分片行为。
-8. **【中】Phase 5 真实协作 smoke test 复测**:按 `docs/playbooks/phase-5-collaboration.md` 验证 `@reviewer ...` 会触发 Codex/reviewer 子任务,且 `/audit` 出现 `collaboration_requested`。
-9. **【低】灵动岛 / Mac 顶部 UI 原型**:先不做,等 Project/Appointment 状态 API 稳定后再评估移动端或桌面入口。
+1. **【高】重启后复测 Phase 5 真实协作 smoke test**:先用 `/tasks` / `/task <short_id>` 查看当前 stuck reviewer task,必要时 `/interrupt 1481a413` 收口旧进程,再重启 AICO。重启到 Round 60 后重新跑 `@reviewer ...`;用 `/task <parent_short_id>` / `/task <child_short_id>` 确认协作 parent-child trace 可见。若 Codex 仍无 stdout,预期 90 秒后返回 `adapter output idle timeout after 90s` 并恢复 `codex: idle`。
+2. **【高】Project status render 最后一轮抽样**:`/brief` 已复验良好;可继续抽样 `/next`、`/daily`、`/weekly` 的 `Facts` 区域,确认 bullet、inline Markdown 和 heading 均不再裸露。
+3. **【中】Codex bind 真实验收**:用已有 Codex provider session id 执行 `/bind codex <provider_session_id>`,随后发普通消息,确认日志中 `provider_session_mode=resume`。
+4. **【中】Telegram Claude resume 与长文本复测**:继续确认 project-scoped appointment session 不破坏已有 resume 和长文本分片行为。
+5. **【中】继续结构拆分**:如果下一轮要扩团队任命 / assignment 命令,优先拆 Project team/assignment handler,不要把新职责塞回 `ProjectCommandHandler`。
+6. **【低】灵动岛 / Mac 顶部 UI 原型**:先不做,等 Project/Appointment 状态 API 稳定后再评估移动端或桌面入口。
 
 ---
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from aico.core.models import RiskAssessment, RiskLevel, Task
+from aico.core.project_summary import PROJECT_SUMMARY_INTENT, PROJECT_SUMMARY_INTENT_KEY
 from aico.core.role_proposal import ROLE_PROPOSAL_INTENT, ROLE_PROPOSAL_INTENT_KEY
 
 
@@ -12,7 +13,7 @@ class TextRiskAssessor:
     """Classify task text into the smallest useful Phase 4 risk levels."""
 
     def assess(self, task: Task) -> RiskAssessment:
-        if _is_role_proposal_task(task):
+        if _is_internal_read_only_task(task):
             return RiskAssessment(risk_level=RiskLevel.READ_ONLY)
 
         text = task.payload.lower()
@@ -35,11 +36,16 @@ def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
     return any(marker in text for marker in markers)
 
 
-def _is_role_proposal_task(task: Task) -> bool:
+def _is_internal_read_only_task(task: Task) -> bool:
     return any(
-        entry.key == ROLE_PROPOSAL_INTENT_KEY and entry.value == ROLE_PROPOSAL_INTENT
+        _is_intent(entry.key, entry.value, ROLE_PROPOSAL_INTENT)
+        or _is_intent(entry.key, entry.value, PROJECT_SUMMARY_INTENT)
         for entry in task.metadata
     )
+
+
+def _is_intent(key: str, value: object, intent: str) -> bool:
+    return key in {ROLE_PROPOSAL_INTENT_KEY, PROJECT_SUMMARY_INTENT_KEY} and value == intent
 
 
 @dataclass(frozen=True)

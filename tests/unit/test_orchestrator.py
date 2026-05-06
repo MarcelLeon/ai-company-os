@@ -51,6 +51,7 @@ class ScriptedAdapter:
         self._name = name
         self._output_texts = output_texts
         self.received_tasks: list[Task] = []
+        self.interrupted_task_ids: list[str] = []
 
     @property
     def name(self) -> str:
@@ -86,7 +87,7 @@ class ScriptedAdapter:
         return AdapterStatus.IDLE
 
     async def interrupt(self, task_id: str) -> None:
-        _ = task_id
+        self.interrupted_task_ids.append(task_id)
 
     async def health_check(self) -> HealthStatus:
         return HealthStatus.OK
@@ -210,6 +211,64 @@ async def test_orchestrator_status_includes_recent_tasks() -> None:
     )
 
 
+async def test_orchestrator_lists_recent_tasks_without_submitting_task() -> None:
+    adapter = ScriptedAdapter()
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-4"),
+        task_bus=TaskBus(adapter),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message())
+    await orchestrator.handle_incoming(_incoming_message(text="/tasks"))
+
+    assert adapter.received_tasks[0].task_id == "task-4"
+    assert len(adapter.received_tasks) == 1
+    assert channel.sent_messages[-1] == MessageContent(
+        text=("Recent tasks:\ntask-4 [scripted]: done\n\nUse /task <task_id> for details.")
+    )
+
+
+async def test_orchestrator_reports_task_detail_and_available_actions() -> None:
+    adapter = ScriptedAdapter()
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-approval"),
+        task_bus=TaskBus(adapter),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="modify src/aico/core/task_bus.py"))
+    await orchestrator.handle_incoming(_incoming_message(text="/task task-app"))
+
+    detail = channel.sent_messages[-1].text
+    assert detail.startswith("Task: task-app\n")
+    assert "id: task-approval\n" in detail
+    assert "target: lao-zhang\n" in detail
+    assert "status: waiting_approval\n" in detail
+    assert "risk: write_files\n" in detail
+    assert "Actions:\n- /approve task-app\n- /reject task-app" in detail
+    assert adapter.received_tasks == []
+
+
+async def test_orchestrator_reports_task_usage_and_unknown_task() -> None:
+    adapter = ScriptedAdapter()
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-3"),
+        task_bus=TaskBus(adapter),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/task"))
+    await orchestrator.handle_incoming(_incoming_message(text="/task missing"))
+
+    assert channel.sent_messages[0] == MessageContent(text="Usage: /task <task_id>")
+    assert channel.sent_messages[1] == MessageContent(text="Task rejected: unknown task: missing")
+    assert adapter.received_tasks == []
+
+
 async def test_orchestrator_requests_approval_for_risky_task() -> None:
     adapter = ScriptedAdapter()
     channel = RecordingChannel()
@@ -322,6 +381,44 @@ async def test_orchestrator_rejects_only_waiting_task_without_id() -> None:
     assert channel.sent_messages[-1] == MessageContent(text="Task rejected: approval rejected")
     assert channel.edited_messages == []
     assert bus.task_snapshots()[0].status is TaskStatus.REJECTED
+
+
+async def test_orchestrator_interrupts_running_task_by_short_id() -> None:
+    adapter = ScriptedAdapter()
+    channel = RecordingChannel()
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=bus,
+    )
+    task = Task(
+        task_id="abcdef12-3456",
+        payload="review slowly",
+        requester_id="user-1",
+        target_persona="default",
+    )
+    await bus.submit(task)
+
+    await orchestrator.handle_incoming(_incoming_message(text="/interrupt abcdef12"))
+
+    assert adapter.interrupted_task_ids == ["abcdef12-3456"]
+    assert channel.sent_messages[-1] == MessageContent(text="Task interrupted: abcdef12")
+    assert bus.task_snapshots()[0].status is TaskStatus.INTERRUPTED
+
+
+async def test_orchestrator_reports_interrupt_usage() -> None:
+    adapter = ScriptedAdapter()
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=TaskBus(adapter),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/interrupt"))
+
+    assert channel.sent_messages == [MessageContent(text="Usage: /interrupt <task_id>")]
 
 
 async def test_orchestrator_status_includes_waiting_approval_risk() -> None:
@@ -498,6 +595,15 @@ async def test_orchestrator_routes_adapter_collaboration_directive_to_target_per
     assert collaboration_events[0].target_persona == "reviewer"
     assert collaboration_events[0].detail == "parent_task=task-parent"
 
+    await orchestrator.handle_incoming(_incoming_message(text="/task task-child"))
+    child_detail = channel.sent_messages[-1].text
+    assert "Collaboration:\n- requested by: implementer\n" in child_detail
+    assert "- parent: task-par (/task task-par)" in child_detail
+
+    await orchestrator.handle_incoming(_incoming_message(text="/task task-parent"))
+    parent_detail = channel.sent_messages[-1].text
+    assert "Collaboration:\n- children:\n  - task-chi -> reviewer (/task task-chi)" in parent_detail
+
 
 async def test_orchestrator_splits_long_stream_output_across_messages() -> None:
     long_output = "x" * (STREAM_MESSAGE_TEXT_LIMIT + 120)
@@ -617,9 +723,9 @@ async def test_orchestrator_reports_projects_and_assignments() -> None:
         _incoming_message(text="/assignment aico-implementer", mentions=())
     )
 
-    assert channel.sent_messages[0].text == "Projects:\n- aico: AI Company OS - Phase 5"
+    assert channel.sent_messages[0].text == "Projects:\n• aico: AI Company OS - Phase 5"
     assert channel.sent_messages[1].text.startswith("Project active: aico [AI Company OS]\n")
-    assert "Team:\n- implementer -> claude" in channel.sent_messages[1].text
+    assert "Team:\n• implementer -> claude" in channel.sent_messages[1].text
     assert channel.sent_messages[2].text.startswith("Assignments for aico:\n")
     assert channel.sent_messages[3].text.startswith("Assignment: aico-implementer\n")
     assert "provider: claude-code\n" in channel.sent_messages[3].text
@@ -686,13 +792,13 @@ async def test_orchestrator_handles_team_who_appoint_default_and_ask_commands() 
     assert channel.sent_messages[2].text.startswith("aico / implementer\n")
     assert channel.sent_messages[3].text.startswith("Appointment active\n\nclaude is appointed")
     assert channel.sent_messages[4].text.startswith("Appointment active\n\nclaude is appointed")
-    assert channel.sent_messages[5] == MessageContent(
-        text=("Lead role for aico: tester -> claude\nPlain messages will go to this lead role.")
+    assert channel.sent_messages[5].text == (
+        "Lead role for aico: tester -> claude\nPlain messages will go to this lead role."
     )
     team_after_lead = channel.sent_messages[6].text
-    assert team_after_lead.count("- tester -> claude") == 1
+    assert team_after_lead.count("• tester -> claude") == 1
     assert "lead: tester -> claude" in team_after_lead
-    assert "- tester -> claude (read_repo, run_tests) [lead]" in team_after_lead
+    assert "• tester -> claude (read_repo, run_tests) [lead]" in team_after_lead
     assert "Role: tester" in adapter.received_tasks[0].payload
     assert "Appointment contract:" in adapter.received_tasks[0].payload
     assert "Current task:\nverify tests" in adapter.received_tasks[0].payload
@@ -717,8 +823,8 @@ async def test_orchestrator_reports_project_roles_and_appointment_gaps() -> None
 
     roles = channel.sent_messages[-1].text
     assert roles.startswith("Roles for aico [AI Company OS]:\n")
-    assert "- implementer: Implementation Lead -> claude" in roles
-    assert "- tester: Test Lead -> unappointed" in roles
+    assert "• implementer: Implementation Lead -> claude" in roles
+    assert "• tester: Test Lead -> unappointed" in roles
     assert "permissions:" in roles
 
 
@@ -759,9 +865,13 @@ async def test_orchestrator_proposes_and_confirms_project_role() -> None:
     assert proposal.startswith("Role proposal for aico\n")
     assert "id: growth-analyst" in proposal
     assert "Send /role confirm" in proposal
+    assert [action.value for action in channel.sent_messages[2].actions] == [
+        "/role confirm",
+        "/role discard",
+    ]
     assert channel.sent_messages[3].text.startswith("Role added to aico: growth-analyst\n")
     roles = channel.sent_messages[4].text
-    assert "- growth-analyst: Growth Analyst -> unappointed" in roles
+    assert "• growth-analyst: Growth Analyst -> unappointed" in roles
     assert adapter.received_tasks[0].metadata[-1].key == "aico.intent"
     assert adapter.received_tasks[0].metadata[-1].value == "role_proposal"
 
@@ -788,14 +898,26 @@ async def test_orchestrator_unappoints_project_role_and_updates_roles_view() -> 
     assert channel.sent_messages[2].text.startswith("Appointment removed\n\n")
     assert "claude is no longer appointed to aico as tester" in channel.sent_messages[2].text
     roles = channel.sent_messages[3].text
-    assert "- tester: Test Lead -> unappointed" in roles
+    assert "• tester: Test Lead -> unappointed" in roles
     assert channel.sent_messages[4] == MessageContent(text="Role not appointed in aico: tester")
 
 
 async def test_orchestrator_project_team_acceptance_flow() -> None:
     adapter = ScriptedAdapter(name="claude-code")
     channel = RecordingChannel()
-    task_ids = iter(("task-ask", "task-plain-tester", "task-plain-fallback"))
+    task_ids = iter(
+        (
+            "task-summary-brief",
+            "task-summary-risks",
+            "task-summary-blockers",
+            "task-summary-next",
+            "task-summary-daily",
+            "task-summary-weekly",
+            "task-ask",
+            "task-plain-tester",
+            "task-plain-fallback",
+        )
+    )
     orchestrator = Orchestrator(
         channel=channel,
         router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
@@ -836,13 +958,13 @@ async def test_orchestrator_project_team_acceptance_flow() -> None:
     assert channel.sent_messages[0].text.startswith("Project active: aico [AI Company OS]\n")
     assert channel.sent_messages[1].text == channel.sent_messages[0].text
     sent_texts = tuple(message.text for message in channel.sent_messages)
-    assert any(text.startswith("Brief: aico [AI Company OS]\n") for text in sent_texts)
-    assert any(text.startswith("Risks: aico [AI Company OS]\n") for text in sent_texts)
-    assert any(text.startswith("Blockers: aico [AI Company OS]\n") for text in sent_texts)
-    assert any(text.startswith("Next actions: aico [AI Company OS]\n") for text in sent_texts)
-    assert any(text.startswith("Daily report: aico [AI Company OS]\n") for text in sent_texts)
-    assert any(text.startswith("Weekly report: aico [AI Company OS]\n") for text in sent_texts)
-    assert any("- tester: Test Lead -> unappointed" in text for text in sent_texts)
+    assert any("Brief: aico [AI Company OS]\n" in text for text in sent_texts)
+    assert any("Risks: aico [AI Company OS]\n" in text for text in sent_texts)
+    assert any("Blockers: aico [AI Company OS]\n" in text for text in sent_texts)
+    assert any("Next actions: aico [AI Company OS]\n" in text for text in sent_texts)
+    assert any("Daily report: aico [AI Company OS]\n" in text for text in sent_texts)
+    assert any("Weekly report: aico [AI Company OS]\n" in text for text in sent_texts)
+    assert any("• tester: Test Lead -> unappointed" in text for text in sent_texts)
     assert any(
         "Appointment active\n\nclaude is appointed to aico as tester" in text for text in sent_texts
     )
@@ -852,19 +974,24 @@ async def test_orchestrator_project_team_acceptance_flow() -> None:
         for text in sent_texts
     )
     assert channel.sent_messages[-2] == MessageContent(text="Role not appointed in aico: tester")
-    assert [task.target_persona for task in adapter.received_tasks] == [
+    work_tasks = tuple(
+        task
+        for task in adapter.received_tasks
+        if _metadata_value(task, "aico.intent") != "project_summary"
+    )
+    assert [task.target_persona for task in work_tasks] == [
         "implementer",
         "implementer",
         "implementer",
     ]
-    assert [_metadata_value(task, "aico.assignment_role") for task in adapter.received_tasks] == [
+    assert [_metadata_value(task, "aico.assignment_role") for task in work_tasks] == [
         "tester",
         "tester",
         "implementer",
     ]
-    assert "Current task:\nverify tests" in adapter.received_tasks[0].payload
-    assert "Current task:\nplain tester task" in adapter.received_tasks[1].payload
-    assert "Current task:\nplain fallback task" in adapter.received_tasks[2].payload
+    assert "Current task:\nverify tests" in work_tasks[0].payload
+    assert "Current task:\nplain tester task" in work_tasks[1].payload
+    assert "Current task:\nplain fallback task" in work_tasks[2].payload
 
 
 async def test_orchestrator_reports_project_brief_and_risks() -> None:
@@ -885,12 +1012,36 @@ async def test_orchestrator_reports_project_brief_and_risks() -> None:
     )
     await orchestrator.handle_incoming(_incoming_message(text="/risks", mentions=()))
 
-    assert channel.sent_messages[1].text.startswith("Brief: aico [AI Company OS]\n")
+    assert channel.sent_messages[1].text.startswith("Boss summary\nhello world\n\nFacts\n")
+    assert "Brief: aico [AI Company OS]\n" in channel.sent_messages[1].text
     assert "lead: implementer -> claude" in channel.sent_messages[1].text
-    assert "team:\n- implementer -> claude" in channel.sent_messages[1].text
-    assert channel.sent_messages[-1].text.startswith("Risks: aico [AI Company OS]\n")
+    assert "team:\n• implementer -> claude" in channel.sent_messages[1].text
+    assert channel.sent_messages[-1].text.startswith("Boss summary\nhello world\n\nFacts\n")
+    assert "Risks: aico [AI Company OS]\n" in channel.sent_messages[-1].text
     assert "destructive" in channel.sent_messages[-1].text
-    assert adapter.received_tasks == []
+    assert [task.metadata[-1].value for task in adapter.received_tasks] == [
+        "project_summary",
+        "project_summary",
+    ]
+
+
+async def test_orchestrator_project_summary_failure_keeps_facts_visible() -> None:
+    adapter = ScriptedAdapter(name="claude-code", ack_status=AckStatus.BUSY)
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-summary"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(_incoming_message(text="/brief", mentions=()))
+
+    assert channel.sent_messages[1].text.startswith("Brief: aico [AI Company OS]\n")
+    assert "Boss summary" not in channel.sent_messages[1].text
+    assert adapter.received_tasks[0].metadata[-1].value == "project_summary"
 
 
 async def test_orchestrator_risks_omit_write_approval_and_unknown_persona_noise() -> None:
@@ -1003,11 +1154,13 @@ async def test_orchestrator_reports_daily_and_weekly_project_state() -> None:
     daily = channel.sent_messages[-2].text
     weekly = channel.sent_messages[-1].text
 
-    assert daily.startswith("Daily report: aico [AI Company OS]\n")
+    assert daily.startswith("Boss summary\nhello world\n\nFacts\n")
+    assert "Daily report: aico [AI Company OS]\n" in daily
     assert "window: last 24h in local AICO state" in daily
-    assert "progress:\n- task-report [claude-code]: done" in daily
-    assert "team:\n- implementer -> claude" in daily
-    assert weekly.startswith("Weekly report: aico [AI Company OS]\n")
+    assert "progress:\n• task-report [claude-code]: done" in daily
+    assert "team:\n• implementer -> claude" in daily
+    assert weekly.startswith("Boss summary\nhello world\n\nFacts\n")
+    assert "Weekly report: aico [AI Company OS]\n" in weekly
     assert "window: last 7d in local AICO state" in weekly
     assert "context:" in weekly
 

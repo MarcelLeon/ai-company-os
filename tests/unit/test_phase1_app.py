@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from aico.adapter.claude_code import ClaudeCodeAdapter
+from aico.adapter.codex import CodexAdapter
 from aico.app.phase1 import Phase1Settings, build_phase1_runtime, configure_logging
 from aico.channel.telegram import TelegramChannel
 from aico.core import AuditEventType, RiskLevel, Task
@@ -122,6 +123,9 @@ def test_build_phase1_runtime_can_enable_codex_adapter_for_status() -> None:
 
     snapshots = runtime.registry.snapshots()
     assert [snapshot.name for snapshot in snapshots] == ["claude-code", "codex"]
+    codex = runtime.registry.get("codex")
+    assert isinstance(codex, CodexAdapter)
+    assert codex._output_idle_timeout_seconds == 90.0  # noqa: SLF001
 
 
 def test_build_phase1_runtime_registers_claude_alias() -> None:

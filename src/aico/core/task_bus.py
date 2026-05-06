@@ -295,13 +295,27 @@ class TaskBus:
             self._update_from_output(task_id, output)
             yield output
 
-    async def interrupt(self, task_id: str) -> None:
+    async def interrupt(self, task_ref: str) -> TaskAck:
+        task = self._resolve_known_task(task_ref)
+        if isinstance(task, TaskAck):
+            return task
+
+        task_id = task.task_id
+        if task.status is not TaskStatus.RUNNING:
+            return TaskAck(
+                task_id=task_id,
+                status=AckStatus.REJECTED,
+                reason=f"task is {task.status.value}, not running",
+            )
+
         adapter = self._adapter_for_task(task_id)
         if adapter is not None:
             await adapter.interrupt(task_id)
             if self._task_status(task_id) is TaskStatus.RUNNING:
                 self._update_task(task_id, TaskStatus.INTERRUPTED)
                 self._record_audit_for_task(task_id, AuditEventType.TASK_INTERRUPTED)
+            return TaskAck(task_id=task_id, status=AckStatus.ACCEPTED)
+        return TaskAck(task_id=task_id, status=AckStatus.REJECTED, reason="adapter unavailable")
 
     def snapshots(self) -> tuple[AdapterSnapshot, ...]:
         return self._registry.snapshots()
@@ -313,6 +327,9 @@ class TaskBus:
             reverse=True,
         )
         return tuple(reversed(snapshots[:limit]))
+
+    def task_snapshot(self, task_ref: str) -> TaskSnapshot | TaskAck:
+        return self._resolve_known_task(task_ref)
 
     def audit_events(self, *, limit: int | None = 10) -> tuple[AuditEvent, ...]:
         return self._audit_log.events(limit=limit)
@@ -341,6 +358,26 @@ class TaskBus:
         if adapter_name is None:
             return None
         return self._registry.get(adapter_name)
+
+    def _resolve_known_task(self, task_ref: str) -> TaskSnapshot | TaskAck:
+        if task_ref in self._tasks:
+            return self._tasks[task_ref]
+        matches = tuple(
+            snapshot for task_id, snapshot in self._tasks.items() if task_id.startswith(task_ref)
+        )
+        if len(matches) == 1:
+            return matches[0]
+        if matches:
+            return TaskAck(
+                task_id=task_ref,
+                status=AckStatus.REJECTED,
+                reason=f"multiple matching tasks: {_task_refs(matches)}",
+            )
+        return TaskAck(
+            task_id=task_ref,
+            status=AckStatus.REJECTED,
+            reason=f"unknown task: {task_ref}",
+        )
 
     def _adapter_name_for_task(self, task: Task) -> str:
         persona = self._resolve_persona(task.target_persona)
@@ -490,6 +527,10 @@ def _approval_reason(risk: RiskAssessment) -> str:
 
 def _pending_task_refs(approvals: tuple[ApprovalRequest, ...] | list[ApprovalRequest]) -> str:
     return ", ".join(_short_task_id(approval.task.task_id) for approval in approvals)
+
+
+def _task_refs(tasks: tuple[TaskSnapshot, ...]) -> str:
+    return ", ".join(_short_task_id(task.task_id) for task in tasks)
 
 
 def _short_task_id(task_id: str) -> str:

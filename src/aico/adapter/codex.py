@@ -30,6 +30,7 @@ class CodexAdapter(ClaudeCodeAdapter):
         cwd: Path | None = None,
         process_factory: ProcessFactory | None = None,
         interrupt_timeout_seconds: float = 5.0,
+        output_idle_timeout_seconds: float | None = 90.0,
     ) -> None:
         super().__init__(
             adapter_name="codex",
@@ -37,6 +38,7 @@ class CodexAdapter(ClaudeCodeAdapter):
             cwd=cwd,
             process_factory=process_factory,
             interrupt_timeout_seconds=interrupt_timeout_seconds,
+            output_idle_timeout_seconds=output_idle_timeout_seconds,
         )
 
     def capabilities(self) -> frozenset[Capability]:

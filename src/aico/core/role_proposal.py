@@ -4,12 +4,108 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
-from aico.core.project_assignment import ProjectProfile, RoleProfile
+from aico.core.agent_session import (
+    AgentSession,
+    InMemoryAgentSessionStore,
+    ProviderSessionMode,
+    provider_session_from_task,
+)
+from aico.core.models import AckStatus, IncomingMessage, MetadataEntry, OutputType, Task
+from aico.core.project_assignment import (
+    AssignmentProfile,
+    ProjectAssignmentDirectory,
+    ProjectProfile,
+    RoleProfile,
+)
+
+if TYPE_CHECKING:
+    from aico.core.task_bus import TaskBus
 
 ROLE_PROPOSAL_INTENT = "role_proposal"
 ROLE_PROPOSAL_INTENT_KEY = "aico.intent"
+RoleTaskFactory = Callable[
+    [IncomingMessage, str, AssignmentProfile, str],
+    tuple[Task, AgentSession | None],
+]
+
+
+class RoleProposalCoordinator:
+    """Run the internal read-only task that drafts a project role."""
+
+    def __init__(
+        self,
+        *,
+        task_bus: TaskBus,
+        session_store: InMemoryAgentSessionStore,
+        project_directory: ProjectAssignmentDirectory,
+        task_sessions: dict[str, str],
+        task_for_assignment: RoleTaskFactory,
+    ) -> None:
+        self._task_bus = task_bus
+        self._session_store = session_store
+        self._project_directory = project_directory
+        self._task_sessions = task_sessions
+        self._task_for_assignment = task_for_assignment
+
+    async def propose(
+        self,
+        message: IncomingMessage,
+        project: ProjectProfile,
+        request: str,
+    ) -> RoleProfile | str:
+        assignment = self._project_directory.default_assignment(project.id)
+        if assignment is None:
+            return f"No lead role appointed in {project.id}. Appoint a lead first."
+        task, session = self._task_for_assignment(
+            message,
+            project.id,
+            assignment,
+            role_proposal_prompt(project, request),
+        )
+        output = await self._collect_task_output(
+            _task_with_role_proposal_intent(task),
+            None if session is None else session.session_id,
+        )
+        if output.startswith("Role proposal failed:"):
+            return output
+        try:
+            return role_from_llm_output(output, request)
+        except ValueError as exc:
+            return f"Role proposal failed: {exc}"
+
+    async def _collect_task_output(self, task: Task, session_id: str | None) -> str:
+        if session_id is not None:
+            self._task_sessions[task.task_id] = session_id
+        ack = await self._task_bus.submit(task)
+        if ack.status is not AckStatus.ACCEPTED:
+            if session_id is not None:
+                self._task_sessions.pop(task.task_id, None)
+            return f"Role proposal failed: {ack.reason or ack.status.value}"
+        if session_id is not None:
+            self._session_store.mark_busy(session_id, task.task_id)
+        chunks: list[str] = []
+        try:
+            async for output in self._task_bus.stream_output(task.task_id):
+                if output.type is OutputType.ERROR:
+                    return f"Role proposal failed: {output.content}"
+                if output.type in {OutputType.TEXT, OutputType.DONE} and output.content:
+                    chunks.append(output.content)
+            if session_id is not None:
+                self._mark_provider_initialized(session_id, task)
+        finally:
+            if session_id is not None:
+                self._session_store.mark_idle(session_id)
+                self._task_sessions.pop(task.task_id, None)
+        return "".join(chunks)
+
+    def _mark_provider_initialized(self, session_id: str, task: Task) -> None:
+        provider_session = provider_session_from_task(task)
+        if provider_session is None or provider_session.mode is not ProviderSessionMode.NEW:
+            return
+        self._session_store.mark_provider_initialized(session_id)
 
 
 def role_proposal_prompt(project: ProjectProfile, request: str) -> str:
@@ -85,3 +181,14 @@ def _role_id(value: str) -> str:
     normalized = re.sub(r"[^a-z0-9-]+", "-", lowered)
     normalized = re.sub(r"-+", "-", normalized).strip("-")
     return normalized or "custom-role"
+
+
+def _task_with_role_proposal_intent(task: Task) -> Task:
+    return task.model_copy(
+        update={
+            "metadata": (
+                *task.metadata,
+                MetadataEntry(key=ROLE_PROPOSAL_INTENT_KEY, value=ROLE_PROPOSAL_INTENT),
+            )
+        }
+    )

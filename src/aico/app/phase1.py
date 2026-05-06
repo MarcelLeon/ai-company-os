@@ -62,6 +62,7 @@ class Phase1Settings(BaseSettings):
         default="codex --ask-for-approval never exec --sandbox read-only --color never",
         min_length=1,
     )
+    codex_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
     persona_config_path: Path | None = None
     project_config_path: Path | None = None
     approval_reviewer_ids: str = ""
@@ -128,6 +129,7 @@ def build_phase1_runtime(settings: Phase1Settings) -> Phase1Runtime:
             CodexAdapter(
                 command=settings.codex_command_tuple(),
                 cwd=settings.claude_working_directory,
+                output_idle_timeout_seconds=settings.codex_output_idle_timeout_seconds,
             )
         )
     registry = AdapterRegistry(

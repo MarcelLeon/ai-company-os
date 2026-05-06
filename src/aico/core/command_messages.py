@@ -7,9 +7,11 @@ from aico.core.models import (
     AckStatus,
     AdapterSnapshot,
     AuditEvent,
+    AuditEventType,
     MessageContent,
     RiskLevel,
     TaskSnapshot,
+    TaskStatus,
 )
 
 SKILLS_PROMPT = (
@@ -50,6 +52,46 @@ def status_message(
         lines.append("")
         lines.append("Recent tasks:")
         lines.extend(_task_status_line(snapshot) for snapshot in task_snapshots)
+    return MessageContent(text="\n".join(lines))
+
+
+def tasks_message(task_snapshots: tuple[TaskSnapshot, ...]) -> MessageContent:
+    if not task_snapshots:
+        return MessageContent(text="No recent tasks")
+    lines = ["Recent tasks:"]
+    lines.extend(_task_status_line(snapshot) for snapshot in task_snapshots)
+    lines.append("")
+    lines.append("Use /task <task_id> for details.")
+    return MessageContent(text="\n".join(lines))
+
+
+def task_detail_message(
+    snapshot: TaskSnapshot,
+    audit_events: tuple[AuditEvent, ...] = (),
+) -> MessageContent:
+    short_id = short_id_text(snapshot.task_id)
+    lines = [
+        f"Task: {short_id}",
+        f"id: {snapshot.task_id}",
+        f"target: {snapshot.target_persona}",
+        f"adapter: {snapshot.adapter_name or '-'}",
+        f"status: {snapshot.status.value}",
+        f"risk: {snapshot.risk_level.value}",
+        f"created: {snapshot.created_at.isoformat()}",
+        f"updated: {snapshot.updated_at.isoformat()}",
+    ]
+    if snapshot.reason:
+        lines.append(f"reason: {snapshot.reason}")
+    collaboration_lines = _task_collaboration_lines(snapshot, audit_events)
+    if collaboration_lines:
+        lines.append("")
+        lines.append("Collaboration:")
+        lines.extend(collaboration_lines)
+    actions = _task_action_lines(snapshot, short_id)
+    if actions:
+        lines.append("")
+        lines.append("Actions:")
+        lines.extend(actions)
     return MessageContent(text="\n".join(lines))
 
 
@@ -112,6 +154,66 @@ def _task_status_line(snapshot: TaskSnapshot) -> str:
     if snapshot.reason:
         line = f"{line} - {snapshot.reason}"
     return line
+
+
+def _task_action_lines(snapshot: TaskSnapshot, short_id: str) -> tuple[str, ...]:
+    if snapshot.status is TaskStatus.RUNNING:
+        return (f"- /interrupt {short_id}",)
+    if snapshot.status is TaskStatus.WAITING_APPROVAL:
+        return (f"- /approve {short_id}", f"- /reject {short_id}")
+    return ()
+
+
+def _task_collaboration_lines(
+    snapshot: TaskSnapshot,
+    audit_events: tuple[AuditEvent, ...],
+) -> tuple[str, ...]:
+    lines: list[str] = []
+    parent_event = next(
+        (
+            event
+            for event in audit_events
+            if event.event_type is AuditEventType.COLLABORATION_REQUESTED
+            and event.task_id == snapshot.task_id
+        ),
+        None,
+    )
+    if parent_event is not None:
+        parent_id = _collaboration_parent_task_id(parent_event)
+        lines.append(f"- requested by: {parent_event.actor_id}")
+        if parent_id is not None:
+            parent_short_id = short_id_text(parent_id)
+            lines.append(f"- parent: {parent_short_id} (/task {parent_short_id})")
+
+    child_lines = tuple(_collaboration_child_lines(snapshot, audit_events))
+    if child_lines:
+        lines.append("- children:")
+        lines.extend(f"  - {line}" for line in child_lines)
+    return tuple(lines)
+
+
+def _collaboration_child_lines(
+    snapshot: TaskSnapshot,
+    audit_events: tuple[AuditEvent, ...],
+) -> tuple[str, ...]:
+    lines: list[str] = []
+    for event in audit_events:
+        if event.event_type is not AuditEventType.COLLABORATION_REQUESTED:
+            continue
+        if _collaboration_parent_task_id(event) != snapshot.task_id:
+            continue
+        child_short_id = short_id_text(event.task_id)
+        lines.append(f"{child_short_id} -> {event.target_persona} (/task {child_short_id})")
+    return tuple(lines)
+
+
+def _collaboration_parent_task_id(event: AuditEvent) -> str | None:
+    if event.detail is None:
+        return None
+    key, separator, value = event.detail.partition("=")
+    if key != "parent_task" or not separator or not value:
+        return None
+    return value.strip() or None
 
 
 def _audit_event_block(event: AuditEvent) -> str:

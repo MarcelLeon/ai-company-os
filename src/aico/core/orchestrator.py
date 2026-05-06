@@ -29,7 +29,6 @@ from aico.core.models import (
     AckStatus,
     IncomingMessage,
     MessageContent,
-    MetadataEntry,
     OutputType,
     SentMessage,
     Task,
@@ -38,18 +37,12 @@ from aico.core.orchestrator_commands import DirectoryCommandHandler
 from aico.core.project_assignment import (
     AssignmentProfile,
     ProjectAssignmentDirectory,
-    ProjectProfile,
-    RoleProfile,
     task_with_assignment_context,
 )
 from aico.core.project_commands import ProjectCommandHandler
+from aico.core.project_summary import ProjectSummaryCoordinator
 from aico.core.prompt_stack import render_appointment_prompt
-from aico.core.role_proposal import (
-    ROLE_PROPOSAL_INTENT,
-    ROLE_PROPOSAL_INTENT_KEY,
-    role_from_llm_output,
-    role_proposal_prompt,
-)
+from aico.core.role_proposal import RoleProposalCoordinator
 from aico.core.router import MessageRouter
 from aico.core.session_commands import (
     has_explicit_task_target,
@@ -84,6 +77,20 @@ class Orchestrator:
         self._project_directory = project_directory or ProjectAssignmentDirectory()
         self._task_sessions: dict[str, str] = {}
         self._assignment_sessions: dict[str, str] = {}
+        self._role_proposals = RoleProposalCoordinator(
+            task_bus=self._task_bus,
+            session_store=self._session_store,
+            project_directory=self._project_directory,
+            task_sessions=self._task_sessions,
+            task_for_assignment=self._internal_task_for_assignment,
+        )
+        self._project_summaries = ProjectSummaryCoordinator(
+            task_bus=self._task_bus,
+            session_store=self._session_store,
+            project_directory=self._project_directory,
+            task_sessions=self._task_sessions,
+            task_for_assignment=self._internal_task_for_assignment,
+        )
         self._directory_commands = DirectoryCommandHandler(
             channel=self._channel,
             router=self._router,
@@ -100,7 +107,8 @@ class Orchestrator:
             agent_directory=self._agent_directory,
             project_directory=self._project_directory,
             run_role_task=self._run_project_role_task,
-            propose_role=self._propose_project_role,
+            propose_role=self._role_proposals.propose,
+            summarize_project=self._project_summaries.summarize,
         )
 
     def bind(self) -> None:
@@ -203,6 +211,25 @@ class Orchestrator:
             ack_failure_message(ack.status, ack.reason),
         )
 
+    async def _handle_interrupt(self, message: IncomingMessage, task_ref: str) -> None:
+        if not task_ref:
+            await self._channel.send_message(
+                message.source,
+                MessageContent(text="Usage: /interrupt <task_id>"),
+            )
+            return
+        ack = await self._task_bus.interrupt(task_ref)
+        if ack.status is not AckStatus.ACCEPTED:
+            await self._channel.send_message(
+                message.source,
+                ack_failure_message(ack.status, ack.reason),
+            )
+            return
+        await self._channel.send_message(
+            message.source,
+            MessageContent(text=f"Task interrupted: {short_id_text(ack.task_id)}"),
+        )
+
     async def _run_task(
         self,
         message: IncomingMessage,
@@ -289,40 +316,6 @@ class Orchestrator:
             session_id=None if session is None else session.session_id,
         )
 
-    async def _propose_project_role(
-        self,
-        message: IncomingMessage,
-        project: ProjectProfile,
-        request: str,
-    ) -> RoleProfile | str:
-        assignment = self._project_directory.default_assignment(project.id)
-        if assignment is None:
-            return f"No lead role appointed in {project.id}. Appoint a lead first."
-        task, session = self._task_for_assignment(
-            message,
-            project.id,
-            assignment,
-            payload=role_proposal_prompt(project, request),
-        )
-        task = task.model_copy(
-            update={
-                "metadata": (
-                    *task.metadata,
-                    MetadataEntry(key=ROLE_PROPOSAL_INTENT_KEY, value=ROLE_PROPOSAL_INTENT),
-                )
-            }
-        )
-        output = await self._collect_task_output(
-            task,
-            None if session is None else session.session_id,
-        )
-        if output.startswith("Role proposal failed:"):
-            return output
-        try:
-            return role_from_llm_output(output, request)
-        except ValueError as exc:
-            return f"Role proposal failed: {exc}"
-
     def _task_for_message(
         self,
         message: IncomingMessage,
@@ -353,6 +346,15 @@ class Orchestrator:
             )
             task = task_with_provider_session(task, session.provider_ref, mode)
         return task, session
+
+    def _internal_task_for_assignment(
+        self,
+        message: IncomingMessage,
+        project_id: str,
+        assignment: AssignmentProfile,
+        payload: str,
+    ) -> tuple[Task, AgentSession | None]:
+        return self._task_for_assignment(message, project_id, assignment, payload=payload)
 
     def _task_for_assignment(
         self,
@@ -425,31 +427,6 @@ class Orchestrator:
             )
         self._assignment_sessions[assignment.seat] = session.session_id
         return session
-
-    async def _collect_task_output(self, task: Task, session_id: str | None) -> str:
-        if session_id is not None:
-            self._task_sessions[task.task_id] = session_id
-        ack = await self._task_bus.submit(task)
-        if ack.status is not AckStatus.ACCEPTED:
-            if session_id is not None:
-                self._task_sessions.pop(task.task_id, None)
-            return f"Role proposal failed: {ack.reason or ack.status.value}"
-        if session_id is not None:
-            self._session_store.mark_busy(session_id, task.task_id)
-        chunks: list[str] = []
-        try:
-            async for output in self._task_bus.stream_output(task.task_id):
-                if output.type is OutputType.ERROR:
-                    return f"Role proposal failed: {output.content}"
-                if output.type in {OutputType.TEXT, OutputType.DONE} and output.content:
-                    chunks.append(output.content)
-            if session_id is not None:
-                self._mark_provider_initialized(session_id, task)
-        finally:
-            if session_id is not None:
-                self._session_store.mark_idle(session_id)
-                self._task_sessions.pop(task.task_id, None)
-        return "".join(chunks)
 
     def _mark_provider_initialized(self, session_id: str, task: Task) -> None:
         provider_session = provider_session_from_task(task)
@@ -559,6 +536,10 @@ async def _handle_command(
                 orchestrator._task_bus.task_snapshots(),
             ),
         )
+    elif command.name is CommandName.TASKS:
+        await orchestrator._directory_commands.handle_tasks(message, command.payload)
+    elif command.name is CommandName.TASK:
+        await orchestrator._directory_commands.handle_task(message, command.payload)
     elif command.name is CommandName.AUDIT:
         await orchestrator._channel.send_message(
             message.source,
@@ -613,6 +594,8 @@ async def _handle_command(
     elif command.name is CommandName.REJECT:
         task_id, reason = reject_parts(command)
         await orchestrator._handle_rejection(message, task_id, reason)
+    elif command.name is CommandName.INTERRUPT:
+        await orchestrator._handle_interrupt(message, command.payload)
     elif command.name is CommandName.BROADCAST:
         await orchestrator._handle_broadcast(message, command.payload)
     elif command.name is CommandName.SESSIONS:

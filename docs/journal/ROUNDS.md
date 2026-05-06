@@ -2194,3 +2194,659 @@
 ### 状态变化
 - Phase 5 进度新增 Role proposal confirmation MVP。
 - 下一轮建议新增 Role 创建确认流真实验收与 Orchestrator 结构拆分。
+
+## Round 48 — 2026-05-05 — Codex
+
+### 输入
+- 人类确认以下真实 Telegram 验收均已通过:
+  - 重复 `/appoint ... as tester ...` 不会让 `/team` 出现多个 tester。
+  - `/lead tester` 后 `/team` 能显示当前 lead。
+  - `/role propose` 后 `/role confirm`,新增 role 能在 `/roles` 中看到。
+- 人类要求继续按优先级拆分和开发,有重要决策再询问。
+
+### 思考与讨论
+
+**功能选择**:
+- 候选 A:直接开始 IM 富文本 render contract → ❌ **暂缓**:这是下一项高优先级产品能力,但 Round 47 已明确 `Orchestrator` 接近 500 行硬约束,继续扩行为前应先拆结构。
+- 候选 B:直接做项目状态命令 LLM 总结 → ❌ **暂缓**:需要 provider 调用和事实包策略,也会继续加重命令 / task collection 路径。
+- 候选 C:先拆 role proposal / collect output helper → ✅ **选定**:行为不变、风险低,直接清掉继续开发前的结构债。
+
+**拆分边界**:
+- `Orchestrator` 继续负责 IM 入站、命令分发、普通任务流式输出和 appointment task 构造。
+- 新增 `RoleProposalCoordinator` 负责 role proposal 内部任务提交、输出收集、provider session busy/idle、provider initialized 标记和 LLM JSON 解析。
+- 用户可见语义保持不变:`/role propose` 仍由当前项目 lead role 起草,`/role confirm` 仍只加入当前进程内 project roles。
+
+### 产出
+- `src/aico/core/role_proposal.py` 新增 `RoleProposalCoordinator`。
+- `Orchestrator` 初始化时创建 coordinator,并把 `ProjectCommandHandler.propose_role` 回调改为 `RoleProposalCoordinator.propose`。
+- 删除 `Orchestrator._propose_project_role()` 和 `_collect_task_output()`。
+- `Orchestrator` 类体从 482 行降到 439 行,继续低于单类 <500 行硬约束。
+- 拆分时发现 `risk -> role_proposal -> task_bus -> risk` 循环导入,将 `TaskBus` 改成 type-checking only import。
+- 继续实现 IM render contract 第一切片:
+  - `MessageContent` 新增平台无关 `MessageTextSpan` 和 `MessageAction`。
+  - Telegram Channel 将 spans 映射为 HTML `parse_mode`,将 actions 映射为 `inline_keyboard`。
+  - 没有 spans/actions 的既有纯文本消息 payload 保持不变。
+- 新增 ADR-0013,明确不在核心层写 Telegram HTML / MarkdownV2 / `reply_markup`。
+- 更新 `STATUS.md`、`CHANGELOG.md` 和 ADR 索引。
+- 完整验证通过:153 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`。
+
+### 关键决策
+- 🔒 **决策 1**:本轮只做结构拆分,不改变 role proposal 的产品语义。
+- 🔒 **决策 2**:role proposal 的运行时协调归 `RoleProposalCoordinator`,prompt/JSON 解析仍留在同一 role proposal 模块内,避免为单一流程过早拆出更多抽象。
+- 🔒 **决策 3**:循环导入用 type-checking import 解开,不把 risk 常量迁到新公共模块;当前只有 role proposal 需要这组 intent 常量。
+- 🔒 **决策 4**:IM 富文本和按钮能力先进入 `MessageContent` 的平台无关 hints,Telegram 只在 Channel 出口映射为 HTML / inline keyboard。
+
+### 留给下一轮
+- 将 IM render contract 用到项目办公室关键消息,优先改 `/project`、`/team`、`/roles` 和审批 / 确认类输出。
+- 设计 `/brief`、`/risks`、`/blockers`、`/next` 的 LLM 顶部摘要时,保留“本地事实包 + provider 只读总结 + 原始事实”的可审计结构。
+- 继续安排 Codex bind、Claude resume/长文本和 Phase 5 `@reviewer` 协作 smoke test 的真实 IM 复测。
+
+### 状态变化
+- Project Team / Appointment Telegram 真实验收:未完成 → 完成。
+- Role proposal confirmation Telegram 真实验收:未记录 → 完成。
+- Phase 5 进度新增 Orchestrator role proposal helper 拆分。
+- Phase 5 进度新增 Platform-neutral IM render contract 第一切片。
+
+## Round 49 — 2026-05-06 — Codex
+
+### 输入
+- 人类要求继续开发,没有重要决策可以多开发两轮,之后统一验收能力。
+- `STATUS.md` 下一轮最高优先级是将 IM render contract 用到项目办公室关键消息。
+
+### 思考与讨论
+
+**功能选择**:
+- 候选 A:直接做 `/brief` 等项目状态命令 LLM 总结 → ❌ **暂缓**:涉及 provider 调用策略和摘要事实包,仍比 render contract 应用更大。
+- 候选 B:先将 spans/actions 用到项目办公室消息 → ✅ **选定**:ADR-0013 已定边界,这是自然落地切片,不会改变核心命令语义。
+- 候选 C:同时补 Telegram callback query → ✅ **选定**:role proposal 已能带 Confirm / Discard actions,如果不处理 callback query,按钮只会显示不能实际复用命令通路。
+
+### 产出
+- `project_messages.py` 新增 `_heading_message()`,为项目办公室关键消息首行增加 `MessageTextSpan(BOLD)`:
+  - `/project`
+  - `/team`
+  - `/roles`
+  - `/who`
+  - `/appoint`
+  - `/unappoint`
+  - `/lead`
+  - `/role propose` / `/role confirm`
+  - 项目 brief / risks / blockers / next / daily / weekly 的本地事实消息
+- `role_proposal_message()` 新增两个 actions:
+  - `Confirm` → `/role confirm`
+  - `Discard` → `/role discard`
+- Telegram Channel 新增 `callback_query` 处理:
+  - callback data 被转换成 `IncomingMessage.content.text`,复用现有 command parser。
+  - 发送 `answerCallbackQuery`,避免 Telegram 客户端按钮点击后持续 loading。
+- 更新测试:
+  - Telegram callback query 转换为 incoming message。
+  - role proposal 消息带 `/role confirm` / `/role discard` actions。
+  - 对富文本消息的行为测试改为断言 `.text`,避免 spans 变化误伤业务断言。
+- 更新 `STATUS.md`、`CHANGELOG.md` 和 `docs/human/daily-ops.md`。
+- 完整验证通过:154 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`。
+
+### 关键决策
+- 🔒 **决策 1**:按钮 action value 复用现有 slash command 文本,不引入第二套 callback command 协议。
+- 🔒 **决策 2**:Telegram callback query 在 Channel 层转成普通 `IncomingMessage`,核心编排层不感知 Telegram callback 细节。
+- 🔒 **决策 3**:本轮只给项目办公室消息加基础 heading span 和 role proposal 确认按钮,不做完整卡片布局。
+
+### 留给下一轮
+- 真实 Telegram 验收:
+  - `/project aico`、`/team`、`/roles` 首行应加粗。
+  - `/role propose 需要一个增长分析岗位` 应出现 Confirm / Discard 按钮。
+  - 点击 Confirm 应等价于发送 `/role confirm`,点击 Discard 应等价于发送 `/role discard`。
+- 下一步进入项目状态命令 LLM 总结:先做“本地事实包 + lead/pm provider 只读总结 + 原始事实保留”的 MVP。
+- 继续安排 Codex bind、Claude resume/长文本和 Phase 5 `@reviewer` 协作 smoke test 的真实 IM 复测。
+
+### 状态变化
+- Phase 5 进度新增 Project office key messages 使用 render hints。
+- Phase 5 进度新增 Telegram callback query 转入现有命令通路。
+
+## Round 50 — 2026-05-06 — Codex
+
+### 输入
+- 人类已验证 Round 49 的 Telegram render / button 能力有效。
+- 人类要求继续开发后续能力。
+- `STATUS.md` 下一轮最高优先级是项目状态命令 LLM 总结。
+
+### 思考与讨论
+
+**功能选择**:
+- 候选 A:给 `/brief`、`/risks`、`/blockers`、`/next` 增加顶部 LLM 摘要 → ✅ **选定**:这正是当前最高优先级,并且有明确边界“事实包 + 只读总结 + 原始事实保留”。
+- 候选 B:同时给 `/daily`、`/weekly` 加摘要 → ❌ **暂缓**:日报/周报更长,真实体验和延迟风险更高;先让短状态命令闭环。
+- 候选 C:让 LLM 摘要替换原有事实输出 → ❌ **否决**:违反可审计原则,也容易让 hallucination 掩盖真实本地状态。
+
+**实现边界**:
+- Summary 输入只取本地事实消息文本,不直接读取额外文件或隐藏状态。
+- Summary task 走当前项目 lead appointment/provider session,延续项目办公室语义。
+- Summary 失败时发送原事实消息,不让 provider 忙或失败影响 `/brief` 等状态命令。
+
+### 产出
+- 新增 `src/aico/core/project_summary.py`:
+  - `ProjectSummaryCoordinator`
+  - `project_summary_prompt()`
+  - 内部 `aico.intent=project_summary` 标记
+- `ProjectCommandHandler` 新增可选 `summarize_project` 回调。
+- `/brief`、`/risks`、`/blockers`、`/next` 先生成本地事实消息,再尝试生成 `Boss summary` 顶部摘要。
+- `project_summary_message()` 保留完整 `Facts` 原文,并为 `Boss summary` / `Facts` 加 heading spans。
+- `TextRiskAssessor` 将内部 project summary task 视为 read-only,避免事实文本中的 `run` / `write` / `/approve` 等词误触发审批。
+- 新增/更新测试:
+  - summary 成功时顶部出现 `Boss summary`,事实原文仍保留。
+  - summary submit 失败时仍发送原事实消息。
+  - project summary intent 不触发风险审批。
+  - acceptance flow 过滤内部 summary task 后仍确认业务任务路由正确。
+- 更新 `STATUS.md`、`CHANGELOG.md` 和 `docs/human/daily-ops.md`。
+- 完整验证通过:156 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`。
+
+### 关键决策
+- 🔒 **决策 1**:LLM summary 是顶部管理摘要,不是事实源;原始事实必须完整保留。
+- 🔒 **决策 2**:summary task 失败时静默降级为事实输出,不新增用户可见错误噪音。
+- 🔒 **决策 3**:本轮只覆盖 `/brief`、`/risks`、`/blockers`、`/next`,日报/周报是否摘要留给真实体验后判断。
+
+### 留给下一轮
+- 真实 Telegram 验收:
+  - `/brief`
+  - `/risks`
+  - `/blockers`
+  - `/next`
+  - 期望顶部出现 `Boss summary`,下方保留 `Facts`。
+- 继续复测 Project office render 和 role proposal buttons。
+- 继续安排 Codex bind、Claude resume/长文本和 Phase 5 `@reviewer` 协作 smoke test 的真实 IM 复测。
+
+### 状态变化
+- Phase 5 进度新增 Project status LLM summary MVP。
+
+## Round 51 — 2026-05-06 — Codex
+
+### 输入
+- 人类验证 Round 50 的 Boss summary 内容有效,但指出格式问题:
+  - 只有最上方标题有样式。
+  - summary 内部无序列表、`**bold**`、反引号等 Markdown 语法没有被渲染。
+- 人类要求修复字体样式后继续开发后续内容。
+
+### 思考与讨论
+
+**样式修复选择**:
+- 候选 A:让 Telegram Channel 直接解析 Markdown → ❌ **否决**:会把 Telegram 视图逻辑和 Markdown 方言耦合到 Channel,也不利于 Feishu / Kim 复用。
+- 候选 B:要求 LLM 不输出 Markdown → ❌ **否决**:能减少裸露标记,但不能解决“加粗/代码/列表需要可渲染语义”的问题。
+- 候选 C:在核心消息层把 summary 轻量 Markdown 转为 `MessageTextSpan` → ✅ **选定**:继续遵守 ADR-0013,核心输出平台无关 spans,Telegram 只负责映射 HTML。
+
+**后续能力选择**:
+- 候选 A:继续扩展 summary 到 `/daily` / `/weekly` → ✅ **选定**:人类已确认短状态 summary 内容基本可用,报告命令可以复用同一事实保留策略。
+- 候选 B:继续新增项目命令 → ❌ **暂缓**:`ProjectCommandHandler` 已约 482 行,继续加命令前应先拆。
+
+### 产出
+- 修复 `project_summary_message()` 的 summary 文本渲染:
+  - `- ` / `* ` 列表前缀转换为 `• `。
+  - `**bold**` 转为干净文本 + `MessageTextSpan(BOLD)`。
+  - `` `code` `` 转为干净文本 + `MessageTextSpan(CODE)`。
+  - `*italic*` 转为干净文本 + `MessageTextSpan(ITALIC)`。
+  - `Boss summary`、summary 内部 spans、`Facts` 和 facts 原有 spans 的 offset 会正确叠加。
+- 新增 `tests/unit/test_project_messages.py`,覆盖 summary Markdown 转 spans。
+- `/daily`、`/weekly` 也改为走 `Boss summary + Facts` 输出。
+- 更新 acceptance/report 相关单测,过滤内部 `project_summary` task 后继续验证业务任务路由。
+- 更新 `STATUS.md`、`CHANGELOG.md` 和 `docs/human/daily-ops.md`。
+- 完整验证通过:见本轮交接。
+
+### 关键决策
+- 🔒 **决策 1**:summary 轻量 Markdown 在核心消息层转换为平台无关 spans,不在 Telegram Channel 内直接解析 Markdown。
+- 🔒 **决策 2**:`/daily`、`/weekly` 复用同一 summary 降级策略;summary 失败仍输出原事实报告。
+- 🔒 **决策 3**:继续加项目命令前先拆 `ProjectCommandHandler`,避免触碰单类 <500 行硬约束。
+
+### 留给下一轮
+- 真实 Telegram 验收:
+  - `/brief`、`/risks`、`/blockers`、`/next`、`/daily`、`/weekly`
+  - Boss summary 中 `**bold**`、`` `code` ``、`*italic*` 不应裸露。
+  - 列表应显示为 `• `。
+  - 下方仍保留完整 `Facts`。
+- 下一次代码开发如果继续改项目命令,优先拆 `ProjectCommandHandler` 的 summary/report/role proposal 相关职责。
+- 继续安排 Codex bind、Claude resume/长文本和 Phase 5 `@reviewer` 协作 smoke test 的真实 IM 复测。
+
+### 状态变化
+- Phase 5 进度新增 Project summary Markdown 转 render spans。
+- Phase 5 进度新增 Project report LLM summary MVP(`/daily` / `/weekly`)。
+
+## Round 52 — 2026-05-06 — Codex
+
+### 输入
+- 人类继续真实 Telegram 验收:
+  - `/project`、`/team`、`/roles` 首行加粗和 `/role propose` Confirm / Discard 按钮已验证通过。
+  - `/blockers` 依然没有格式。
+  - `/brief` 和 `/next` 的 `Boss summary` 部分有正确格式,但 `Facts` 部分没有格式样式。
+- 人类要求给出 Phase 5 `@reviewer ...` 真实协作 smoke test 的样例 prompt。
+
+### 思考与讨论
+
+**Facts 渲染问题判断**:
+- 候选 A:在 Telegram Channel 中根据文本内容解析 `/blockers`、`Facts`、`waiting decisions:` 等格式 → ❌ **否决**:会把 Telegram 出口和项目办公室文案耦合,违反 ADR-0013 的平台无关 render contract。
+- 候选 B:只修 `/blockers` 特例 → ❌ **否决**:真实问题是 project facts 消息本身只有首行 span,`/brief`、`/next`、`/daily`、`/weekly` 都会继承同样缺口。
+- 候选 C:增强项目消息层的 `_heading_message()` 生成更丰富的平台无关 spans → ✅ **选定**:小范围修复,让直接发送 facts 和 `Boss summary + Facts` 组合消息都能复用。
+
+**协作 prompt 选择**:
+- 选择要求 Claude 最后一行单独输出 `@reviewer ...` 的 prompt,因为协作解析只接受行首 `@persona request` / `@persona: request`,这样最容易稳定触发真实 smoke test。
+
+### 产出
+- `src/aico/core/project_messages.py`:
+  - `_heading_message()` 改为调用 `_project_message_spans()`。
+  - 首行继续加粗。
+  - 非列表小节标题如 `waiting decisions:`、`team:`、`recent tasks:` 会生成 `MessageTextSpan(BOLD)`。
+  - 文本中的 slash command 如 `/approve`、`/reject`、`/ask`、`/blockers` 会生成 `MessageTextSpan(CODE)`。
+  - `project_summary_message()` 保持原逻辑,继续把 facts spans 平移到 `Facts` 区域。
+- `tests/unit/test_project_messages.py`:
+  - 新增 `/blockers` 小节标题和 slash command spans 覆盖。
+  - 新增 summary 组合消息保留 facts spans 的 offset 覆盖。
+- `docs/human/daily-ops.md`:
+  - 记录 Facts 区域保留原始事实并渲染小节 / slash command 样式。
+  - 补充 Phase 5 协作 smoke test 推荐 prompt。
+- 更新 `STATUS.md` 和 `CHANGELOG.md`。
+- 验证通过:
+  - 159 个单测
+  - `ruff check .`
+  - `ruff format --check .`
+  - `mypy src tests`
+
+### 关键决策
+- 🔒 **决策 1**:Facts 区域样式继续走核心 `MessageTextSpan`,不在 Telegram Channel 中解析项目状态文本。
+- 🔒 **决策 2**:`/blockers` 不做特例;所有项目状态 facts 消息共享小节标题和 slash command 基础样式。
+- 🔒 **决策 3**:本轮只做基础结构样式,不引入完整 Markdown parser 或复杂卡片布局。
+
+### 留给下一轮
+- 人类重启服务后复验:
+  - `/blockers`
+  - `/brief`
+  - `/next`
+  - `/daily`
+  - `/weekly`
+  - 重点看 `Facts` 区域小节标题是否加粗、`/approve` / `/reject` / `/ask` 等命令是否按 code 样式展示。
+- 使用本轮给出的 sample prompt 做 Phase 5 `@reviewer` 真实协作 smoke test,随后查 `/audit` 是否出现 `collaboration_requested`。
+- 下一次代码开发仍优先拆 `ProjectCommandHandler`。
+
+### 状态变化
+- Project office render / role proposal button 真实验收已由人类确认通过。
+- Phase 5 进度新增 Project status Facts 小节 / slash command render spans。
+- 下一轮建议提升为 Project status render 复验和 Phase 5 真实协作 smoke test。
+
+## Round 53 — 2026-05-06 — Codex
+
+### 输入
+- 人类执行上一轮给出的 Phase 5 协作 smoke test prompt。
+- Telegram 已回复 `Collaboration requested: claude -> reviewer`,说明协作指令已触发。
+- 之后卡在 `Task accepted: 31e559c3-bd7c-4e1b-9385-024431f8635a [reviewer]`,没有收到 reviewer 输出。
+
+### 思考与讨论
+
+**定位选择**:
+- 候选 A:继续调整协作 prompt → ❌ **否决**:日志已经有 `Collaboration directive` 和 reviewer child task,说明 prompt / parser 不是当前卡点。
+- 候选 B:继续调 Telegram render / 分片 → ❌ **否决**:日志停在 reviewer `Stream start`,没有后续 `Stream output`,还没进入 Telegram 输出阶段。
+- 候选 C:查 Adapter 进程与日志主链路 → ✅ **选定**:按 P-011 的排障方法 grep task id,确认 Codex CLI 子进程仍在运行但没有 stdout chunk。
+
+**修复选择**:
+- 候选 A:给 Codex Adapter 加硬 timeout → ❌ **暂缓**:不同 review 任务耗时差异大,timeout 策略需要单独设计,否则可能误杀有效长任务。
+- 候选 B:只在文档里写“手动 kill Codex” → ❌ **否决**:北极星第三句要求 AI 行为可中断,不能只依赖人回到机器上处理。
+- 候选 C:补 IM 侧 `/interrupt <task_id>` → ✅ **选定**:底层 Adapter / TaskBus 已有 interrupt 能力,缺的是命令入口和 task id 前缀匹配。
+
+### 产出
+- 新增 `CommandName.INTERRUPT` 和 help 文案。
+- 新增 Orchestrator `_handle_interrupt()`:
+  - 无 task id 时提示 `Usage: /interrupt <task_id>`。
+  - 成功时回复 `Task interrupted: <short_id>`。
+  - 失败时复用 `ack_failure_message()` 给出 unknown / ambiguous / non-running 等原因。
+- `TaskBus.interrupt()` 改为返回 `TaskAck`,支持:
+  - 完整 task id 或前缀匹配。
+  - unknown task 明确拒绝。
+  - 多个匹配 task 明确列出短 ID。
+  - 非 running task 拒绝中断。
+  - running task 调 Adapter interrupt,更新 `interrupted` 状态并写 `task_interrupted` 审计。
+- 新增/更新单测:
+  - `/interrupt abcdef12` 命令解析。
+  - Orchestrator 可按短 ID 中断 running task。
+  - `/interrupt` 无参数提示 usage。
+- 新增 PITFALL P-014。
+- 更新 `STATUS.md`、`CHANGELOG.md`、`docs/human/daily-ops.md` 和 `docs/playbooks/phase-5-collaboration.md`。
+
+### 关键决策
+- 🔒 **决策 1**:本轮先补远程中断入口,不为 Codex Adapter 引入统一 timeout。timeout 需要后续结合任务类型和 provider 行为另行设计。
+- 🔒 **决策 2**:`/interrupt` 支持 task id 前缀,延续 `/approve <short_id>` 的 IM 交互风格。
+- 🔒 **决策 3**:已 done / failed / rejected / interrupted 的任务不重复 interrupt,避免把历史状态误改。
+
+### 留给下一轮
+- 当前正在运行的旧 AICO 进程尚未加载 `/interrupt`,因此这次卡住的 Codex 子进程需要人类先在本机停止服务或杀进程,再重启 AICO。
+- 重启后复验:
+  - `/status` 查 running task。
+  - `/interrupt <short_task_id>` 中断任务。
+  - `/audit` 确认出现 `task_interrupted`。
+- 继续做 Phase 5 真实协作 smoke test。如果 reviewer 再次长时间无输出,先用 `/interrupt` 收口,再考虑 Codex Adapter timeout / heartbeat 设计。
+
+### 状态变化
+- Phase 5 进度新增 IM 远程中断命令(`/interrupt`)。
+- 新增 P-014,记录 reviewer accepted 后 Codex 长时间无 stdout 且 IM 无中断入口的问题。
+
+## Round 54 — 2026-05-06 — Codex
+
+### 输入
+- 人类要求继续开发。
+- 当前最高优先级中的 `/interrupt`、Project status render 和 Phase 5 collaboration smoke 复验都需要人类重启 AICO 服务并在 Telegram 中操作。
+- 代码侧仍有结构债:Project command 类此前多轮持续承接项目办公室、状态报告、团队、岗位和 role proposal 流程,接近单类硬约束。
+
+### 思考与讨论
+
+**功能选择**:
+- 候选 A:继续新增项目命令 → ❌ **否决**:上一轮刚补 `/interrupt`,项目命令类仍需要先降复杂度,继续加命令会让职责边界变糊。
+- 候选 B:拆 Project status/report handler → ❌ **暂缓**:状态 / 报告命令和 summary callback 牵涉 `/brief`、`/risks`、`/blockers`、`/next`、`/daily`、`/weekly`,改动面更大。
+- 候选 C:先拆 role proposal 命令处理 → ✅ **选定**:role proposal 已有独立 `RoleProposalCoordinator`,命令层也有独立 draft 状态,最适合小步拆分且行为不变。
+
+**拆分边界**:
+- `ProjectCommandHandler` 继续作为 Orchestrator 接入的项目命令门面。
+- 新增 `ProjectRoleCommandHandler` 负责 `/role propose`、`/role confirm`、`/role discard` 和 role draft 暂存。
+- `ProjectCommandHandler.handle_role()` 只做薄代理,不再持有 `_role_drafts` 和 `_propose_role` 内部状态。
+
+### 产出
+- 新增 `src/aico/core/project_role_commands.py`:
+  - `ProjectRoleCommandHandler`
+  - `RoleProposalRunner` 类型别名
+  - role proposal / confirm / discard 子流程
+- 更新 `src/aico/core/project_commands.py`:
+  - 注入并委托 `ProjectRoleCommandHandler`。
+  - 删除 `_handle_role_propose()`、`_handle_role_confirm()`、`_handle_role_discard()`。
+  - 删除 `_role_drafts` 和 `_propose_role` 成员。
+- 更新 `CHANGELOG.md` 和 `STATUS.md`。
+- 完整验证通过:
+  - 162 个单测
+  - `ruff check .`
+  - `ruff format --check .`
+  - `mypy src tests`
+
+### 关键决策
+- 🔒 **决策 1**:本轮只做结构拆分,不改变 `/role propose` / `/role confirm` / `/role discard` 的用户语义。
+- 🔒 **决策 2**:Role proposal 的 provider 调用仍归 `RoleProposalCoordinator`,命令层只负责交互状态和确认流。
+- 🔒 **决策 3**:ProjectCommandHandler 继续作为门面保留,避免 Orchestrator 直接知道每个项目命令子 handler。
+
+### 留给下一轮
+- 人类重启服务后继续复验:
+  - `/interrupt <short_task_id>`
+  - `/blockers`
+  - `/brief` / `/next` / `/daily` / `/weekly` Facts 样式
+  - Phase 5 `@reviewer` collaboration smoke test
+- 如果下一轮继续写代码,优先考虑拆 Project status/report handler,不要把新状态命令塞回 `ProjectCommandHandler`。
+
+### 状态变化
+- Phase 5 进度新增 ProjectRoleCommandHandler 结构拆分。
+- `src/aico/core/project_commands.py` 从 544 行降到 475 行。
+
+## Round 55 — 2026-05-06 — Codex
+
+### 输入
+- 人类要求继续开发后续功能。
+- 当前真实复验项仍依赖人类重启服务和 Telegram 操作;代码侧继续推进结构拆分,为后续 Phase 6/8 项目状态能力铺路。
+
+### 思考与讨论
+
+**功能选择**:
+- 候选 A:新增更多项目状态命令 → ❌ **否决**:状态 / 报告命令刚形成一组,继续塞进门面类会重新制造结构债。
+- 候选 B:拆 Project team/assignment handler → ❌ **暂缓**:团队任命流程也值得拆,但当前更容易影响 `/appoint`、`/unappoint`、`/lead` 等老板主路径。
+- 候选 C:拆 Project status/report handler → ✅ **选定**:状态 / 报告命令天然一组,且上轮已经把 role proposal 拆出,本轮继续把 `/brief`、`/risks`、`/blockers`、`/next`、`/daily`、`/weekly` 聚合到独立 handler。
+
+**拆分边界**:
+- `ProjectCommandHandler` 继续作为 Orchestrator 唯一接入门面。
+- 新增 `ProjectStatusCommandHandler` 负责:
+  - 本地 facts 构造。
+  - 文档 snippet 读取。
+  - summary callback 调用。
+  - summary 失败降级到原 facts。
+- `ProjectCommandHandler` 中对应方法只做薄代理,不改变用户可见行为。
+
+### 产出
+- 新增 `src/aico/core/project_status_commands.py`:
+  - `ProjectStatusCommandHandler`
+  - `ProjectSummaryRunner`
+  - `/brief`、`/risks`、`/blockers`、`/next`、`/daily`、`/weekly` 的处理逻辑
+- 更新 `src/aico/core/project_commands.py`:
+  - 注入并委托 `ProjectStatusCommandHandler`。
+  - 删除状态 / 报告 facts 构造、summary 发送和 report helper。
+  - 移除不再需要的 docs/message imports。
+- 更新 `STATUS.md` 和 `CHANGELOG.md`。
+- 定向验证通过:
+  - `tests/unit/test_orchestrator.py`
+  - `tests/unit/test_project_messages.py`
+
+### 关键决策
+- 🔒 **决策 1**:ProjectCommandHandler 保持门面角色,Orchestrator 不直接依赖多个项目子 handler。
+- 🔒 **决策 2**:状态 / 报告 handler 只承接既有行为,不改变 summary 策略、不新增 facts 来源。
+- 🔒 **决策 3**:本轮不做可观测看板或离线托管新功能,先保证项目状态命令结构稳定。
+
+### 留给下一轮
+- 人类重启服务后继续复验:
+  - `/interrupt <short_task_id>`
+  - `/blockers`
+  - `/brief` / `/next` / `/daily` / `/weekly` Facts 样式
+  - Phase 5 `@reviewer` collaboration smoke test
+- 如果继续写代码,下一步可拆 Project team/assignment handler,或在真实复验通过后进入 Phase 6 最小可观测状态 API。
+
+### 状态变化
+- Phase 5 进度新增 ProjectStatusCommandHandler 结构拆分。
+- `src/aico/core/project_commands.py` 从 476 行降到 349 行。
+
+## Round 56 — 2026-05-06 — Codex
+
+### 输入
+- 人类反馈已经复验 `/interrupt` 和 `/blockers`。
+- 本轮继续收口上一轮 Project status/report handler 拆分,补齐完整验证和交接状态。
+
+### 思考与讨论
+
+**当前判断**:
+- `/interrupt` 与 `/blockers` 已经从“待真实复验”变成“已真实复验”,应立即从高优待办移除,避免下一轮重复劳动。
+- `ProjectStatusCommandHandler` 已经拆出,本轮不继续扩大功能面,先把完整验证补齐。
+- 真实协作 smoke test 仍是 Phase 5 最高优先级;如果 reviewer/Codex 再次停在 accepted,现在已有 `/interrupt` 可收口,后续再决定是否做 timeout / heartbeat。
+
+### 产出
+- 更新 `STATUS.md`:
+  - 当前轮次推进到 Round 56。
+  - Phase 5 进度标记 `/interrupt` 和 `/blockers` Telegram 真实复验。
+  - 下一轮建议移除已完成的 `/interrupt` / `/blockers` 复验项,保留 `/brief`、`/next`、`/daily`、`/weekly` Facts 样式抽样。
+- 完整验证通过:
+  - 162 个单测
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:不把已验收的 `/interrupt` 和 `/blockers` 留在最高优待办里。
+- 🔒 **决策 2**:状态 handler 拆分后先验证稳定性,不顺手新增新的项目状态命令。
+- 🔒 **决策 3**:Phase 5 下一步仍优先真实协作 smoke test,代码侧备选是继续拆 Project team/assignment handler。
+
+### 留给下一轮
+- 继续 Phase 5 `@reviewer` collaboration smoke test。
+- 抽样 `/brief`、`/next`、`/daily`、`/weekly` Facts 样式。
+- 若继续写代码,优先拆 Project team/assignment handler;若 smoke test 稳定,可以进入 Phase 6 最小可观测状态 API。
+
+### 状态变化
+- Phase 5 进度新增 `/interrupt` 和 `/blockers` Telegram 真实复验。
+
+## Round 57 — 2026-05-06 — Codex
+
+### 输入
+- 人类复测 Phase 5 `@reviewer` 真实协作 smoke test 后反馈:
+  - 收到 `Task accepted: 1481a413-f886-46bc-b7d4-98cccf295218 [reviewer]`。
+  - 随后长时间没有 reviewer 输出。
+  - `/status` 显示 `claude-code: idle`, `codex: busy`。
+- 人类同时反馈 `/brief`、`/next` 有效果,但 Facts 区域无序列表和 inline Markdown 仍渲染不正确;截图中可见 facts 仍显示 `- ` 和 `**当前 workaround**`。
+
+### 思考与讨论
+
+**Codex 卡住判断**:
+- 协作解析、child task 创建和 adapter dispatch 都已经成功,否则不会出现 `Task accepted ... [reviewer]` 且 `codex: busy`。
+- 真正问题是 Codex CLI 进程 accepted 后一直不向 stdout 写内容,`ClaudeCodeAdapter._stream_reader()` 会无限等待 `readline()`。
+- `/interrupt` 已解决人工收口,但北极星要求远程长期托管也不能无限 busy,因此需要 Adapter 侧自动空闲超时。
+
+**Render 判断**:
+- Round 51 只处理 Boss summary 的轻量 Markdown。
+- Round 52 只给 Facts 小节和 slash command 增加 spans。
+- 真实截图说明 Facts 本身也需要同一套轻量 Markdown 规范化:bullet prefix 和 inline bold/code/italic。
+
+### 产出
+- Codex busy 自动释放:
+  - `ClaudeCodeAdapter` 新增可选 `output_idle_timeout_seconds`。
+  - 如果进程仍在运行但 stdout 在阈值内没有下一行输出,Adapter 会 terminate/kill 底层进程,输出 `adapter output idle timeout after <Ns>`。
+  - `CodexAdapter` 默认启用 90 秒输出空闲超时。
+  - `Phase1Settings` 新增 `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS`。
+- Project Facts render 修复:
+  - `_heading_message()` 改为先逐行规范化再计算 spans。
+  - facts 行首 `- ` / `* ` 转为 `• `。
+  - facts 中 `**bold**`、`` `code` ``、`*italic*` 转为 render spans。
+  - summary + facts 组合消息继续保留平移后的 facts spans。
+- 新增/更新单测:
+  - Codex 默认 idle timeout。
+  - Claude/Codex 复用 adapter 在 stdout 长时间无输出时失败并释放 busy。
+  - Project next/blockers facts bullet 和 inline Markdown 渲染。
+- 更新 `STATUS.md`、`PITFALLS.md`、`docs/playbooks/phase-5-collaboration.md`、`docs/human/daily-ops.md`。
+- 完整验证通过:
+  - 165 个单测
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:只给 Codex 默认启用输出空闲超时,Claude 默认保持不变,避免影响长时间思考但最终有输出的 Claude 主路径。
+- 🔒 **决策 2**:默认阈值设为 90 秒,作为当前 smoke test 和远程托管体验的保守平衡;可用环境变量调整。
+- 🔒 **决策 3**:Project facts 不引入完整 Markdown 解析器,继续使用当前平台无关 render spans 的轻量子集。
+
+### 留给下一轮
+- 先用 `/interrupt 1481a413` 收口旧进程中的 stuck reviewer task,再重启 AICO。
+- 重启后复测 Phase 5 `@reviewer` smoke test:
+  - 理想结果:reviewer 产出真实 review。
+  - 可接受降级:Codex 90 秒无 stdout 后返回 idle timeout,`/status` 恢复 `codex: idle`。
+- 抽样 `/brief`、`/next`、`/daily`、`/weekly`,确认 facts bullet 显示为 `• ` 且 `**...**` 不再裸露。
+
+### 状态变化
+- Phase 5 进度新增 Codex output idle timeout MVP。
+- Phase 5 进度新增 Project Facts bullet / inline Markdown render spans。
+
+## Round 58 — 2026-05-06 — Codex
+
+### 输入
+- 人类复验 `/brief` 后反馈“好了很多”,其他无问题。
+- 剩余问题:文档 snippet 中的 Markdown 标题仍裸露,截图中可见:
+  - `# NORTH_STAR.md — 项目宪法`
+  - `## 第一句:业务价值`
+  - `### 状态变化`
+
+### 思考与讨论
+- Round 57 已处理 facts bullet 和 inline Markdown,但没有处理 Markdown heading。
+- 这些 heading 来自 `ProjectDocumentSnippet.lines`,应该在通用 `_heading_message()` 层统一处理,避免只给 `/brief` 写特例。
+- 继续保持轻量 Markdown 子集,不引入完整 Markdown parser。
+
+### 产出
+- Project Facts Markdown heading render:
+  - 识别行首 `#` 到 `######` + 空格。
+  - 去掉 `#` 前缀。
+  - 对 heading 正文生成 `MessageTextSpan(BOLD)`。
+- 更新 `tests/unit/test_project_messages.py`,覆盖文档 snippet 中的 `#`、`##`、`###`。
+- 更新 `STATUS.md` 和 `ROUNDS.md`。
+- 完整验证通过:
+  - 166 个单测
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:heading 渲染在 `project_messages.py` 通用层处理,覆盖所有 Project status/report 命令。
+- 🔒 **决策 2**:只支持 Markdown heading 的常见行首形态,不解析完整 Markdown 文档。
+
+### 留给下一轮
+- 重启后抽样 `/brief`,确认文档片段中的 `# / ## / ###` 不再裸露,标题加粗。
+- 若 Project status render 复验通过,下一步回到 Phase 5 `@reviewer` smoke test 或继续拆 Project team/assignment handler。
+
+### 状态变化
+- Phase 5 进度新增 Project Facts Markdown heading render spans。
+
+## Round 59 — 2026-05-06 — Codex
+
+### 输入
+- 人类在 Telegram 验证 `/brief` heading render 后反馈“挺好的”,并要求继续开发后续能力。
+- 当前 Phase 5 真实协作 smoke test 仍需要更好的 IM 侧任务追踪,尤其是 reviewer/Codex accepted 后观察、定位、interrupt 和 idle timeout 复验。
+
+### 思考与讨论
+- 候选 A:直接进入 Phase 6 看板 API → ❌ **暂缓**:Phase 5 的真实协作 smoke test 还没完全闭环,先补 IM 侧可观测更符合当前 dogfooding。
+- 候选 B:继续拆 Project team/assignment handler → ❌ **暂缓**:结构债重要,但用户现在持续在 Telegram 验证运行链路,更需要现场排障能力。
+- 候选 C:新增任务追踪命令 → ✅ **选定**:`/status` 只能粗看 adapter busy,`/audit` 偏事件流;需要一个老板能直接看“任务是什么状态、下一步能按什么命令”的入口。
+
+### 产出
+- 新增命令:
+  - `/tasks [limit]`:列出最近任务,默认 10 条,最多 20 条。
+  - `/task <task_id>`:支持完整或短 task id 前缀,展示单任务详情。
+- `/task` 详情包含:
+  - 完整 task id。
+  - target persona。
+  - adapter。
+  - status。
+  - risk。
+  - created / updated 时间。
+  - reason。
+  - 可执行动作。
+- 可执行动作:
+  - running → `/interrupt <short_id>`。
+  - waiting approval → `/approve <short_id>` 和 `/reject <short_id>`。
+- `TaskBus` 新增 `task_snapshot(task_ref)` 只读查询入口,复用已有 short id 前缀匹配。
+- 更新 `help_text()`、`docs/human/daily-ops.md`、`CHANGELOG.md` 和 `STATUS.md`。
+- 新增/更新单测:
+  - 命令解析 `/tasks` / `/task`。
+  - Orchestrator `/tasks` 不提交 Adapter 任务。
+  - `/task` 展示 waiting approval 详情和动作。
+  - `/task` usage / unknown task。
+- 完整验证通过:
+  - 170 个单测
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:`/tasks` 默认 10 条、最多 20 条,避免 Telegram 中输出过长。
+- 🔒 **决策 2**:`/task` 复用现有 short id 前缀匹配,和 `/approve`、`/interrupt` 保持一致。
+- 🔒 **决策 3**:本轮只做 IM 可观测,不引入 HTTP API 或数据库。
+
+### 留给下一轮
+- 重启后真实验收:
+  - `/tasks`
+  - `/task <short_task_id>`
+  - waiting approval action 提示
+  - running task interrupt action 提示
+- 继续 Phase 5 `@reviewer` smoke test,用 `/tasks` / `/task` 观察 Codex accepted 后的状态与 idle timeout。
+
+### 状态变化
+- Phase 5 进度新增 Task trace commands(`/tasks` / `/task`)。
+
+## Round 60 — 2026-05-06 — Codex
+
+### 输入
+- 人类已经验证 `/task` / `/tasks` 相关命令,要求继续开始后续功能开发。
+- Round 59 留下的下一步是继续 Phase 5 `@reviewer` 真实协作 smoke test,并用 IM 侧任务追踪观察 parent / child task 与 Codex idle timeout。
+
+### 思考与讨论
+- 候选 A:直接进入 Phase 6 看板 API → ❌ **继续暂缓**:Phase 5 真实协作还没完全闭环,现在跳到 HTTP/API 看板会扩大范围。
+- 候选 B:给 `TaskSnapshot` / `TaskBus` 增加 parent/child 存储字段 → ❌ **暂缓**:`collaboration_requested` 审计事件已经记录了 child task、source persona 和 `parent_task=<id>`;为了一个 IM 查询视图先改核心任务模型,会让 TaskBus 继续变胖。
+- 候选 C:让 `/task` 详情复用审计事件渲染协作上下游 → ✅ **选定**:最小改动,直接增强真实 smoke test 的现场排障能力,且符合“状态可观测、行为可审计”的北极星。
+
+### 产出
+- 更新 `src/aico/core/command_messages.py`:
+  - `task_detail_message()` 可接收审计事件。
+  - child task 详情展示 `requested by` 和 parent `/task <short_id>` 入口。
+  - parent task 详情展示 child task、目标 persona 和 child `/task <short_id>` 入口。
+- 更新 `src/aico/core/orchestrator_commands.py`:处理 `/task` 时传入当前进程内审计事件。
+- 更新 `tests/unit/test_orchestrator.py`:覆盖 `@reviewer` 协作后查询 parent / child task 详情。
+- 更新 `STATUS.md`、`CHANGELOG.md`、`docs/human/daily-ops.md` 和 Phase 5 collaboration playbook。
+
+### 关键决策
+- 🔒 **决策 1**:本轮不改变 TaskBus 的任务存储模型,协作 trace 先以审计事件为事实来源。
+- 🔒 **决策 2**:`/task` 详情只提供可继续点击/复制的短 ID 入口,不在列表视图 `/tasks` 里堆协作树,避免 Telegram 输出过长。
+
+### 留给下一轮
+- 重启 AICO 后复测 Phase 5 `@reviewer` smoke test。
+- 用 `/tasks` 找到 parent / child task,再分别执行 `/task <parent_short_id>` 和 `/task <child_short_id>`,确认协作 trace 可见。
+- 若 Codex child task 仍无 stdout,确认 90 秒 idle timeout 后 `/status` 恢复 `codex: idle`;若没有恢复,再考虑 heartbeat 或更强的 adapter health 事件。
+
+### 状态变化
+- Phase 5 进度新增 `/task` collaboration parent / child trace。

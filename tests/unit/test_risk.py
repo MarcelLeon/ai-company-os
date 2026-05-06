@@ -1,4 +1,5 @@
 from aico.core import MetadataEntry, RiskLevel, Task, TextRiskAssessor
+from aico.core.project_summary import PROJECT_SUMMARY_INTENT, PROJECT_SUMMARY_INTENT_KEY
 from aico.core.role_proposal import ROLE_PROPOSAL_INTENT, ROLE_PROPOSAL_INTENT_KEY
 
 
@@ -72,6 +73,21 @@ def test_text_risk_assessor_treats_internal_role_proposals_as_read_only() -> Non
         requester_id="user-1",
         target_persona="implementer",
         metadata=(MetadataEntry(key=ROLE_PROPOSAL_INTENT_KEY, value=ROLE_PROPOSAL_INTENT),),
+    )
+
+    risk = TextRiskAssessor().assess(task)
+
+    assert risk.risk_level is RiskLevel.READ_ONLY
+    assert risk.requires_approval is False
+
+
+def test_text_risk_assessor_treats_internal_project_summaries_as_read_only() -> None:
+    task = Task(
+        task_id="task-1",
+        payload="Summarize facts mentioning /approve, run tests, and write docs",
+        requester_id="user-1",
+        target_persona="implementer",
+        metadata=(MetadataEntry(key=PROJECT_SUMMARY_INTENT_KEY, value=PROJECT_SUMMARY_INTENT),),
     )
 
     risk = TextRiskAssessor().assess(task)

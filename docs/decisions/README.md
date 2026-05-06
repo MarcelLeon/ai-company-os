@@ -31,6 +31,7 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0010 | Agent Session 与 Harness 边界 | Accepted | 2026-04-29 |
 | ADR-0011 | Project Assignment Layer | Accepted | 2026-05-04 |
 | ADR-0012 | Boss-Facing Team Commands and Role System | Accepted | 2026-05-04 |
+| ADR-0013 | Platform-Neutral IM Render Contract | Accepted | 2026-05-05 |
 
 **状态图例**:
 - `Proposed`(提议中)

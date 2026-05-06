@@ -28,6 +28,12 @@ class FakeLineReader:
         return self._lines.pop(0)
 
 
+class BlockingLineReader:
+    async def readline(self) -> bytes:
+        await asyncio.Event().wait()
+        return b""
+
+
 class FakeProcess:
     def __init__(
         self,
@@ -36,8 +42,9 @@ class FakeProcess:
         stderr: list[bytes] | None = None,
         return_code: int = 0,
         wait_event: asyncio.Event | None = None,
+        stdout_reader: FakeLineReader | BlockingLineReader | None = None,
     ) -> None:
-        self.stdout = FakeLineReader(stdout)
+        self.stdout = stdout_reader or FakeLineReader(stdout)
         self.stderr = FakeLineReader(stderr or [])
         self.returncode: int | None = None
         self.terminated = False
@@ -236,6 +243,31 @@ async def test_claude_code_adapter_interrupt_terminates_running_process() -> Non
     assert process.terminated
     assert outputs[-1].type is OutputType.ERROR
     assert outputs[-1].content == "task interrupted"
+    assert adapter.status() is AdapterStatus.IDLE
+
+
+async def test_claude_code_adapter_fails_when_process_has_no_output_for_too_long() -> None:
+    process: FakeProcess | None = None
+
+    async def factory(command: tuple[str, ...], cwd: Path | None) -> FakeProcess:
+        nonlocal process
+        _ = (command, cwd)
+        process = FakeProcess(stdout=[], stdout_reader=BlockingLineReader())
+        return process
+
+    adapter = ClaudeCodeAdapter(
+        process_factory=factory,
+        output_idle_timeout_seconds=0.01,
+    )
+
+    ack = await adapter.receive_task(_task("task-1", "long silent"))
+    outputs = [output async for output in adapter.stream_output("task-1")]
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert process is not None
+    assert process.terminated
+    assert outputs[-1].type is OutputType.ERROR
+    assert outputs[-1].content == "adapter output idle timeout after 0.01s"
     assert adapter.status() is AdapterStatus.IDLE
 
 

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 from aico.core.models import (
     AuditEvent,
     AuditEventType,
+    MessageAction,
     MessageContent,
+    MessageTextSpan,
+    MessageTextStyle,
     RiskLevel,
     TaskSnapshot,
     TaskStatus,
@@ -34,7 +38,7 @@ def projects_message(
         marker = " *" if project.id == active_id else ""
         phase = f" - {project.current_phase}" if project.current_phase else ""
         lines.append(f"- {project.id}{marker}: {project.name}{phase}")
-    return MessageContent(text="\n".join(lines))
+    return _heading_message(lines)
 
 
 def project_office_message(
@@ -56,7 +60,7 @@ def project_office_message(
         lines.extend(f"- {_appointment_ref(appointment)}" for appointment in appointments)
     else:
         lines.append("- none")
-    return MessageContent(text="\n".join(lines))
+    return _heading_message(lines)
 
 
 def project_brief_message(
@@ -98,7 +102,7 @@ def project_brief_message(
             *(_document_lines(document_snippets) or ("- none",)),
         )
     )
-    return MessageContent(text="\n".join(lines))
+    return _heading_message(lines)
 
 
 def project_risks_message(
@@ -113,7 +117,7 @@ def project_risks_message(
     lines = [f"Risks: {project.id} [{project.name}]"]
     if not task_risks and not audit_risks and not documented_risks:
         lines.append("- no current project delivery risks found")
-        return MessageContent(text="\n".join(lines))
+        return _heading_message(lines)
     if task_risks or audit_risks:
         lines.extend(("", "delivery risks:"))
         lines.extend(task_risks)
@@ -121,7 +125,7 @@ def project_risks_message(
     if documented_risks:
         lines.extend(("", "documented blockers / pitfalls:"))
         lines.extend(documented_risks)
-    return MessageContent(text="\n".join(lines))
+    return _heading_message(lines)
 
 
 def project_blockers_message(
@@ -135,7 +139,7 @@ def project_blockers_message(
     lines = [f"Blockers: {project.id} [{project.name}]"]
     if not decision_lines and not failed_lines and not document_lines:
         lines.append("- no current blockers in local state")
-        return MessageContent(text="\n".join(lines))
+        return _heading_message(lines)
     if decision_lines:
         lines.extend(("", "waiting decisions:"))
         lines.extend(decision_lines)
@@ -145,7 +149,7 @@ def project_blockers_message(
     if document_lines:
         lines.extend(("", "documented blockers:"))
         lines.extend(document_lines)
-    return MessageContent(text="\n".join(lines))
+    return _heading_message(lines)
 
 
 def project_next_message(
@@ -163,7 +167,7 @@ def project_next_message(
     lines.extend(_next_action_lines(project, appointments, default_appointment, task_snapshots))
     if blocker_snippets:
         lines.extend(("", "check documented blockers:", *(_document_lines(blocker_snippets))))
-    return MessageContent(text="\n".join(lines))
+    return _heading_message(lines)
 
 
 def roles_message(
@@ -187,33 +191,38 @@ def roles_message(
         lines.append(f"  permissions: {permissions}")
         if summary:
             lines.append(f"  summary:{summary}")
-    return MessageContent(text="\n".join(lines))
+    return _heading_message(lines)
 
 
 def role_proposal_message(project: ProjectProfile, role: RoleProfile) -> MessageContent:
     permissions = ", ".join(role.default_permissions) or "-"
     approval_required = ", ".join(role.approval_required) or "-"
-    return MessageContent(
-        text=(
-            f"Role proposal for {project.id}\n"
-            f"id: {role.id}\n"
-            f"title: {role.title}\n"
-            f"summary: {role.summary or '-'}\n"
-            f"permissions: {permissions}\n"
-            f"approval_required: {approval_required}\n"
-            f"prompt: {role.inline_prompt or '-'}\n\n"
-            "Send /role confirm to add it to this project, or /role discard to cancel."
-        )
+    return _heading_message(
+        (
+            f"Role proposal for {project.id}",
+            f"id: {role.id}",
+            f"title: {role.title}",
+            f"summary: {role.summary or '-'}",
+            f"permissions: {permissions}",
+            f"approval_required: {approval_required}",
+            f"prompt: {role.inline_prompt or '-'}",
+            "",
+            "Send /role confirm to add it to this project, or /role discard to cancel.",
+        ),
+        actions=(
+            MessageAction(label="Confirm", value="/role confirm"),
+            MessageAction(label="Discard", value="/role discard"),
+        ),
     )
 
 
 def role_added_message(project: ProjectProfile, role: RoleProfile) -> MessageContent:
-    return MessageContent(
-        text=(
-            f"Role added to {project.id}: {role.id}\n"
-            f"title: {role.title}\n"
+    return _heading_message(
+        (
+            f"Role added to {project.id}: {role.id}",
+            f"title: {role.title}",
             "Use /roles to review it, then /appoint <agent> as "
-            f"{role.id} [permissions] when ready."
+            f"{role.id} [permissions] when ready.",
         )
     )
 
@@ -265,7 +274,7 @@ def project_report_message(
             *(_document_lines(context_snippets) or ("- none",)),
         )
     )
-    return MessageContent(text="\n".join(lines))
+    return _heading_message(lines)
 
 
 def team_message(
@@ -282,7 +291,7 @@ def team_message(
         permissions = ", ".join(appointment.permissions) or appointment.risk_policy
         lead_marker = " [lead]" if _same_appointment(appointment, default_appointment) else ""
         lines.append(f"- {appointment.role} -> {appointment.agent} ({permissions}){lead_marker}")
-    return MessageContent(text="\n".join(lines))
+    return _heading_message(lines)
 
 
 def who_message(
@@ -295,15 +304,15 @@ def who_message(
     agent_title = "-" if agent is None else agent.title
     permissions = ", ".join(appointment.permissions) or appointment.risk_policy
     workspace = appointment.workspace or project.repo
-    return MessageContent(
-        text=(
-            f"{project.id} / {appointment.role}\n"
-            f"agent: {appointment.agent}\n"
-            f"title: {agent_title}\n"
-            f"role_title: {title}\n"
-            f"permissions: {permissions}\n"
-            f"workspace: {workspace}\n"
-            f"seat: {appointment.seat}"
+    return _heading_message(
+        (
+            f"{project.id} / {appointment.role}",
+            f"agent: {appointment.agent}",
+            f"title: {agent_title}",
+            f"role_title: {title}",
+            f"permissions: {permissions}",
+            f"workspace: {workspace}",
+            f"seat: {appointment.seat}",
         )
     )
 
@@ -317,15 +326,16 @@ def appointment_created_message(
     agent_title = "-" if agent is None else agent.title
     role_title = appointment.role if role is None else role.title
     permissions = ", ".join(appointment.permissions) or appointment.risk_policy
-    return MessageContent(
-        text=(
-            "Appointment active\n\n"
-            f"{appointment.agent} is appointed to {project.id} as {appointment.role}.\n"
-            f"agent_title: {agent_title}\n"
-            f"role: {role_title}\n"
-            f"workspace: {appointment.workspace or project.repo}\n"
-            f"permissions: {permissions}\n"
-            f"seat: {appointment.seat}"
+    return _heading_message(
+        (
+            "Appointment active",
+            "",
+            f"{appointment.agent} is appointed to {project.id} as {appointment.role}.",
+            f"agent_title: {agent_title}",
+            f"role: {role_title}",
+            f"workspace: {appointment.workspace or project.repo}",
+            f"permissions: {permissions}",
+            f"seat: {appointment.seat}",
         )
     )
 
@@ -333,23 +343,47 @@ def appointment_created_message(
 def appointment_removed_message(
     project: ProjectProfile, appointment: AssignmentProfile
 ) -> MessageContent:
-    return MessageContent(
-        text=(
-            "Appointment removed\n\n"
-            f"{appointment.agent} is no longer appointed to {project.id} as "
-            f"{appointment.role}.\n"
-            f"seat: {appointment.seat}"
+    return _heading_message(
+        (
+            "Appointment removed",
+            "",
+            f"{appointment.agent} is no longer appointed to {project.id} as {appointment.role}.",
+            f"seat: {appointment.seat}",
         )
     )
 
 
 def default_role_message(project: ProjectProfile, appointment: AssignmentProfile) -> MessageContent:
-    return MessageContent(
-        text=(
-            f"Lead role for {project.id}: {appointment.role} -> {appointment.agent}\n"
-            "Plain messages will go to this lead role."
+    return _heading_message(
+        (
+            f"Lead role for {project.id}: {appointment.role} -> {appointment.agent}",
+            "Plain messages will go to this lead role.",
         )
     )
+
+
+def project_summary_message(facts: MessageContent, summary: str | None) -> MessageContent:
+    if not summary:
+        return facts
+    summary_text, summary_spans = _summary_text_and_spans(summary.strip())
+    summary_offset = len("Boss summary\n")
+    facts_prefix = "\n\nFacts\n"
+    facts_offset = summary_offset + len(summary_text) + len(facts_prefix)
+    text = f"Boss summary\n{summary_text}{facts_prefix}{facts.text}"
+    spans = (
+        MessageTextSpan(offset=0, length=len("Boss summary"), style=MessageTextStyle.BOLD),
+        *(
+            span.model_copy(update={"offset": span.offset + summary_offset})
+            for span in summary_spans
+        ),
+        MessageTextSpan(
+            offset=summary_offset + len(summary_text) + len("\n\n"),
+            length=len("Facts"),
+            style=MessageTextStyle.BOLD,
+        ),
+        *(span.model_copy(update={"offset": span.offset + facts_offset}) for span in facts.spans),
+    )
+    return MessageContent(text=text, spans=spans, actions=facts.actions)
 
 
 def assignments_message(
@@ -398,6 +432,165 @@ def assignment_message(
 
 def short_id_text(value: str) -> str:
     return value[:8]
+
+
+def _heading_message(
+    lines: tuple[str, ...] | list[str],
+    *,
+    actions: tuple[MessageAction, ...] = (),
+) -> MessageContent:
+    rendered_lines: list[str] = []
+    spans: list[MessageTextSpan] = []
+    offset = 0
+    for index, raw_line in enumerate(lines):
+        line, line_spans = _project_line_text_and_spans(raw_line, is_first_line=index == 0)
+        rendered_lines.append(line)
+        spans.extend(
+            span.model_copy(update={"offset": span.offset + offset}) for span in line_spans
+        )
+        offset += len(line) + 1
+    return MessageContent(text="\n".join(rendered_lines), spans=tuple(spans), actions=actions)
+
+
+def _project_line_text_and_spans(
+    line: str,
+    *,
+    is_first_line: bool,
+) -> tuple[str, tuple[MessageTextSpan, ...]]:
+    line = _normalize_bullet_prefix(line)
+    line, heading_spans = _markdown_heading_text_and_spans(line)
+    line, markdown_spans = _inline_markdown_spans(line)
+    structural_spans = _project_structural_spans(line, is_first_line=is_first_line)
+    return line, (*structural_spans, *heading_spans, *markdown_spans)
+
+
+def _project_structural_spans(
+    line: str,
+    *,
+    is_first_line: bool,
+) -> tuple[MessageTextSpan, ...]:
+    spans: list[MessageTextSpan] = []
+    stripped = line.strip()
+    if is_first_line and line:
+        spans.append(MessageTextSpan(offset=0, length=len(line), style=MessageTextStyle.BOLD))
+    elif _is_section_heading(stripped):
+        leading_spaces = len(line) - len(line.lstrip())
+        spans.append(
+            MessageTextSpan(
+                offset=leading_spaces,
+                length=len(stripped),
+                style=MessageTextStyle.BOLD,
+            )
+        )
+    for start, end in _slash_command_ranges(line):
+        spans.append(
+            MessageTextSpan(
+                offset=start,
+                length=end - start,
+                style=MessageTextStyle.CODE,
+            )
+        )
+    return tuple(spans)
+
+
+def _is_section_heading(stripped: str) -> bool:
+    if not stripped or stripped.startswith(("- ", "* ", "• ")):
+        return False
+    return stripped.endswith(":")
+
+
+def _slash_command_ranges(line: str) -> tuple[tuple[int, int], ...]:
+    return tuple(
+        (match.start(), match.end()) for match in re.finditer(r"(?<!\S)/[A-Za-z][\w-]*", line)
+    )
+
+
+def _summary_text_and_spans(summary: str) -> tuple[str, tuple[MessageTextSpan, ...]]:
+    lines: list[str] = []
+    spans: list[MessageTextSpan] = []
+    offset = 0
+    for raw_line in summary.splitlines():
+        line, line_spans = _summary_line_and_spans(raw_line)
+        lines.append(line)
+        spans.extend(
+            span.model_copy(update={"offset": span.offset + offset}) for span in line_spans
+        )
+        offset += len(line) + 1
+    return "\n".join(lines), tuple(spans)
+
+
+def _summary_line_and_spans(line: str) -> tuple[str, tuple[MessageTextSpan, ...]]:
+    line = _normalize_bullet_prefix(line)
+    line, heading_spans = _markdown_heading_text_and_spans(line)
+    line, markdown_spans = _inline_markdown_spans(line)
+    return line, (*heading_spans, *markdown_spans)
+
+
+def _normalize_bullet_prefix(line: str) -> str:
+    stripped = line.lstrip()
+    leading = line[: len(line) - len(stripped)]
+    if stripped.startswith(("- ", "* ")):
+        return f"{leading}• {stripped[2:]}"
+    return line
+
+
+def _markdown_heading_text_and_spans(line: str) -> tuple[str, tuple[MessageTextSpan, ...]]:
+    stripped = line.lstrip()
+    leading = line[: len(line) - len(stripped)]
+    match = re.match(r"#{1,6}\s+(.+)", stripped)
+    if match is None:
+        return line, ()
+
+    heading = match.group(1)
+    text = f"{leading}{heading}"
+    return (
+        text,
+        (
+            MessageTextSpan(
+                offset=len(leading),
+                length=len(heading),
+                style=MessageTextStyle.BOLD,
+            ),
+        ),
+    )
+
+
+def _inline_markdown_spans(text: str) -> tuple[str, tuple[MessageTextSpan, ...]]:
+    output: list[str] = []
+    spans: list[MessageTextSpan] = []
+    cursor = 0
+    while cursor < len(text):
+        marker = _next_inline_marker(text, cursor)
+        if marker is None:
+            output.append(text[cursor])
+            cursor += 1
+            continue
+        token, style = marker
+        end = text.find(token, cursor + len(token))
+        if end < 0:
+            output.append(text[cursor])
+            cursor += 1
+            continue
+        span_offset = sum(len(part) for part in output)
+        inner = text[cursor + len(token) : end]
+        output.append(inner)
+        if inner:
+            spans.append(MessageTextSpan(offset=span_offset, length=len(inner), style=style))
+        cursor = end + len(token)
+    return "".join(output), tuple(spans)
+
+
+def _next_inline_marker(
+    text: str,
+    cursor: int,
+) -> tuple[str, MessageTextStyle] | None:
+    if text.startswith("**", cursor):
+        return "**", MessageTextStyle.BOLD
+    if text.startswith("`", cursor):
+        return "`", MessageTextStyle.CODE
+    if text.startswith("*", cursor) and not text.startswith("* ", cursor):
+        return "*", MessageTextStyle.ITALIC
+    return None
 
 
 def _task_status_line(snapshot: TaskSnapshot) -> str:

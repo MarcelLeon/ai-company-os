@@ -9,6 +9,8 @@ from enum import StrEnum
 class CommandName(StrEnum):
     HELP = "help"
     STATUS = "status"
+    TASKS = "tasks"
+    TASK = "task"
     AUDIT = "audit"
     PROJECTS = "projects"
     PROJECT = "project"
@@ -40,6 +42,7 @@ class CommandName(StrEnum):
     BIND = "bind"
     APPROVE = "approve"
     REJECT = "reject"
+    INTERRUPT = "interrupt"
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,7 @@ def parse_command(text: str) -> Command | None:
     if lowered in {
         CommandName.HELP,
         CommandName.STATUS,
+        CommandName.TASKS,
         CommandName.AUDIT,
         CommandName.PROJECTS,
         CommandName.BRIEF,
@@ -92,6 +96,8 @@ def help_text() -> str:
     return (
         "Commands:\n"
         "/status - show adapter status\n"
+        "/tasks [limit] - show recent tasks\n"
+        "/task <task_id> - show one task and available actions\n"
         "/audit - show recent audit events\n"
         "/projects - list configured projects\n"
         "/project [project] - enter or show the project office\n"
@@ -125,6 +131,7 @@ def help_text() -> str:
         "/broadcast <task> - send task to every active persona\n"
         "/approve [task_id] - approve a waiting risky task\n"
         "/reject [task_id] [reason] - reject a waiting risky task\n"
+        "/interrupt <task_id> - interrupt a running task\n"
         "/claude <task> - send task to Claude Code\n"
         "/codex <task> - send read-only task to Codex\n"
         "@codex <task> or codex: <task> also work"

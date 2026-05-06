@@ -71,9 +71,28 @@
 - `/roles [project]` 项目岗位命令,展示 role 模板、默认权限和已任命 / 未任命状态
 - `/role propose <诉求>`、`/role confirm`、`/role discard` 岗位草案确认流,由当前项目 lead role 起草新 role,用户确认后加入当前项目进程内 roles
 - `/unappoint <role>` 项目撤任命令,用于撤销当前项目某个 role 的进程内 appointment
+- 平台无关 IM render contract 第一切片:`MessageContent` 支持文本 spans 和 actions,Telegram Channel 可映射为 HTML 与 inline keyboard
+- ADR-0013 Platform-Neutral IM Render Contract
+- Telegram callback query 会转换为普通 `IncomingMessage`,按钮 action 可复用现有 slash command 通路
+- `/brief`、`/risks`、`/blockers`、`/next` 顶部老板摘要 MVP,由当前项目 lead 基于本地事实包生成只读 summary
+- `/daily`、`/weekly` 顶部老板摘要 MVP,复用项目状态 summary 的事实保留和失败降级策略
+- `/interrupt <task_id>` 远程中断命令,支持用 task id 前缀停止 running 任务
+- Codex output idle timeout MVP,默认 90 秒无 stdout 自动终止底层 CLI 并释放 `codex: busy`
+- `/tasks [limit]` 和 `/task <task_id>` 任务追踪命令,用于在 IM 中查看最近任务、单任务详情和可用动作
+- `/task <task_id>` 详情现在展示协作 parent / child trace,可从父任务跳到 reviewer 子任务,也可从子任务回看发起它的 persona 和父任务
 
 ### Changed
 - 将扁平化文档归位到 `docs/agent` / `docs/journal` / `docs/architecture` / `docs/human`
+- 将 role proposal 内部任务提交和输出收集从 `Orchestrator` 拆到 `RoleProposalCoordinator`,保持 `/role propose` / `/role confirm` 用户语义不变
+- 将 `/role propose` / `/role confirm` / `/role discard` 命令处理从 `ProjectCommandHandler` 拆到 `ProjectRoleCommandHandler`,降低项目命令类体积
+- 将 `/brief` / `/risks` / `/blockers` / `/next` / `/daily` / `/weekly` 命令处理从 `ProjectCommandHandler` 拆到 `ProjectStatusCommandHandler`,集中项目状态与报告逻辑
+- `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 可配置 Codex accepted 后无 stdout 的空闲超时秒数
+- 项目办公室关键消息现在使用 render hints 标记首行标题,`/role propose` 消息带 Confirm / Discard actions
+- 项目状态 LLM summary 会保留完整 `Facts` 原文;summary 失败时降级为原事实消息,不阻塞状态查询
+- Boss summary 中的轻量 Markdown 会转换为 render spans,避免 `**bold**`、反引号和列表标记在 Telegram 中裸露
+- 项目状态命令的 Facts 区域现在会为小节标题和 slash command 生成 render spans,`/blockers` 即使没有 summary 也能展示基础格式
+- 项目状态命令的 Facts 区域现在会把 `- ` / `* ` 规范化为 `• `,并将 `**bold**`、反引号和斜体 Markdown 转为 render spans
+- 项目状态命令的 Facts 文档片段现在会把 Markdown heading `#` / `##` / `###` 转为加粗标题,不再裸露井号
 - `/status` 现在会展示 Adapter 状态和最近任务状态
 - 危险任务现在会先进入 `waiting_approval`,批准后才派发给 Adapter
 - 审批交互支持直接发送 `/approve` / `/reject` 处理唯一待审批任务,并支持短 task id
@@ -106,6 +125,9 @@
 - 修复 Claude Code 任务经 Telegram 审批后仍要求本机二次授权的问题
 - 修复 Telegram 长文本流式返回超过 4096 字符后像“被吞掉”的问题
 - 修复 Telegram `editMessageText` no-op 400 导致流式输出只收到开头、Adapter 看起来 busy 的问题
+- 修复 `/blockers` 和项目状态 Facts 区域缺少小节 / 命令样式的问题
+- 修复 reviewer/Codex 子任务卡住时没有 IM 侧中断入口的问题
+- 修复 reviewer/Codex 子任务 accepted 后无 stdout 导致 `codex: busy` 无限占用的问题
 
 ### Security
 - 默认只有任务发起人或配置的额外审批人可以批准 / 拒绝危险任务,未授权尝试会记录 `approval_denied` 审计事件

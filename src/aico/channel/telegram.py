@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 from typing import Any
 
@@ -91,10 +92,7 @@ class TelegramChannel:
         )
         result = await self._post(
             "sendMessage",
-            {
-                "chat_id": target.target_id,
-                "text": content.text,
-            },
+            _telegram_text_payload(target, content),
         )
         return SentMessage(message_id=str(result["message_id"]), target=target)
 
@@ -111,13 +109,15 @@ class TelegramChannel:
             len(content.text),
         )
         try:
+            payload = _telegram_text_payload(target, content)
+            payload = {
+                "chat_id": payload.pop("chat_id"),
+                "message_id": message_id,
+                **payload,
+            }
             await self._post(
                 "editMessageText",
-                {
-                    "chat_id": target.target_id,
-                    "message_id": message_id,
-                    "text": content.text,
-                },
+                payload,
             )
         except TelegramAPIError as exc:
             if _is_noop_edit_error(exc):
@@ -167,6 +167,12 @@ class TelegramChannel:
                     len(message.content.text),
                 )
                 self._schedule_handler(message)
+                callback_query_id = _callback_query_id(update)
+                if callback_query_id is not None:
+                    await self._post(
+                        "answerCallbackQuery",
+                        {"callback_query_id": callback_query_id},
+                    )
 
     async def _poll_loop(self) -> None:
         while self._running:
@@ -213,6 +219,10 @@ class TelegramChannel:
 
 
 def _to_incoming_message(channel_name: str, update: dict[str, Any]) -> IncomingMessage | None:
+    callback_message = _to_callback_message(channel_name, update)
+    if callback_message is not None:
+        return callback_message
+
     message = update.get("message")
     if not isinstance(message, dict):
         return None
@@ -236,6 +246,44 @@ def _to_incoming_message(channel_name: str, update: dict[str, Any]) -> IncomingM
         content=MessageContent(text=text),
         raw_ref=str(message["message_id"]),
     )
+
+
+def _to_callback_message(channel_name: str, update: dict[str, Any]) -> IncomingMessage | None:
+    callback = update.get("callback_query")
+    if not isinstance(callback, dict):
+        return None
+
+    data = callback.get("data")
+    message = callback.get("message")
+    if not isinstance(data, str) or not data:
+        return None
+    if not isinstance(message, dict):
+        return None
+
+    chat = message["chat"]
+    sender = callback.get("from", {})
+    target = ChannelTarget(
+        channel_name=channel_name,
+        target_id=str(chat["id"]),
+        thread_id=_optional_str(message.get("message_thread_id")),
+    )
+    return IncomingMessage(
+        channel_name=channel_name,
+        source=target,
+        sender_id=str(sender.get("id", "unknown")),
+        content=MessageContent(text=data),
+        raw_ref=str(callback["id"]),
+    )
+
+
+def _callback_query_id(update: dict[str, Any]) -> str | None:
+    callback = update.get("callback_query")
+    if not isinstance(callback, dict):
+        return None
+    callback_id = callback.get("id")
+    if not isinstance(callback_id, str) or not callback_id:
+        return None
+    return callback_id
 
 
 def _extract_mentions(text: str, entities: Any) -> tuple[str, ...]:
@@ -273,3 +321,51 @@ def _telegram_response_json(response: httpx.Response) -> dict[str, Any]:
 
 def _is_noop_edit_error(exc: TelegramAPIError) -> bool:
     return "message is not modified" in str(exc).lower()
+
+
+def _telegram_text_payload(target: ChannelTarget, content: MessageContent) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "chat_id": target.target_id,
+        "text": content.text,
+    }
+    if content.spans:
+        payload["text"] = _html_text(content)
+        payload["parse_mode"] = "HTML"
+    if content.actions:
+        payload["reply_markup"] = {
+            "inline_keyboard": [
+                [
+                    {"text": action.label, "callback_data": action.value}
+                    for action in content.actions
+                ]
+            ]
+        }
+    return payload
+
+
+def _html_text(content: MessageContent) -> str:
+    parts: list[str] = []
+    cursor = 0
+    text = content.text
+    for span in sorted(content.spans, key=lambda item: item.offset):
+        start = span.offset
+        end = min(span.offset + span.length, len(text))
+        if start < cursor or start >= len(text) or end <= start:
+            continue
+        parts.append(html.escape(text[cursor:start], quote=False))
+        parts.append(_html_tag(span.style.value, html.escape(text[start:end], quote=False)))
+        cursor = end
+    parts.append(html.escape(text[cursor:], quote=False))
+    return "".join(parts)
+
+
+def _html_tag(style: str, text: str) -> str:
+    tags = {
+        "bold": "b",
+        "italic": "i",
+        "code": "code",
+    }
+    tag = tags.get(style)
+    if tag is None:
+        return text
+    return f"<{tag}>{text}</{tag}>"

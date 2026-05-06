@@ -7,36 +7,25 @@ from collections.abc import Awaitable, Callable
 from aico.channel import IMChannel
 from aico.core.agent_directory import AgentDirectory
 from aico.core.models import IncomingMessage, MessageContent
-from aico.core.project_assignment import ProjectAssignmentDirectory, ProjectProfile, RoleProfile
-from aico.core.project_docs import (
-    blocker_document_snippets,
-    brief_document_snippets,
-    risk_document_snippets,
-)
+from aico.core.project_assignment import ProjectAssignmentDirectory, ProjectProfile
 from aico.core.project_messages import (
     appointment_created_message,
     appointment_removed_message,
     assignment_message,
     assignments_message,
     default_role_message,
-    project_blockers_message,
-    project_brief_message,
-    project_next_message,
     project_office_message,
-    project_report_message,
-    project_risks_message,
     projects_message,
-    role_added_message,
-    role_proposal_message,
     roles_message,
     team_message,
     who_message,
 )
+from aico.core.project_role_commands import ProjectRoleCommandHandler, RoleProposalRunner
+from aico.core.project_status_commands import ProjectStatusCommandHandler, ProjectSummaryRunner
 from aico.core.session_commands import session_scope
 from aico.core.task_bus import TaskBus
 
 RoleTaskRunner = Callable[[IncomingMessage, str, str], Awaitable[None]]
-RoleProposalRunner = Callable[[IncomingMessage, ProjectProfile, str], Awaitable[RoleProfile | str]]
 
 
 class ProjectCommandHandler:
@@ -51,14 +40,23 @@ class ProjectCommandHandler:
         project_directory: ProjectAssignmentDirectory,
         run_role_task: RoleTaskRunner,
         propose_role: RoleProposalRunner,
+        summarize_project: ProjectSummaryRunner | None = None,
     ) -> None:
         self._channel = channel
-        self._task_bus = task_bus
         self._agent_directory = agent_directory
         self._project_directory = project_directory
         self._run_role_task = run_role_task
-        self._propose_role = propose_role
-        self._role_drafts: dict[str, tuple[str, RoleProfile]] = {}
+        self._status_commands = ProjectStatusCommandHandler(
+            channel=channel,
+            task_bus=task_bus,
+            project_directory=project_directory,
+            summarize_project=summarize_project,
+        )
+        self._role_commands = ProjectRoleCommandHandler(
+            channel=channel,
+            project_directory=project_directory,
+            propose_role=propose_role,
+        )
 
     async def handle_projects(self, message: IncomingMessage) -> None:
         await self._channel.send_message(
@@ -104,66 +102,16 @@ class ProjectCommandHandler:
         )
 
     async def handle_brief(self, message: IncomingMessage, project_id: str | None) -> None:
-        project = self._project_from_optional_ref(message, project_id)
-        if project is None:
-            await self._send_no_active_project(message)
-            return
-        await self._channel.send_message(
-            message.source,
-            project_brief_message(
-                project,
-                self._project_directory.appointments(project.id),
-                self._project_directory.default_assignment(project.id),
-                self._task_bus.task_snapshots(),
-                self._task_bus.audit_events(),
-                brief_document_snippets(project),
-            ),
-        )
+        await self._status_commands.handle_brief(message, project_id)
 
     async def handle_risks(self, message: IncomingMessage, project_id: str | None) -> None:
-        project = self._project_from_optional_ref(message, project_id)
-        if project is None:
-            await self._send_no_active_project(message)
-            return
-        await self._channel.send_message(
-            message.source,
-            project_risks_message(
-                project,
-                self._task_bus.task_snapshots(),
-                self._task_bus.audit_events(),
-                risk_document_snippets(project),
-            ),
-        )
+        await self._status_commands.handle_risks(message, project_id)
 
     async def handle_blockers(self, message: IncomingMessage, project_id: str | None) -> None:
-        project = self._project_from_optional_ref(message, project_id)
-        if project is None:
-            await self._send_no_active_project(message)
-            return
-        await self._channel.send_message(
-            message.source,
-            project_blockers_message(
-                project,
-                self._task_bus.task_snapshots(),
-                blocker_document_snippets(project),
-            ),
-        )
+        await self._status_commands.handle_blockers(message, project_id)
 
     async def handle_next(self, message: IncomingMessage, project_id: str | None) -> None:
-        project = self._project_from_optional_ref(message, project_id)
-        if project is None:
-            await self._send_no_active_project(message)
-            return
-        await self._channel.send_message(
-            message.source,
-            project_next_message(
-                project,
-                self._project_directory.appointments(project.id),
-                self._project_directory.default_assignment(project.id),
-                self._task_bus.task_snapshots(),
-                blocker_document_snippets(project),
-            ),
-        )
+        await self._status_commands.handle_next(message, project_id)
 
     async def handle_roles(self, message: IncomingMessage, project_id: str | None) -> None:
         project = self._project_from_optional_ref(message, project_id)
@@ -180,36 +128,13 @@ class ProjectCommandHandler:
         )
 
     async def handle_role(self, message: IncomingMessage, payload: str) -> None:
-        action, _, rest = payload.partition(" ")
-        if action == "propose":
-            await self._handle_role_propose(message, rest.strip())
-        elif action == "confirm":
-            await self._handle_role_confirm(message)
-        elif action in {"discard", "cancel"}:
-            await self._handle_role_discard(message)
-        else:
-            await self._channel.send_message(
-                message.source,
-                MessageContent(text="Usage: /role propose <need>, /role confirm, or /role discard"),
-            )
+        await self._role_commands.handle_role(message, payload)
 
     async def handle_daily(self, message: IncomingMessage, project_id: str | None) -> None:
-        await self._send_project_report(
-            message,
-            project_id,
-            title="Daily report",
-            window_label="last 24h in local AICO state",
-            window_days=1,
-        )
+        await self._status_commands.handle_daily(message, project_id)
 
     async def handle_weekly(self, message: IncomingMessage, project_id: str | None) -> None:
-        await self._send_project_report(
-            message,
-            project_id,
-            title="Weekly report",
-            window_label="last 7d in local AICO state",
-            window_days=7,
-        )
+        await self._status_commands.handle_weekly(message, project_id)
 
     async def handle_team(self, message: IncomingMessage, project_id: str | None) -> None:
         project = self._project_from_optional_ref(message, project_id)
@@ -392,35 +317,6 @@ class ProjectCommandHandler:
             ),
         )
 
-    async def _send_project_report(
-        self,
-        message: IncomingMessage,
-        project_id: str | None,
-        *,
-        title: str,
-        window_label: str,
-        window_days: int,
-    ) -> None:
-        project = self._project_from_optional_ref(message, project_id)
-        if project is None:
-            await self._send_no_active_project(message)
-            return
-        await self._channel.send_message(
-            message.source,
-            project_report_message(
-                project,
-                self._project_directory.appointments(project.id),
-                self._project_directory.default_assignment(project.id),
-                self._task_bus.task_snapshots(limit=20),
-                self._task_bus.audit_events(limit=50),
-                brief_document_snippets(project),
-                risk_document_snippets(project),
-                title=title,
-                window_label=window_label,
-                window_days=window_days,
-            ),
-        )
-
     async def _send_no_active_project(self, message: IncomingMessage) -> None:
         await self._channel.send_message(
             message.source,
@@ -435,65 +331,6 @@ class ProjectCommandHandler:
         if project_ref:
             return self._project_directory.project(project_ref)
         return self._project_directory.active_project(session_scope(message))
-
-    async def _handle_role_propose(self, message: IncomingMessage, request: str) -> None:
-        if not request:
-            await self._channel.send_message(
-                message.source,
-                MessageContent(text="Usage: /role propose <need>"),
-            )
-            return
-        project = self._project_directory.active_project(session_scope(message))
-        if project is None:
-            await self._send_no_active_project(message)
-            return
-        await self._channel.send_message(
-            message.source,
-            MessageContent(text=f"Drafting role proposal for {project.id}..."),
-        )
-        proposal = await self._propose_role(message, project, request)
-        if isinstance(proposal, str):
-            await self._channel.send_message(message.source, MessageContent(text=proposal))
-            return
-        self._role_drafts[session_scope(message)] = (project.id, proposal)
-        await self._channel.send_message(
-            message.source,
-            role_proposal_message(project, proposal),
-        )
-
-    async def _handle_role_confirm(self, message: IncomingMessage) -> None:
-        scope = session_scope(message)
-        draft = self._role_drafts.get(scope)
-        if draft is None:
-            await self._channel.send_message(
-                message.source,
-                MessageContent(text="No pending role proposal. Use /role propose <need> first."),
-            )
-            return
-        project_id, role = draft
-        project = self._project_directory.project(project_id)
-        if project is None:
-            await self._channel.send_message(
-                message.source,
-                MessageContent(text=f"Project not found: {project_id}"),
-            )
-            return
-        added = self._project_directory.add_project_role(project.id, role)
-        if added is None:
-            await self._channel.send_message(
-                message.source,
-                MessageContent(text=f"Role already exists in {project.id}: {role.id}"),
-            )
-            return
-        self._role_drafts.pop(scope, None)
-        await self._channel.send_message(message.source, role_added_message(project, added))
-
-    async def _handle_role_discard(self, message: IncomingMessage) -> None:
-        self._role_drafts.pop(session_scope(message), None)
-        await self._channel.send_message(
-            message.source,
-            MessageContent(text="Role proposal discarded"),
-        )
 
 
 def _appoint_parts(payload: str) -> tuple[str | None, str | None, tuple[str, ...]]:

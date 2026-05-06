@@ -1,10 +1,19 @@
 import asyncio
+import json
 
 import httpx
 
 from aico.channel import IMChannel
 from aico.channel.telegram import TelegramAPIError, TelegramChannel
-from aico.core import ChannelTarget, HealthStatus, IncomingMessage, MessageContent
+from aico.core import (
+    ChannelTarget,
+    HealthStatus,
+    IncomingMessage,
+    MessageAction,
+    MessageContent,
+    MessageTextSpan,
+    MessageTextStyle,
+)
 
 
 async def test_telegram_channel_parses_text_update_and_advances_offset() -> None:
@@ -97,6 +106,53 @@ async def test_telegram_channel_does_not_block_polling_on_long_handler() -> None
     assert requests == [b'{"timeout":1}', b'{"timeout":1,"offset":2}']
 
 
+async def test_telegram_channel_maps_callback_query_to_incoming_message() -> None:
+    requests: list[tuple[str, bytes]] = []
+    received: list[IncomingMessage] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.url.path, request.read()))
+        method = request.url.path.rsplit("/", maxsplit=1)[-1]
+        if method == "answerCallbackQuery":
+            return httpx.Response(200, json={"ok": True, "result": True})
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "result": [
+                    {
+                        "update_id": 51,
+                        "callback_query": {
+                            "id": "callback-1",
+                            "from": {"id": 99},
+                            "data": "/role confirm",
+                            "message": {
+                                "message_id": 7,
+                                "chat": {"id": -1001},
+                            },
+                        },
+                    }
+                ],
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client, poll_timeout_seconds=1)
+        channel.on_incoming(lambda message: _record(received, message))
+
+        await channel.poll_once()
+        await asyncio.sleep(0)
+
+    assert received[0].source == ChannelTarget(channel_name="telegram", target_id="-1001")
+    assert received[0].sender_id == "99"
+    assert received[0].content == MessageContent(text="/role confirm")
+    assert received[0].raw_ref == "callback-1"
+    assert requests == [
+        ("/bottoken/getUpdates", b'{"timeout":1}'),
+        ("/bottoken/answerCallbackQuery", b'{"callback_query_id":"callback-1"}'),
+    ]
+
+
 async def test_telegram_channel_send_edit_and_delete_use_bot_api_methods() -> None:
     calls: list[tuple[str, bytes]] = []
 
@@ -123,6 +179,70 @@ async def test_telegram_channel_send_edit_and_delete_use_bot_api_methods() -> No
         ),
         ("/bottoken/deleteMessage", b'{"chat_id":"chat-1","message_id":"123"}'),
     ]
+
+
+async def test_telegram_channel_renders_text_spans_as_telegram_html() -> None:
+    calls: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, request.read()))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 123}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+
+        await channel.send_message(
+            target,
+            MessageContent(
+                text="Project <A> ready",
+                spans=(MessageTextSpan(offset=0, length=11, style=MessageTextStyle.BOLD),),
+            ),
+        )
+
+    assert calls[0][0] == "/bottoken/sendMessage"
+    assert json.loads(calls[0][1]) == {
+        "chat_id": "chat-1",
+        "text": "<b>Project &lt;A&gt;</b> ready",
+        "parse_mode": "HTML",
+    }
+
+
+async def test_telegram_channel_renders_actions_as_inline_keyboard() -> None:
+    calls: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, request.read()))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 123}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+
+        await channel.send_message(
+            target,
+            MessageContent(
+                text="Approve task?",
+                actions=(
+                    MessageAction(label="Approve", value="approve:task-1"),
+                    MessageAction(label="Reject", value="reject:task-1"),
+                ),
+            ),
+        )
+
+    assert calls[0][0] == "/bottoken/sendMessage"
+    assert json.loads(calls[0][1]) == {
+        "chat_id": "chat-1",
+        "text": "Approve task?",
+        "reply_markup": {
+            "inline_keyboard": [
+                [
+                    {"text": "Approve", "callback_data": "approve:task-1"},
+                    {"text": "Reject", "callback_data": "reject:task-1"},
+                ]
+            ]
+        },
+    }
 
 
 async def test_telegram_channel_ignores_non_text_updates() -> None:

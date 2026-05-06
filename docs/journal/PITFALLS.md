@@ -38,6 +38,7 @@
 
 ### AI 间协作
 - P-009:协作指令只支持冒号导致真实自然语言未触发 reviewer
+- P-014:Reviewer 子任务已 accepted 但 Codex CLI 长时间无 stdout 且 IM 无中断入口
 
 ### 人格化与状态
 - P-013:Project Team 同一 role 可出现多个 appointment 导致 `/team` 重复成员
@@ -489,3 +490,48 @@ Project appointment 的底层存储按 `seat` 唯一,但产品语义真正需要
 
 **相关链接**
 - ROUNDS Round 46
+
+### [P-014] Reviewer 子任务已 accepted 但 Codex CLI 长时间无 stdout 且 IM 无中断入口
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 53
+**最后更新**:2026-05-06
+**影响范围**:`src/aico/core/commands.py`, `src/aico/core/orchestrator.py`, `src/aico/core/task_bus.py`, `src/aico/adapter/claude_code.py`, `src/aico/adapter/codex.py`, `src/aico/app/phase1.py`
+
+**症状**
+Phase 5 真实协作 smoke test 中,Telegram 能收到:
+
+```text
+Collaboration requested: claude -> reviewer
+Task accepted: 31e559c3-bd7c-4e1b-9385-024431f8635a [reviewer]
+```
+
+但之后长时间没有 reviewer 输出。日志显示 reviewer 子任务已派发到 `codex`,并停在 `Stream start`;
+进程表能看到 Codex CLI 子进程仍在运行,但没有 stdout chunk。
+
+**根因**
+协作链路已成功创建 reviewer 子任务,真正卡点是底层 Codex CLI 长时间运行且未产出 stdout。
+AICO 的 Adapter 和 TaskBus 其实已经支持 interrupt,但 IM 命令层没有暴露 `/interrupt`,
+导致远程用户只能等待或回到机器上手动杀进程。这个体验违反北极星第三句的“可中断”。
+
+Round 57 真实复测再次卡在 `Task accepted ... [reviewer]`,此时 `/interrupt` 已可用,
+进一步确认还缺 Adapter 侧自动释放 busy 的输出空闲超时。
+
+**解决方案 / 缓解措施**
+- 新增 `/interrupt <task_id>` 命令。
+- `TaskBus.interrupt()` 支持 task id 前缀匹配,和 `/approve <short_id>` 一样适配 IM 输入。
+- 中断 running 任务后任务状态更新为 `interrupted`,并记录 `task_interrupted` 审计事件。
+- Phase 5 collaboration playbook 增加卡在 `Task accepted ... [reviewer]` 时的排查和中断步骤。
+- Codex Adapter 默认启用输出空闲超时,90 秒没有 stdout 时会终止底层 CLI,
+  返回 `adapter output idle timeout after 90s`,并释放 `codex: busy`。
+- 可通过 `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 调整 Codex 空闲超时阈值。
+
+**如何避免再次踩中**
+- 真实 smoke test 如果停在 `Task accepted` 后无输出,先查 `/status`,再用 `/interrupt <short_task_id>`。
+- 重启到 Round 57 之后,如果忘记手动 interrupt,Codex 也应在空闲超时后自动失败并恢复 idle。
+- 新增任何长任务入口时,必须确认 IM 侧有中断路径,不能只在 Adapter 接口里有 interrupt。
+- 排查 Codex 卡住时,优先 grep task id,看是否有 `Stream output` 或 `Adapter process exited`。
+
+**相关链接**
+- ROUNDS Round 53
+- ROUNDS Round 57

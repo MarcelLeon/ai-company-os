@@ -70,6 +70,14 @@ class _TaskHandle:
     interrupted: bool = False
 
 
+class AdapterOutputIdleTimeoutError(TimeoutError):
+    """Raised when an adapter process stays alive without producing output."""
+
+    def __init__(self, *, timeout_seconds: float, sequence: int) -> None:
+        self.sequence = sequence
+        super().__init__(f"adapter output idle timeout after {timeout_seconds:g}s")
+
+
 class ClaudeCodeAdapter:
     """Run text tasks through Claude Code's non-interactive CLI mode."""
 
@@ -81,6 +89,7 @@ class ClaudeCodeAdapter:
         cwd: Path | None = None,
         process_factory: ProcessFactory | None = None,
         interrupt_timeout_seconds: float = 5.0,
+        output_idle_timeout_seconds: float | None = None,
     ) -> None:
         if not adapter_name:
             raise ValueError("adapter_name must not be empty")
@@ -88,12 +97,15 @@ class ClaudeCodeAdapter:
             raise ValueError("command must not be empty")
         if interrupt_timeout_seconds <= 0:
             raise ValueError("interrupt_timeout_seconds must be positive")
+        if output_idle_timeout_seconds is not None and output_idle_timeout_seconds <= 0:
+            raise ValueError("output_idle_timeout_seconds must be positive")
 
         self._name = adapter_name
         self._command = command
         self._cwd = cwd
         self._process_factory = process_factory or _create_process
         self._interrupt_timeout_seconds = interrupt_timeout_seconds
+        self._output_idle_timeout_seconds = output_idle_timeout_seconds
         self._tasks: dict[str, _TaskHandle] = {}
 
     @property
@@ -215,7 +227,19 @@ class ClaudeCodeAdapter:
             )
             process = await self._process_factory(command, self._cwd)
             handle.process = process
-            sequence = await self._stream_reader(task.task_id, process.stdout, queue, sequence)
+            try:
+                sequence = await self._stream_reader(task.task_id, process.stdout, queue, sequence)
+            except AdapterOutputIdleTimeoutError as exc:
+                sequence = exc.sequence
+                log.warning(
+                    "Adapter output idle timeout: adapter=%s task_id=%s timeout=%ss",
+                    self._name,
+                    task.task_id,
+                    self._output_idle_timeout_seconds,
+                )
+                await self._stop_process(process)
+                await queue.put(_output(task.task_id, sequence, OutputType.ERROR, str(exc)))
+                return
             return_code = await process.wait()
             log.info(
                 "Adapter process exited: adapter=%s task_id=%s return_code=%s stdout_chunks=%s",
@@ -257,10 +281,38 @@ class ClaudeCodeAdapter:
             return start_sequence
 
         sequence = start_sequence
-        while line := await reader.readline():
+        while line := await self._readline(reader, sequence):
             await queue.put(_output(task_id, sequence, OutputType.TEXT, _decode(line)))
             sequence += 1
         return sequence
+
+    async def _readline(
+        self,
+        reader: AsyncLineReader,
+        sequence: int,
+    ) -> bytes:
+        if self._output_idle_timeout_seconds is None:
+            return await reader.readline()
+        try:
+            return await asyncio.wait_for(
+                reader.readline(),
+                timeout=self._output_idle_timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise AdapterOutputIdleTimeoutError(
+                timeout_seconds=self._output_idle_timeout_seconds,
+                sequence=sequence,
+            ) from exc
+
+    async def _stop_process(self, process: AdapterProcess) -> None:
+        if process.returncode is not None:
+            return
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), timeout=self._interrupt_timeout_seconds)
+        except TimeoutError:
+            process.kill()
+            await process.wait()
 
     def _command_for_task(self, task: Task) -> tuple[str, ...]:
         provider_session = provider_session_from_task(task)
