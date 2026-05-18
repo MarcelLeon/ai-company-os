@@ -82,7 +82,7 @@ Codex 被任命到 AICO 项目担任 reviewer。
 - role:项目内岗位
 - agent:被任命的员工
 - resources:repo/workspace、文档、允许读取的上下文
-- permissions:只读、写代码、写文档、shell、危险操作审批
+- permissions / scope:岗位工作范围,优先使用 `docs` / `code` / `tests` / `ops` / `audit`;危险操作仍走 risk level 与 `/approve`
 - prompt stack:agent base + role template + project override + appointment contract + runtime context
 - provider session ref
 - 当前状态和最近任务
@@ -156,32 +156,40 @@ lead: tester -> Claude
 
 - tester -> Claude [lead]
   职责: 测试负责人
-  权限: read_repo, run_tests
+  scope: code, tests
   资源: repo / status / journal
 
 - reviewer -> Codex
   职责: 审查负责人
-  权限: 只读
+  scope: code, docs, audit
   资源: repo / docs / audit
 ```
 
 ### `/roles`
 
-查看当前项目需要哪些岗位、岗位模板职责是什么、哪些岗位还没有任命。
+查看当前项目需要哪些岗位、哪些岗位已经任命。默认只展示核心/专家岗位,支持岗位用 `/roles all` 展开,单个岗位详情用 `/role <id>`。
+查看类命令会在末尾追加简短 `Next` 指导命令,只给 2-5 个最自然的后续动作,不替代 `/help`。
 
 期望输出:
 
 ```text
-AICO 当前岗位:
+Roles: aico [AI Company OS]
 
-- implementer: 开发负责人 -> Claude
-  权限: read_repo, write_code, run_tests
+Core
+- implementer | 开发负责人 | claude
+- reviewer | 审查负责人 | codex
 
-- tester: 测试负责人 -> 未任命
-  权限: read_repo, run_tests, write_tests
+Specialists
+- golden-tester | Golden Path Tester | open
 
-- reviewer: 审查负责人 -> Codex
-  权限: read_repo, read_docs
+Hidden: tester, docs, ops, analyst, designer
+Use /roles all or /role <id>.
+
+Next:
+- /role <role>
+- /agents
+- /appoint <agent> as <role>
+- /roles all
 ```
 
 ### `/role propose 需要一个增长分析岗位`
@@ -202,8 +210,8 @@ Role proposal for aico
 id: growth-analyst
 title: Growth Analyst
 summary: Analyze activation and retention opportunities.
-permissions: read_docs, read_audit
-approval_required: write_docs
+scope: docs, audit
+approval_required: destructive
 prompt: Focus on measurable product opportunities.
 
 Send /role confirm to add it to this project, or /role discard to cancel.
@@ -372,9 +380,9 @@ roles:
     title: 开发负责人
     prompt: prompts/roles/implementer.md
     default_permissions:
-      - read_repo
-      - write_code
-      - run_tests
+      - code
+      - tests
+      - docs
     approval_required:
       - shell_exec
       - destructive
@@ -383,16 +391,16 @@ roles:
     title: 审查负责人
     prompt: prompts/roles/reviewer.md
     default_permissions:
-      - read_repo
-      - read_docs
+      - code
+      - docs
+      - audit
 
   tester:
     title: 测试负责人
     prompt: prompts/roles/tester.md
     default_permissions:
-      - read_repo
-      - run_tests
-      - write_tests
+      - code
+      - tests
 
 projects:
   aico:
@@ -421,19 +429,18 @@ appointments:
     agent: claude
     seat: aico-implementer
     permissions:
-      - read_repo
-      - write_code
-      - run_tests
-      - write_docs
+      - code
+      - tests
+      - docs
 
   - project: aico
     role: reviewer
     agent: codex
     seat: aico-reviewer
     permissions:
-      - read_repo
-      - read_docs
-      - read_audit
+      - code
+      - docs
+      - audit
 ```
 
 ---

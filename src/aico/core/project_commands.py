@@ -114,7 +114,8 @@ class ProjectCommandHandler:
         await self._status_commands.handle_next(message, project_id)
 
     async def handle_roles(self, message: IncomingMessage, project_id: str | None) -> None:
-        project = self._project_from_optional_ref(message, project_id)
+        project_ref, include_all = _roles_parts(project_id)
+        project = self._project_from_optional_ref(message, project_ref)
         if project is None:
             await self._send_no_active_project(message)
             return
@@ -124,6 +125,7 @@ class ProjectCommandHandler:
                 project,
                 self._project_directory.roles(project.id),
                 self._project_directory.appointments(project.id),
+                include_all=include_all,
             ),
         )
 
@@ -183,7 +185,7 @@ class ProjectCommandHandler:
         if agent_ref is None or role_ref is None:
             await self._channel.send_message(
                 message.source,
-                MessageContent(text="Usage: /appoint <agent> as <role> [permissions]"),
+                MessageContent(text="Usage: /appoint <agent> as <role> [scope]"),
             )
             return
         project = self._project_directory.active_project(session_scope(message))
@@ -341,9 +343,18 @@ def _appoint_parts(payload: str) -> tuple[str | None, str | None, tuple[str, ...
     return parts[0], parts[2], permissions
 
 
+def _roles_parts(payload: str | None) -> tuple[str | None, bool]:
+    if not payload:
+        return None, False
+    parts = payload.split()
+    include_all = parts[-1].lower() in {"all", "verbose", "full"}
+    project_parts = parts[:-1] if include_all else parts
+    return (" ".join(project_parts) or None), include_all
+
+
 def _permission_tokens(tokens: list[str]) -> tuple[str, ...]:
     if not tokens:
         return ()
     if len(tokens) == 1 and tokens[0].lower() in {"readonly", "read-only"}:
-        return ("read_repo", "read_docs")
+        return ("docs",)
     return tuple(token.strip(",") for token in tokens if token.strip(","))

@@ -32,6 +32,17 @@ class JsonlAuditSink:
             file.write(f"{line}\n")
 
 
+def read_jsonl_audit_events(path: Path) -> tuple[AuditEvent, ...]:
+    if not path.exists():
+        return ()
+    events: list[AuditEvent] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        events.append(AuditEvent.model_validate_json(line))
+    return tuple(events)
+
+
 class InMemoryAuditLog:
     """Append-only audit log with optional durable sinks."""
 
@@ -39,10 +50,11 @@ class InMemoryAuditLog:
         self,
         event_id_factory: EventIdFactory | None = None,
         sinks: tuple[AuditSink, ...] = (),
+        initial_events: tuple[AuditEvent, ...] = (),
     ) -> None:
         self._event_id_factory = event_id_factory or _new_event_id
         self._sinks = sinks
-        self._events: list[AuditEvent] = []
+        self._events: list[AuditEvent] = list(initial_events)
 
     def record(
         self,

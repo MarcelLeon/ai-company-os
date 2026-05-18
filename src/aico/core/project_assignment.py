@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from enum import StrEnum
 
 from pydantic import Field
 
 from aico.core.models import Capability, FrozenModel, MetadataEntry, Task
+
+
+class RoleScope(StrEnum):
+    DOCS = "docs"
+    CODE = "code"
+    TESTS = "tests"
+    OPS = "ops"
+    AUDIT = "audit"
 
 
 class CompanyAgentProfile(FrozenModel):
@@ -208,12 +217,16 @@ class ProjectAssignmentDirectory:
         canonical_role_id = self._roles_by_ref.get(_normalize(role_id), _normalize(role_id))
         existing = self.appointment_for_role(project.id, role_id)
         seat = existing.seat if existing is not None else _seat_id(project.id, canonical_role_id)
+        role = self.role(canonical_role_id)
+        resolved_permissions = permissions
+        if not resolved_permissions and role is not None:
+            resolved_permissions = role.default_permissions
         appointment = AssignmentProfile(
             project=project.id,
             agent=canonical_agent_id,
             role=canonical_role_id,
             seat=seat,
-            permissions=permissions,
+            permissions=resolved_permissions,
         )
         self._store_unique_appointment(appointment)
         if not self._default_roles.get(project.id):

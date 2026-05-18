@@ -25,6 +25,17 @@ from aico.core.project_assignment import (
 )
 from aico.core.project_docs import ProjectDocumentSnippet
 
+_CORE_ROLE_IDS = ("pm", "implementer", "reviewer", "golden-tester")
+_SPECIALIST_ROLE_IDS = ("senior-architect", "security", "legal-compliance", "market-risk")
+_SUPPORT_ROLE_IDS = ("tester", "docs", "ops", "analyst", "designer")
+_ROLE_GROUPS = (
+    ("Core", _CORE_ROLE_IDS),
+    ("Specialists", _SPECIALIST_ROLE_IDS),
+    ("Support", _SUPPORT_ROLE_IDS),
+)
+_COMPACT_ROLE_IDS = set(_CORE_ROLE_IDS + _SPECIALIST_ROLE_IDS)
+_RISK_LADDER = "read_only -> write_files -> shell_exec -> destructive"
+
 
 def projects_message(
     projects: tuple[ProjectProfile, ...],
@@ -60,6 +71,7 @@ def project_office_message(
         lines.extend(f"- {_appointment_ref(appointment)}" for appointment in appointments)
     else:
         lines.append("- none")
+    lines.extend(_next_lines(("/brief", "/team", "/next", "/daily", "/weekly")))
     return _heading_message(lines)
 
 
@@ -174,28 +186,97 @@ def roles_message(
     project: ProjectProfile,
     roles: tuple[RoleProfile, ...],
     appointments: tuple[AssignmentProfile, ...],
+    *,
+    include_all: bool = False,
 ) -> MessageContent:
     if not roles:
         return MessageContent(text=f"No roles configured for {project.id}")
     appointments_by_role = {appointment.role: appointment for appointment in appointments}
-    project_role_ids = {role.id for role in roles}
-    lines = [f"Roles for {project.id} [{project.name}]:"]
-    for role in roles:
-        if role.id not in project_role_ids and role.id not in appointments_by_role:
+    roles_by_id = {role.id: role for role in roles}
+    built_in_ids = set(_CORE_ROLE_IDS + _SPECIALIST_ROLE_IDS + _SUPPORT_ROLE_IDS)
+    custom_ids = set(roles_by_id) - built_in_ids
+    visible_ids = (
+        set(roles_by_id)
+        if include_all
+        else _COMPACT_ROLE_IDS | custom_ids | set(appointments_by_role)
+    )
+    lines = [f"Roles: {project.id} [{project.name}]"]
+    rendered: set[str] = set()
+    for group_name, role_ids in _ROLE_GROUPS:
+        group_lines = tuple(
+            _compact_role_line(roles_by_id[role_id], appointments_by_role.get(role_id))
+            for role_id in role_ids
+            if role_id in roles_by_id and role_id in visible_ids
+        )
+        if not group_lines:
             continue
-        appointment = appointments_by_role.get(role.id)
-        owner = "unappointed" if appointment is None else appointment.agent
-        permissions = ", ".join(role.default_permissions) or "-"
-        summary = f" - {role.summary}" if role.summary else ""
-        lines.append(f"- {role.id}: {role.title} -> {owner}")
-        lines.append(f"  permissions: {permissions}")
-        if summary:
-            lines.append(f"  summary:{summary}")
+        lines.extend(("", group_name, *group_lines))
+        rendered.update(role_id for role_id in role_ids if role_id in roles_by_id)
+    custom_lines = tuple(
+        _compact_role_line(role, appointments_by_role.get(role.id))
+        for role in roles
+        if role.id not in rendered and role.id in visible_ids
+    )
+    if custom_lines:
+        lines.extend(("", "Custom", *custom_lines))
+    hidden = tuple(role.id for role in roles if role.id not in visible_ids)
+    if hidden:
+        lines.extend(("", f"Hidden: {', '.join(hidden)}", "Use /roles all or /role <id>."))
+    else:
+        lines.extend(("", "Use /role <id> for scope, approvals, and prompt."))
+    next_items = (
+        ("/role <role>", "/agents", "/appoint <agent> as <role>", "/roles all")
+        if not include_all
+        else ("/role <role>", "/team", "/agents")
+    )
+    lines.extend(_next_lines(next_items))
     return _heading_message(lines)
 
 
+def role_detail_message(
+    project: ProjectProfile,
+    role: RoleProfile,
+    appointment: AssignmentProfile | None,
+) -> MessageContent:
+    owner = "open" if appointment is None else appointment.agent
+    scope = ", ".join(appointment.permissions if appointment else role.default_permissions) or "-"
+    approval_required = ", ".join(role.approval_required) or "-"
+    lines = [
+        f"Role: {role.id} [{project.id}]",
+        f"title: {role.title}",
+        f"owner: {owner}",
+        f"scope: {scope}",
+        f"approval: {approval_required}",
+        f"risk ladder: {_RISK_LADDER}",
+    ]
+    if role.summary:
+        lines.append(f"summary: {role.summary}")
+    if role.inline_prompt:
+        lines.append(f"prompt: {role.inline_prompt}")
+    if appointment is None:
+        lines.extend(_next_lines(("/agents", f"/appoint <agent> as {role.id}", "/roles")))
+    else:
+        scope_hint = " ".join(appointment.permissions or role.default_permissions) or "<scope>"
+        lines.extend(
+            _next_lines(
+                (
+                    f"/ask {role.id} <task>",
+                    f"/lead {role.id}",
+                    f"/appoint {appointment.agent} as {role.id} {scope_hint}",
+                    f"/unappoint {role.id}",
+                )
+            )
+        )
+    return _heading_message(lines)
+
+
+def _compact_role_line(role: RoleProfile, appointment: AssignmentProfile | None) -> str:
+    owner = "open" if appointment is None else appointment.agent
+    return f"- {role.id} | {role.title} | {owner}"
+
+
 def role_proposal_message(project: ProjectProfile, role: RoleProfile) -> MessageContent:
-    permissions = ", ".join(role.default_permissions) or "-"
+    scope = ", ".join(role.default_permissions) or "-"
     approval_required = ", ".join(role.approval_required) or "-"
     return _heading_message(
         (
@@ -203,7 +284,7 @@ def role_proposal_message(project: ProjectProfile, role: RoleProfile) -> Message
             f"id: {role.id}",
             f"title: {role.title}",
             f"summary: {role.summary or '-'}",
-            f"permissions: {permissions}",
+            f"scope: {scope}",
             f"approval_required: {approval_required}",
             f"prompt: {role.inline_prompt or '-'}",
             "",
@@ -221,8 +302,7 @@ def role_added_message(project: ProjectProfile, role: RoleProfile) -> MessageCon
         (
             f"Role added to {project.id}: {role.id}",
             f"title: {role.title}",
-            "Use /roles to review it, then /appoint <agent> as "
-            f"{role.id} [permissions] when ready.",
+            f"Use /roles to review it, then /appoint <agent> as {role.id} [scope] when ready.",
         )
     )
 
@@ -283,14 +363,32 @@ def team_message(
     default_appointment: AssignmentProfile | None = None,
 ) -> MessageContent:
     if not appointments:
-        return MessageContent(text=f"No team appointments for {project.id}")
+        return _heading_message(
+            [
+                f"No team appointments for {project.id}",
+                *_next_lines(("/roles", "/agents", "/appoint <agent> as <role>")),
+            ]
+        )
     lines = [f"Team for {project.id}:"]
     if default_appointment is not None:
         lines.append(f"lead: {_appointment_ref(default_appointment)}")
     for appointment in appointments:
-        permissions = ", ".join(appointment.permissions) or appointment.risk_policy
+        scope = ", ".join(appointment.permissions) or appointment.risk_policy
         lead_marker = " [lead]" if _same_appointment(appointment, default_appointment) else ""
-        lines.append(f"- {appointment.role} -> {appointment.agent} ({permissions}){lead_marker}")
+        lines.append(f"- {appointment.role} -> {appointment.agent} ({scope}){lead_marker}")
+    if default_appointment is None:
+        lines.extend(_next_lines(("/roles", "/who <role>", "/appoint <agent> as <role>")))
+    else:
+        lines.extend(
+            _next_lines(
+                (
+                    f"/ask {default_appointment.role} <task>",
+                    f"/who {default_appointment.role}",
+                    "/roles",
+                    "/lead <role>",
+                )
+            )
+        )
     return _heading_message(lines)
 
 
@@ -302,7 +400,7 @@ def who_message(
 ) -> MessageContent:
     title = "-" if role is None else role.title
     agent_title = "-" if agent is None else agent.title
-    permissions = ", ".join(appointment.permissions) or appointment.risk_policy
+    scope = ", ".join(appointment.permissions) or appointment.risk_policy
     workspace = appointment.workspace or project.repo
     return _heading_message(
         (
@@ -310,7 +408,7 @@ def who_message(
             f"agent: {appointment.agent}",
             f"title: {agent_title}",
             f"role_title: {title}",
-            f"permissions: {permissions}",
+            f"scope: {scope}",
             f"workspace: {workspace}",
             f"seat: {appointment.seat}",
         )
@@ -325,7 +423,7 @@ def appointment_created_message(
 ) -> MessageContent:
     agent_title = "-" if agent is None else agent.title
     role_title = appointment.role if role is None else role.title
-    permissions = ", ".join(appointment.permissions) or appointment.risk_policy
+    scope = ", ".join(appointment.permissions) or appointment.risk_policy
     return _heading_message(
         (
             "Appointment active",
@@ -334,7 +432,7 @@ def appointment_created_message(
             f"agent_title: {agent_title}",
             f"role: {role_title}",
             f"workspace: {appointment.workspace or project.repo}",
-            f"permissions: {permissions}",
+            f"scope: {scope}",
             f"seat: {appointment.seat}",
         )
     )
@@ -442,25 +540,46 @@ def _heading_message(
     rendered_lines: list[str] = []
     spans: list[MessageTextSpan] = []
     offset = 0
+    in_next_section = False
     for index, raw_line in enumerate(lines):
-        line, line_spans = _project_line_text_and_spans(raw_line, is_first_line=index == 0)
+        is_linkable_command_line = in_next_section and _is_bulleted_command_line(raw_line)
+        line, line_spans = _project_line_text_and_spans(
+            raw_line,
+            is_first_line=index == 0,
+            linkable_command_line=is_linkable_command_line,
+        )
         rendered_lines.append(line)
         spans.extend(
             span.model_copy(update={"offset": span.offset + offset}) for span in line_spans
         )
         offset += len(line) + 1
+        stripped = raw_line.strip()
+        if stripped == "Next:":
+            in_next_section = True
+        elif in_next_section and (not stripped or not _is_bulleted_command_line(raw_line)):
+            in_next_section = False
     return MessageContent(text="\n".join(rendered_lines), spans=tuple(spans), actions=actions)
+
+
+def _next_lines(commands: tuple[str, ...]) -> tuple[str, ...]:
+    return ("", "Next:", *(f"- {command}" for command in commands))
 
 
 def _project_line_text_and_spans(
     line: str,
     *,
     is_first_line: bool,
+    linkable_command_line: bool = False,
 ) -> tuple[str, tuple[MessageTextSpan, ...]]:
-    line = _normalize_bullet_prefix(line)
+    if not linkable_command_line:
+        line = _normalize_bullet_prefix(line)
     line, heading_spans = _markdown_heading_text_and_spans(line)
     line, markdown_spans = _inline_markdown_spans(line)
-    structural_spans = _project_structural_spans(line, is_first_line=is_first_line)
+    structural_spans = _project_structural_spans(
+        line,
+        is_first_line=is_first_line,
+        linkable_commands=linkable_command_line,
+    )
     return line, (*structural_spans, *heading_spans, *markdown_spans)
 
 
@@ -468,6 +587,7 @@ def _project_structural_spans(
     line: str,
     *,
     is_first_line: bool,
+    linkable_commands: bool = False,
 ) -> tuple[MessageTextSpan, ...]:
     spans: list[MessageTextSpan] = []
     stripped = line.strip()
@@ -482,14 +602,15 @@ def _project_structural_spans(
                 style=MessageTextStyle.BOLD,
             )
         )
-    for start, end in _slash_command_ranges(line):
-        spans.append(
-            MessageTextSpan(
-                offset=start,
-                length=end - start,
-                style=MessageTextStyle.CODE,
+    if not linkable_commands:
+        for start, end in _slash_command_ranges(line):
+            spans.append(
+                MessageTextSpan(
+                    offset=start,
+                    length=end - start,
+                    style=MessageTextStyle.CODE,
+                )
             )
-        )
     return tuple(spans)
 
 
@@ -503,6 +624,11 @@ def _slash_command_ranges(line: str) -> tuple[tuple[int, int], ...]:
     return tuple(
         (match.start(), match.end()) for match in re.finditer(r"(?<!\S)/[A-Za-z][\w-]*", line)
     )
+
+
+def _is_bulleted_command_line(line: str) -> bool:
+    stripped = line.lstrip()
+    return stripped.startswith(("- /", "* /"))
 
 
 def _summary_text_and_spans(summary: str) -> tuple[str, tuple[MessageTextSpan, ...]]:
@@ -710,9 +836,8 @@ def _next_action_lines(
     actions: list[str] = []
     if not appointments:
         return (
-            "- Appoint an implementer: "
-            "/appoint claude as implementer read_repo write_code run_tests",
-            "- Appoint a reviewer when available: /appoint codex as reviewer readonly",
+            "- Appoint an implementer: /appoint claude as implementer",
+            "- Appoint a reviewer when available: /appoint codex as reviewer",
         )
     if default_appointment is None:
         actions.append("- Choose a lead role for plain messages: /lead implementer")

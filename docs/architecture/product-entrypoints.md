@@ -44,6 +44,7 @@ AICO 的主价值不是“本地桌面好看”,而是:
 - 点击跳转到 Telegram command 或对应 terminal/session。
 
 它消费 Phase 6 的 metrics / task 状态,不直接读取 Adapter 内部状态。
+Round 64 后,第一版本地 glance 数据源是 `aico-glance --format json`;真正 macOS 菜单栏或 xbar 插件应先消费这个 JSON,不要绕过观测模型去读 Adapter。
 
 不在第一版做:
 - 完整任务编排。
@@ -59,7 +60,9 @@ AICO 的主价值不是“本地桌面好看”,而是:
 - 启动/停止。
 - 查看日志。
 - 本地 smoke test。
-- 后续可以补 `aicoctl status` / `aicoctl metrics`,但不是当前 MVP 主路径。
+- `aico-metrics --format json` 从 audit JSONL 读取观测指标,供本地排障和后续 glance 原型消费。
+- `aico-glance --format json` 输出更紧凑的本地 Status Island 快照。
+- 后续可以补 `aicoctl status`,但不是当前 MVP 主路径。
 
 ### 4. Web / Mobile — 后续入口
 

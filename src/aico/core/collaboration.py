@@ -26,7 +26,20 @@ def parse_collaboration_directive(text: str) -> CollaborationDirective | None:
     return CollaborationDirective(target_persona=target, payload=payload)
 
 
-def collaboration_payload(source_persona: str, payload: str) -> str:
+def collaboration_payload(
+    source_persona: str,
+    payload: str,
+    *,
+    memory_refs: tuple[str, ...] = (),
+    use_memory_refs: bool = False,
+) -> str:
+    if use_memory_refs and memory_refs:
+        return (
+            f"Collaboration request from {source_persona}:\n\n"
+            f"Memory refs: {', '.join(memory_refs)}\n"
+            "Delta:\n"
+            f"{payload}"
+        )
     return f"Collaboration request from {source_persona}:\n\n{payload}"
 
 

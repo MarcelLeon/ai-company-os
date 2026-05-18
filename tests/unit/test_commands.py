@@ -66,6 +66,26 @@ def test_parse_command_accepts_interrupt_command() -> None:
     assert command.payload == "abcdef12"
 
 
+def test_parse_command_accepts_memory_commands() -> None:
+    remember = parse_command("/remember Phase 7 memory must be agent-driven.")
+    recall = parse_command("/recall agent-driven")
+    recall_all = parse_command("/recall")
+    forget = parse_command("/forget mem-aico")
+
+    assert remember is not None
+    assert recall is not None
+    assert recall_all is not None
+    assert forget is not None
+    assert remember.name is CommandName.REMEMBER
+    assert remember.payload == "Phase 7 memory must be agent-driven."
+    assert recall.name is CommandName.RECALL
+    assert recall.payload == "agent-driven"
+    assert recall_all.name is CommandName.RECALL
+    assert recall_all.payload == ""
+    assert forget.name is CommandName.FORGET
+    assert forget.payload == "mem-aico"
+
+
 def test_parse_command_accepts_task_trace_commands() -> None:
     tasks_command = parse_command("/tasks 20")
     task_command = parse_command("/task abcdef12")

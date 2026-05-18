@@ -82,6 +82,14 @@
 - `seat` 只是内部稳定 id;主路径命令应使用 `/project`、`/team`、`/who`、`/appoint`、`/ask`、`/default`。
 - 详见 [`project-assignment-layer.md`](project-assignment-layer.md)、ADR-0011 和 ADR-0012。
 
+### 5. A2A Memory Fabric — 项目 / 团队级共享记忆
+把 Phase 7 记忆层从单独 slash command 升级为 A2A-compatible 的项目 / 团队记忆基础设施。
+- 记忆以 `MemoryAtom` 为最小可验证单元,带 evidence、scope、confidence 和治理状态。
+- 作用域必须绑定 boss / project / team / role / agent,默认不跨 project 或 team 共享。
+- lead agent 和 team agent 通过受控 `MemoryPacket` 共享上下文,不暴露彼此内部记忆。
+- 重要共识通过 `MemoryBroadcast` 发布到 team,后续 prompt stack 自动召回。
+- 详见 [`a2a-memory-fabric.md`](a2a-memory-fabric.md)、ADR-0020、ADR-0021 和 ADR-0022。
+
 ---
 
 ## 编排核心的职责

@@ -26,3 +26,28 @@ def test_collaboration_payload_preserves_source_persona() -> None:
     assert collaboration_payload("implementer", "review this") == (
         "Collaboration request from implementer:\n\nreview this"
     )
+
+
+def test_collaboration_payload_can_use_memory_refs_when_enabled() -> None:
+    assert collaboration_payload(
+        "implementer",
+        "focus on broadcast policy",
+        memory_refs=("mem-aico", "mem-team"),
+        use_memory_refs=True,
+    ) == (
+        "Collaboration request from implementer:\n\n"
+        "Memory refs: mem-aico, mem-team\n"
+        "Delta:\n"
+        "focus on broadcast policy"
+    )
+
+
+def test_collaboration_payload_falls_back_to_explicit_payload_without_refs() -> None:
+    assert (
+        collaboration_payload(
+            "implementer",
+            "full context remains explicit",
+            use_memory_refs=True,
+        )
+        == "Collaboration request from implementer:\n\nfull context remains explicit"
+    )

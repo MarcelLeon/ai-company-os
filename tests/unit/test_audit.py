@@ -1,7 +1,14 @@
 import json
 from pathlib import Path
 
-from aico.core import AuditEventType, InMemoryAuditLog, JsonlAuditSink, RiskLevel, Task
+from aico.core import (
+    AuditEventType,
+    InMemoryAuditLog,
+    JsonlAuditSink,
+    RiskLevel,
+    Task,
+    read_jsonl_audit_events,
+)
 
 
 def test_in_memory_audit_log_writes_jsonl_sink(tmp_path: Path) -> None:
@@ -36,3 +43,25 @@ def test_in_memory_audit_log_writes_jsonl_sink(tmp_path: Path) -> None:
     assert payload["adapter_name"] == "claude-code"
     assert payload["risk_level"] == "shell_exec"
     assert payload["detail"] == "approval required"
+
+
+def test_read_jsonl_audit_events_loads_persisted_events(tmp_path: Path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    audit_log = InMemoryAuditLog(
+        event_id_factory=lambda: "event-1",
+        sinks=(JsonlAuditSink(audit_path),),
+    )
+    task = Task(
+        task_id="task-1",
+        payload="run pytest",
+        requester_id="user-1",
+        target_persona="implementer",
+    )
+
+    event = audit_log.record(AuditEventType.TASK_SUBMITTED, task)
+
+    loaded = read_jsonl_audit_events(audit_path)
+    assert loaded == (event,)
+
+    restored = InMemoryAuditLog(initial_events=loaded)
+    assert restored.events() == (event,)

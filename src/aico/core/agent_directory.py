@@ -62,6 +62,10 @@ def _session_features(adapter_name: str) -> tuple[str, ...]:
         return ("new", "resume")
     if adapter_name == "codex":
         return ("resume(bind)",)
+    if adapter_name in {"codeflicker", "trae"}:
+        return ("new", "resume")
+    if adapter_name in {"cursor", "gemini"}:
+        return ("resume(bind)",)
     return ()
 
 

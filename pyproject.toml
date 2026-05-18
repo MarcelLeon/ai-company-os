@@ -12,6 +12,8 @@ dependencies = [
 ]
 
 [project.scripts]
+aico-glance = "aico.app.glance_cli:main"
+aico-metrics = "aico.app.metrics_cli:main"
 aico-phase1 = "aico.app.phase1:main"
 
 [dependency-groups]

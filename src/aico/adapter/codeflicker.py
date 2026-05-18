@@ -1,0 +1,66 @@
+"""CodeFlicker CLI adapter for optional multi-agent routing."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from aico.adapter.claude_code import ClaudeCodeAdapter, ProcessFactory
+from aico.core.agent_session import ProviderSessionMode, provider_session_from_task
+from aico.core.models import Capability, Task
+
+DEFAULT_CODEFLICKER_COMMAND = (
+    "flickcli",
+    "-q",
+    "--approval-mode",
+    "yolo",
+    "--output-format",
+    "text",
+)
+
+
+class CodeFlickerAdapter(ClaudeCodeAdapter):
+    """Run text tasks through CodeFlicker quiet mode."""
+
+    def __init__(
+        self,
+        *,
+        command: tuple[str, ...] = DEFAULT_CODEFLICKER_COMMAND,
+        cwd: Path | None = None,
+        process_factory: ProcessFactory | None = None,
+        interrupt_timeout_seconds: float = 5.0,
+        output_idle_timeout_seconds: float | None = 90.0,
+    ) -> None:
+        super().__init__(
+            adapter_name="codeflicker",
+            command=command,
+            cwd=cwd,
+            process_factory=process_factory,
+            interrupt_timeout_seconds=interrupt_timeout_seconds,
+            output_idle_timeout_seconds=output_idle_timeout_seconds,
+        )
+
+    def capabilities(self) -> frozenset[Capability]:
+        return frozenset(
+            {
+                Capability.CODE_EDIT,
+                Capability.CODE_REVIEW,
+                Capability.SHELL_EXEC,
+                Capability.LONG_RUNNING,
+                Capability.STREAM_OUTPUT,
+                Capability.INTERRUPTIBLE,
+            }
+        )
+
+    def _command_for_task(self, task: Task) -> tuple[str, ...]:
+        command = self._command
+        if self._cwd is not None and "--cwd" not in command:
+            command = (*command, "--cwd", str(self._cwd))
+        provider_session = provider_session_from_task(task)
+        if (
+            provider_session is not None
+            and provider_session.mode is ProviderSessionMode.RESUME
+            and "--resume" not in command
+            and "-r" not in command
+        ):
+            command = (*command, "--resume", provider_session.session_id)
+        return (*command, task.payload)

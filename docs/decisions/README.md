@@ -33,6 +33,15 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0012 | Boss-Facing Team Commands and Role System | Accepted | 2026-05-04 |
 | ADR-0013 | Platform-Neutral IM Render Contract | Accepted | 2026-05-05 |
 | ADR-0014 | Phase 6 Observability Scope | Accepted | 2026-05-07 |
+| ADR-0015 | Observability Event Replay | Accepted | 2026-05-07 |
+| ADR-0016 | Status Island and Usage Boundary | Accepted | 2026-05-07 |
+| ADR-0017 | Optional Agent Adapters | Accepted | 2026-05-07 |
+| ADR-0018 | Full Agent Adapters and Feishu First Channel | Accepted | 2026-05-12 |
+| ADR-0019 | Role Scope Vocabulary and Compact Team Views | Accepted | 2026-05-13 |
+| ADR-0020 | Phase 7 Shared Memory Scope | Accepted | 2026-05-15 |
+| ADR-0021 | Agent-Driven Memory Ownership | Accepted | 2026-05-15 |
+| ADR-0022 | A2A Memory Fabric | Accepted | 2026-05-15 |
+| ADR-0023 | Memory Semantic Retrieval | Accepted | 2026-05-18 |
 
 **状态图例**:
 - `Proposed`(提议中)

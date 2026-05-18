@@ -7,7 +7,11 @@ from collections.abc import Awaitable, Callable
 from aico.channel import IMChannel
 from aico.core.models import IncomingMessage, MessageContent
 from aico.core.project_assignment import ProjectAssignmentDirectory, ProjectProfile, RoleProfile
-from aico.core.project_messages import role_added_message, role_proposal_message
+from aico.core.project_messages import (
+    role_added_message,
+    role_detail_message,
+    role_proposal_message,
+)
 from aico.core.session_commands import session_scope
 
 RoleProposalRunner = Callable[[IncomingMessage, ProjectProfile, str], Awaitable[RoleProfile | str]]
@@ -36,10 +40,16 @@ class ProjectRoleCommandHandler:
             await self._handle_role_confirm(message)
         elif action in {"discard", "cancel"}:
             await self._handle_role_discard(message)
+        elif payload.strip():
+            await self._handle_role_detail(message, payload.strip())
         else:
             await self._channel.send_message(
                 message.source,
-                MessageContent(text="Usage: /role propose <need>, /role confirm, or /role discard"),
+                MessageContent(
+                    text=(
+                        "Usage: /role <id>, /role propose <need>, /role confirm, or /role discard"
+                    )
+                ),
             )
 
     async def _handle_role_propose(self, message: IncomingMessage, request: str) -> None:
@@ -99,6 +109,27 @@ class ProjectRoleCommandHandler:
         await self._channel.send_message(
             message.source,
             MessageContent(text="Role proposal discarded"),
+        )
+
+    async def _handle_role_detail(self, message: IncomingMessage, role_ref: str) -> None:
+        project = self._project_directory.active_project(session_scope(message))
+        if project is None:
+            await self._send_no_active_project(message)
+            return
+        role = self._project_directory.role(role_ref)
+        if role is None:
+            await self._channel.send_message(
+                message.source,
+                MessageContent(text=f"Role not found: {role_ref}"),
+            )
+            return
+        await self._channel.send_message(
+            message.source,
+            role_detail_message(
+                project,
+                role,
+                self._project_directory.appointment_for_role(project.id, role.id),
+            ),
         )
 
     async def _send_no_active_project(self, message: IncomingMessage) -> None:

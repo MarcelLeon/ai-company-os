@@ -2906,3 +2906,1315 @@
 - Phase 5:进行中 → 完成(feature complete;真实 smoke test 作为回归项保留)。
 - Phase 6:未开始 → 进行中。
 - Phase 6 进度新增 ADR-0014、`/metrics` MVP、产品入口判断文档和 smoke test playbook。
+
+## Round 62 — 2026-05-07 — Codex
+
+### 输入
+- 人类暂时没空验收新功能,要求继续迭代,明天白天再验收能力。
+- Round 61 留给下一轮的最高代码侧任务是 Phase 6 观测状态持久化,解决 `/metrics` 重启后清空的问题。
+
+### 思考与讨论
+- 候选 A:新增 TaskSnapshot JSONL → ❌ **否决**:会和已有 audit JSONL 形成两份事实来源,需要额外处理双写一致性。
+- 候选 B:直接上 SQLite Task/Audit repository → ❌ **暂缓**:Phase 6 指标口径还没真实 dogfood,现在引入数据库和查询层偏重。
+- 候选 C:回放已有 audit JSONL 重建 metrics task snapshot → ✅ **选定**:复用 Phase 4 审计事实来源,不加新依赖,能解决重启后历史 done/failed/interrupted/rejected/waiting approval 指标恢复。
+
+### 产出
+- 新增 `docs/decisions/0015-observability-event-replay.md`:
+  - 确定 Phase 6 先用 audit JSONL replay,不新增 task snapshot JSONL 或 SQLite。
+- 更新 `src/aico/core/audit.py`:
+  - 新增 `read_jsonl_audit_events(path)`。
+  - `InMemoryAuditLog` 支持 `initial_events`。
+- 更新 `src/aico/app/phase1.py`:
+  - 配置 `AICO_AUDIT_LOG_PATH` 后,启动时读取历史 audit JSONL 并注入 audit log。
+- 更新 `src/aico/core/metrics.py`:
+  - 从 audit events 重建 metrics 用 `TaskSnapshot`。
+  - `/metrics` 会合并当前进程内 snapshot 与 audit replay snapshot,当前进程内状态优先。
+- 更新 `STATUS.md`、`CHANGELOG.md`、`docs/human/daily-ops.md`、Phase 6 playbook 和 ADR 索引。
+- 新增/更新单测:
+  - audit JSONL 读取和 `InMemoryAuditLog(initial_events=...)`。
+  - audit events 重建最新 task status / risk / adapter / created / updated。
+  - metrics 同时统计 replay 历史任务和当前 open work。
+  - phase1 runtime 启动时加载已有 audit JSONL。
+
+### 关键决策
+- 🔒 **决策 1**:Phase 6 持久化第一切片以 audit event replay 为准,不新增第二份 task snapshot 存储。
+- 🔒 **决策 2**:`/metrics` 可以从 audit replay 恢复历史指标,但 `/tasks` 仍只展示当前进程内任务,避免伪造完整任务列表。
+- 🔒 **决策 3**:重建 snapshot 只服务 metrics,不恢复 payload / session history。
+
+### 留给下一轮
+- 真实 Telegram 验收 `/metrics`:
+  - 配置 `AICO_AUDIT_LOG_PATH`。
+  - 跑 done / waiting approval / collaboration 任务。
+  - 重启 AICO 后再次 `/metrics`,确认历史指标仍可见。
+- 若真实验收口径可用,下一轮可抽出稳定 metrics query 层,供未来 macOS Status Island / Web 复用。
+
+### 状态变化
+- Phase 6 进度新增 ADR-0015、audit JSONL 启动回放、`/metrics` audit-backed task snapshot 重建。
+
+## Round 63 — 2026-05-07 — Codex
+
+### 输入
+- 人类要求“继续开发后续高优功能”。
+- Round 62 留给下一轮的高优代码侧任务是:若无法立刻做真实 Telegram 验收,继续把 Phase 6 metrics summary 提炼成可被 macOS glance / Web 复用的稳定 query 层。
+
+### 思考与讨论
+- 候选 A:直接做 Mac Status Island / 菜单栏 UI → ❌ **暂缓**:还需要桌面 UI 技术选型和交互边界,且当前最大价值是先稳定数据契约,避免本地 UI 直接读 IM 文本。
+- 候选 B:直接做 HTTP API / Web dashboard → ❌ **暂缓**:Phase 6 指标仍待 Telegram dogfood,现在新增服务面、鉴权和前端会扩大范围。
+- 候选 C:抽出结构化 `MetricsReport`,并提供 CLI text/json 入口 → ✅ **选定**:复用 audit replay,不加依赖,让 `/metrics`、CLI 排障和后续 Mac/Web 可以共享同一份观测模型。
+
+### 产出
+- 更新 `src/aico/core/metrics.py`:
+  - 新增 `MetricsReport`、`MetricsGlance`、`TokenCostSummary`。
+  - `build_metrics_report()` 统一合并当前 task snapshot 与 audit replay snapshot。
+  - `metrics_report_to_dict()` 输出 JSON 友好的稳定结构。
+- 更新 `src/aico/core/command_messages.py`:
+  - `/metrics` 改为渲染 `MetricsReport`。
+  - 新增 `glance` 小节,展示 `needs_approval` / `working` / `attention` / `quiet` 与 open/running/waiting/failed 数。
+- 新增 `src/aico/app/metrics_cli.py` 和 console script `aico-metrics`:
+  - 支持 `--audit-log <path>` 或 `AICO_AUDIT_LOG_PATH`。
+  - 支持 `--format text|json`。
+- 新增/更新单测:
+  - Metrics report glance / token-cost 状态。
+  - Metrics JSON 序列化。
+  - `aico-metrics` text/json 输出。
+  - Orchestrator `/metrics` 输出 glance。
+- 更新 `STATUS.md`、`CHANGELOG.md`、`docs/human/daily-ops.md` 和 Phase 6 playbook。
+- 完整验证通过:
+  - 179 个单测
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:Phase 6 当前只稳定 metrics query/report 层和 CLI 排障入口,不新增 HTTP API 或 Mac GUI。
+- 🔒 **决策 2**:`glance` 只表达当前 24h 窗口的紧凑状态,不把完整项目管理语义塞进指标层。
+- 🔒 **决策 3**:token/cost 继续显式 unavailable,但作为结构化字段保留,等待 Adapter 未来稳定提供 usage。
+
+### 留给下一轮
+- 真实 Telegram 验收 `/metrics`:
+  - 配置 `AICO_AUDIT_LOG_PATH`。
+  - 制造 done / waiting approval / collaboration 任务。
+  - 检查 `glance`、24h / 7d summaries、open work 和 collaboration 数。
+  - 重启 AICO 后复查历史指标仍可见。
+- 用同一份 audit JSONL 跑 `aico-metrics --audit-log <path>` 和 `aico-metrics --audit-log <path> --format json`,确认 CLI text/json 与 Telegram 口径一致。
+- 若开始 Mac Status Island 原型,消费 `MetricsReport` / `aico-metrics --format json`,只做 glance / approve / interrupt / jump。
+
+### 状态变化
+- Phase 6 进度新增 MetricsReport 稳定查询模型。
+- Phase 6 进度新增 `aico-metrics` CLI text/json 排障入口。
+
+## Round 64 — 2026-05-07 — Codex
+
+### 输入
+- 人类要求把 Phase 6 规划的核心能力都开发完,随后一起验收;验收没问题就进入 Phase 7。
+- 当前 Phase 6 剩余代码侧核心缺口是 macOS Status Island / glance 原型和 token/cost 接入边界。
+
+### 思考与讨论
+- 候选 A:直接做完整 macOS 菜单栏 / Dynamic Island UI → ❌ **暂缓**:需要新的 GUI 技术栈、权限和发布形态;Phase 6 当前应该先稳定可观测数据契约。
+- 候选 B:新增 `aico-glance` 数据原型,输出 text/json 给 xbar/Swift/后续原生菜单栏消费 → ✅ **选定**:复用 `MetricsReport`,不加依赖,能覆盖 active agents、open work、最近任务和动作命令提示。
+- 候选 C:直接做 HTTP API / Web dashboard → ❌ **暂缓**:验收前新增服务面、鉴权和前端会扩大范围,且 Web/mobile 在产品入口文档里属于后续入口。
+- token/cost:
+  - 直接估算 token/cost → ❌ **否决**:违反“不要伪造指标”。
+  - 等 Adapter 稳定提供 usage 后再做任何代码 → ❌ **否决**:Phase 6 需要先有稳定接入边界。
+  - 新增 `task_usage_recorded` 审计事件和 JSON detail 约定 → ✅ **选定**:真实上报一旦可用即可进入 MetricsReport 汇总。
+
+### 产出
+- 新增 `docs/decisions/0016-status-island-and-usage-boundary.md`:
+  - 确认 Phase 6 不做完整 GUI / Web,先做 glance 数据原型和 usage 接入边界。
+- 新增 `src/aico/core/status_island.py`:
+  - `StatusIslandSnapshot` / `StatusIslandTask`。
+  - `build_status_island_snapshot()`。
+  - `status_island_text()` / `status_island_to_dict()`。
+- 新增 `src/aico/app/glance_cli.py` 和 console script `aico-glance`:
+  - 支持 `--audit-log <path>` 或 `AICO_AUDIT_LOG_PATH`。
+  - 支持 `--format text|json`。
+  - 最近任务会给出 `/task`、`/approve`、`/reject`、`/interrupt` 命令提示。
+- 更新 `src/aico/core/metrics.py`:
+  - `MetricsReport` 新增 `recent_tasks`。
+  - 新增 `UsageRecord`、`usage_audit_detail()`、`usage_records_from_audit_events()`。
+  - `TokenCostSummary` 汇总真实 usage audit events;没有 usage 时继续 unavailable。
+- 更新 `src/aico/core/models.py`:新增 `AuditEventType.TASK_USAGE_RECORDED`。
+- 新增/更新单测:
+  - Status Island snapshot text/json。
+  - `aico-glance` text/json 输出。
+  - usage audit detail 解析与 token/cost 汇总。
+- 完整验证通过:
+  - 184 个单测
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:Phase 6 核心能力以 IM metrics + audit replay + CLI metrics + local glance data + usage boundary 收口,不把完整 GUI/Web 塞进本阶段。
+- 🔒 **决策 2**:`aico-glance` 只读取 audit JSONL,不直接操作运行中进程;approve / reject / interrupt 通过 IM 命令提示完成。
+- 🔒 **决策 3**:token/cost 只接受 Adapter 真实上报的 `task_usage_recorded` 审计事件,没有真实数据时继续显示 unavailable。
+
+### 留给下一轮
+- 集中真实验收 Phase 6:
+  - Telegram `/metrics` 和重启恢复。
+  - `aico-metrics` text/json。
+  - `aico-glance` text/json。
+  - Phase 5 `@reviewer` 协作 smoke test 作为回归项。
+- 如果验收通过,开启 Phase 7 共享记忆层 ADR,先定义最小记忆范围和可审计边界。
+
+### 状态变化
+- Phase 6 进度新增 ADR-0016。
+- Phase 6 进度新增 macOS Status Island / glance 数据原型(`aico-glance`)。
+- Phase 6 进度新增 token / cost usage 审计事件接入边界。
+- Phase 6 代码侧核心能力完成,剩余集中真实验收。
+
+## Round 65 — 2026-05-07 — Codex
+
+### 输入
+- 人类补充近期方向:当前文档中的其他计划继续按进度推进,但近期要高优支持:
+  - CodeFlicker Adapter、Cursor Adapter,最终让 Telegram `/agents` 有更多可用 agents,并保持可扩展可插拔,未来可继续实现 Trae、OpenClaw 等。
+  - 新增 IM Channel,从飞书、钉钉、QQ、微信中先选择 1-2 个支持;选择依据主要是对接成本,因为部分 IM 协议并不标准。
+
+### 思考与讨论
+- 候选 A:立刻把 Phase 7 替换为“多 Adapter / 多 Channel Phase” → ❌ **否决**:Phase 6 代码侧刚收口但还缺集中真实验收,直接改阶段会让观测基线不稳;人类也明确“其他计划按进度推进”。
+- 候选 B:只在最终回复里口头记一下 → ❌ **否决**:这类方向会影响后续多轮优先级,必须进入 `STATUS.md` 和 `ROUNDS.md`,否则下一轮 Agent 很容易继续只看旧的 Phase 7 建议。
+- 候选 C:把它记录成近期高优产品方向,并调整下一轮建议优先级 → ✅ **选定**:不推翻 Phase 6 / Phase 7,但让 Adapter 扩展和 Channel 扩展成为真实验收后的高优路线。
+- Adapter 边界:
+  - 新工具必须继续实现 `AIAdapter`,通过 `AdapterRegistry`、persona/project 配置进入 `/agents`,不能在核心编排里写 `if codeflicker/cursor`。
+  - CodeFlicker / Cursor 的 CLI/API 形态可能变化,进入实现前必须核验官方最新入口,不要按记忆硬写。
+- Channel 边界:
+  - 新 IM 必须继续实现 `IMChannel`,复用平台无关 render contract。
+  - 如果某个 IM 不支持 Telegram 式编辑消息或 inline action,降级逻辑留在 Channel 内部,核心仍只处理 `MessageContent` / `MessageAction`。
+  - 先做 1-2 个,不是四个全上;协议标准化、鉴权/部署成本和 dogfooding 成本是首要选择标准。
+
+### 产出
+- 更新 `STATUS.md`:
+  - 新增“近期高优产品方向”小节。
+  - 记录 Adapter 扩展计划:CodeFlicker、Cursor、`/agents` 可见、Trae/OpenClaw 后续可插拔。
+  - 记录 Channel 扩展计划:飞书/钉钉/QQ/微信中按成本选 1-2 个,先做文本收发和 render contract 映射。
+  - 重排“下一轮建议”,把 Phase 6 验收作为稳定基线,并把 Adapter / Channel 扩展调研与第一实现切片提升为高优。
+- 追加本轮 `ROUNDS.md` 记录。
+
+### 关键决策
+- 🔒 **决策 1**:近期计划不取消 Phase 6 集中验收,而是在验收基线上推进多 Adapter / 多 Channel 扩展。
+- 🔒 **决策 2**:CodeFlicker / Cursor 只通过既有 Adapter 插件路径接入,目标用户体验是 `/agents` 出现更多可用成员。
+- 🔒 **决策 3**:飞书、钉钉、QQ、微信不一次性全量接入;先按官方协议标准化和真实对接成本选择 1-2 个。
+
+### 留给下一轮
+- 先完成 Phase 6 集中真实验收,把 `/metrics`、`aico-metrics`、`aico-glance` 的状态基线跑稳。
+- 随后优先做 CodeFlicker / Cursor 官方入口调研,选 1 个最小 Adapter 实现切片,并确保 `/agents` 能展示。
+- 并行或下一轮做飞书 / 钉钉 / QQ / 微信官方 Bot/API 成本核验,选出第一个 Channel 实现目标。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 65。
+- `STATUS.md` 新增近期高优产品方向。
+- `STATUS.md` 下一轮建议新增 Adapter 扩展和 Channel 扩展高优项。
+
+## Round 66 — 2026-05-07 — Codex
+
+### 输入
+- 人类要求“开始按照计划开发”,有问题和决策疑惑可以找人类确认。
+- Round 65 的近期高优方向中,Adapter 扩展排在前列:CodeFlicker Adapter、Cursor Adapter,目标是让 Telegram `/agents` 有更多可用 agents。
+
+### 思考与讨论
+- 候选 A:先做 Channel 扩展 → ❌ **暂缓**:飞书、钉钉、QQ、微信需要更多官方 Bot/API 成本核验和可能的人类账号/后台配置配合;Adapter 扩展更容易在当前本地代码里切出可测 MVP。
+- 候选 B:先做 Cursor Adapter → ✅ **部分选定**:Cursor 官方文档明确 `cursor-agent -p --output-format text` 非交互形态,适合快速接入。
+- 候选 C:先做 CodeFlicker Adapter → ✅ **部分选定**:公开官网没有稳定 CLI 细节,但本机已有 `flickcli`,且 `flickcli --help` 确认 `-q`、`--cwd`、`--tools`、`--output-format`;可以做本机可选 Adapter。
+- 候选 D:默认把 Cursor / CodeFlicker 暴露为写能力 Agent → ❌ **否决**:远程 IM 默认放开写文件 / shell 会绕过现有审批纪律;第一切片先按只读分析/规划能力接入。
+- 候选 E:重构出通用 CLI Adapter 配置类 → ❌ **否决**:目前已有 Claude/Codex/ Cursor/CodeFlicker 四个样本,但 Claude/Codex 已经有 session/resume 差异;本轮目标是小切片扩展 `/agents`,先复用 `ClaudeCodeAdapter` 子类,不在功能推进中夹带大重构。
+
+### 产出
+- 新增 `src/aico/adapter/cursor.py`:
+  - `CursorAdapter` 复用 `ClaudeCodeAdapter` 的进程、流式输出、中断、health check。
+  - 默认命令 `cursor-agent -p --output-format text`。
+  - 默认只声明 `CODE_REVIEW`、`LONG_RUNNING`、`STREAM_OUTPUT`、`INTERRUPTIBLE`。
+- 新增 `src/aico/adapter/codeflicker.py`:
+  - `CodeFlickerAdapter` 复用 `ClaudeCodeAdapter`。
+  - 默认命令 `flickcli -q --output-format text --tools '{"bash":false,"write":false}'`。
+  - 配置了 cwd 时会向 CLI 追加 `--cwd <path>`。
+- 更新 `src/aico/app/phase1.py`:
+  - 新增 `AICO_ENABLE_CURSOR_ADAPTER` / `AICO_CURSOR_COMMAND` / `AICO_CURSOR_OUTPUT_IDLE_TIMEOUT_SECONDS`。
+  - 新增 `AICO_ENABLE_CODEFLICKER_ADAPTER` / `AICO_CODEFLICKER_COMMAND` / `AICO_CODEFLICKER_OUTPUT_IDLE_TIMEOUT_SECONDS`。
+  - 默认 personas 在对应 Adapter 启用时加入 `cursor` 和 `codeflicker`,因此 `/agents` 可展示新 agent。
+- 新增 ADR-0017,记录可选只读 Adapter 第一切片决策。
+- 新增 `docs/playbooks/optional-agent-adapters.md`,记录 Cursor / CodeFlicker 真实 smoke test 步骤。
+- 更新 `CHANGELOG.md`、`docs/human/daily-ops.md`、`docs/playbooks/README.md`、`docs/decisions/README.md` 和 `STATUS.md`。
+- 新增/更新单测:
+  - `test_cursor_adapter.py`
+  - `test_codeflicker_adapter.py`
+  - `test_phase1_app.py` 中可选 Adapter 配置和 `/agents` 门面覆盖。
+- 完整验证通过:
+  - 193 个单测
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:Cursor / CodeFlicker 第一切片默认是可选只读 Adapter,不默认暴露写文件 / shell 能力。
+- 🔒 **决策 2**:新增 Adapter 只通过 `AIAdapter` / `AdapterRegistry` / Persona 接入,不修改核心路由语义。
+- 🔒 **决策 3**:暂不实现 Cursor / CodeFlicker provider session resume;等真实 smoke test 和使用习惯明确后再做。
+
+### 留给下一轮
+- 做 Cursor / CodeFlicker 真实 smoke test:
+  - Cursor:先安装并登录 `cursor-agent`,再设置 `AICO_ENABLE_CURSOR_ADAPTER=true`。
+  - CodeFlicker:确认 `flickcli` SSO 已登录,再设置 `AICO_ENABLE_CODEFLICKER_ADAPTER=true`。
+  - Telegram 中发送 `/agents`、`/cursor ...`、`/codeflicker ...`、`/status`、`/tasks`。
+- 若真实运行发现 CLI 长时间无输出或输出格式不稳定,优先调整 Adapter 内部命令/解析,不要改核心。
+- Channel 扩展进入下一高优:对飞书、钉钉、QQ、微信做官方 Bot/API 成本核验,选第一个 Channel。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 66。
+- 近期高优产品方向中 Cursor Adapter MVP、CodeFlicker Adapter MVP 标记完成。
+- 下一轮建议把 Cursor / CodeFlicker 真实 smoke test 提升为高优。
+
+## Round 67 — 2026-05-12 — Codex
+
+### 输入
+- 人类要求 Cursor / CodeFlicker “完整支持”,并新增 Trae CLI、Gemini CLI Adapter。
+- 人类要求增强 company 感,补充确实有 AI 公司产出的 roles:PM、资深架构师、goldenTester、市场风险、合规法务审查等;短期不要前台、仓库管理员、财务、客户经理这类低相关岗位。
+- 人类要求从飞书、钉钉、QQ、微信中选择一个官方接口文档最好、接入成本可控的 Channel。
+
+### 思考与讨论
+- 候选 A:继续保持 Cursor / CodeFlicker 只读,Trae / Gemini 也只做只读 → ❌ **否决**:不满足“完整支持”,也无法让这些 CLI 成为真实可派工成员。
+- 候选 B:在 AICO 审批门禁下开放 CLI 完整能力 → ✅ **选定**:Adapter capabilities 声明 `code_edit` / `shell_exec`,危险任务仍先走 AICO 风险识别、`/approve`、审计和 `/interrupt`;底层 CLI 用非交互批准模式避免远程任务卡在本机确认。
+- 候选 C:扩展 `AIAdapter.receive_task()` 协议,让 Adapter 按 risk 动态切 command approval mode → ❌ **暂缓**:需要改公开协议和 TaskBus/Adapter 交互面,本轮范围会扩大;先复用现有风险门禁闭环。
+- Channel 选择:
+  - 飞书 → ✅ **选定**:官方 Server API / 事件订阅文档较完整,企业自建应用 + bot 文本收发路径清晰,适合先做企业 IM dogfooding。
+  - 钉钉 → ⚪ 可行但未选:机器人能力也标准,但本轮只选一个;飞书 / Lark 文档和应用模型更贴近后续多团队入口。
+  - QQ / 微信 → ❌ 暂缓:审核、白名单、合规和非标准机器人能力摩擦更高,不适合作为第一个低成本 Channel。
+- Role 扩展原则:
+  - 只加能直接服务 AI 公司交付的岗位:PM、Senior Architect、Golden Tester、Market Risk、Legal Compliance。
+  - 不加短期缺少 AI 公司产出的职能,避免“公司感”变成空壳角色扮演。
+
+### 产出
+- 更新 `CursorAdapter`:
+  - 默认命令改为 `cursor-agent -p --force --output-format text`。
+  - capabilities 增加 `code_edit` / `shell_exec`。
+  - 已绑定 provider session 时支持 `--resume <session_id>`。
+- 更新 `CodeFlickerAdapter`:
+  - 默认命令改为 `flickcli -q --approval-mode yolo --output-format text`。
+  - capabilities 增加 `code_edit` / `shell_exec`。
+  - 支持 `--cwd` 和 provider session `--resume`。
+- 新增 `TraeAdapter`:
+  - 默认命令 `trae-cli --print --yolo`。
+  - 支持 `--session-id` / `--resume`。
+- 新增 `GeminiAdapter`:
+  - 默认命令 `gemini --approval-mode yolo --output-format text`。
+  - 支持已绑定 provider session `--resume`。
+- 更新 `aico-phase1` wiring:
+  - 新增 `AICO_ENABLE_TRAE_ADAPTER` / `AICO_TRAE_COMMAND` / `AICO_TRAE_OUTPUT_IDLE_TIMEOUT_SECONDS`。
+  - 新增 `AICO_ENABLE_GEMINI_ADAPTER` / `AICO_GEMINI_COMMAND` / `AICO_GEMINI_OUTPUT_IDLE_TIMEOUT_SECONDS`。
+  - 默认 personas 增加 `trae` 和 `gemini`。
+  - provider session factory 支持 `codeflicker` 和 `trae` 的 new/resume。
+- 更新默认 role 模板:
+  - 新增或强化 `pm`、`senior-architect`、`golden-tester`、`market-risk`、`legal-compliance`。
+  - 默认 AICO 项目 roles 覆盖全部内置有效岗位。
+- 新增 `FeishuChannel`:
+  - 获取 tenant access token。
+  - 文本发送、编辑、删除。
+  - URL verification challenge。
+  - `im.message.receive_v1` 文本事件转 `IncomingMessage`。
+  - `MessageContent.actions` 第一切片降级为纯文本提示。
+- 新增 ADR-0018 和 Feishu Channel playbook。
+- 更新 optional adapters playbook、daily ops、ADR/playbook 索引、CHANGELOG、STATUS。
+- 新增/更新单测:
+  - Cursor / CodeFlicker 完整能力和 resume 命令。
+  - Trae / Gemini Adapter 默认命令和 session 命令。
+  - Feishu Channel token、发送、URL verification、文本事件解析。
+  - Phase1 runtime 可启用所有 optional adapters 和新增 roles。
+  - 修复 `aico-metrics` / `aico-glance` CLI 测试中的固定日期,避免当前日期推进后 24h/7d 窗口断言失效。
+- 完整验证通过:
+  - 207 个单测
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+
+### 关键决策
+- 🔒 **决策 1**:Cursor / CodeFlicker / Trae / Gemini 作为完整能力 Adapter 接入,底层 CLI 使用非交互批准模式,远程安全边界由 AICO 审批/审计/中断承担。
+- 🔒 **决策 2**:第一个非 Telegram Channel 选择 Feishu,先做 Channel 插件和 payload handler,不在本轮引入完整 callback server 生命周期。
+- 🔒 **决策 3**:AI Company role 扩展只加能直接提升交付、架构、验收、市场风险、合规审查能力的岗位。
+
+### 留给下一轮
+- 真实 smoke test:
+  - Cursor:安装并登录 `cursor-agent`,启用 `AICO_ENABLE_CURSOR_ADAPTER=true`,跑只读和写能力审批任务。
+  - CodeFlicker:确认 `flickcli` SSO,启用 `AICO_ENABLE_CODEFLICKER_ADAPTER=true`,跑只读和写能力审批任务。
+  - Trae:处理本机 keyring/token 问题,启用 `AICO_ENABLE_TRAE_ADAPTER=true`,跑只读和写能力审批任务。
+  - Gemini:确认登录/API key,启用 `AICO_ENABLE_GEMINI_ADAPTER=true`,跑只读和写能力审批任务。
+- Feishu 部署层:
+  - 用 FastAPI route 或现有服务入口承接飞书 callback,调用 `FeishuChannel.handle_event(payload)`。
+  - 在飞书开放平台完成 URL verification 和 `im.message.receive_v1` 订阅。
+  - 真实验证文本入站、回复、编辑/删除降级。
+- Phase 6 集中真实验收仍未完成,不要直接跳 Phase 7。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 67。
+- Adapter 扩展方向新增 Trae / Gemini,Cursor / CodeFlicker 从 MVP 只读升级为完整能力。
+- Channel 扩展方向选择 Feishu,第一切片 mock 测试完成,真实 callback server 待下一轮。
+
+## Round 68 — 2026-05-13 — Codex
+
+### 输入
+- 人类反馈 `/agents` 中 `implementer` / `reviewer` 与 `cursor` / `codeflicker` / `trae` / `gemini` 命名层混用,`/roles` 太长且格式体感不好。
+- 人类要求讨论并先优化一版权限分层:每层枚举要符合 AI Company OS 使用直觉、好记、不要太多,可引入真实团队管理中“默认管理幅度有限、讨论人数不宜过多”的经验。
+
+### 思考与讨论
+- 候选 A:实现完整 RBAC / role-aware runtime gate → ❌ **否决**:当前危险动作已有 risk assessor、adapter capability、`/approve` 和审计闭环;本轮直接上 RBAC 会扩大范围,也会让个人 dogfooding 配置变重。
+- 候选 B:只改 `/roles` 文案,不定义权限词表 → ❌ **否决**:下一轮仍可能继续新增 `read_xxx` / `write_xxx` 细粒度 token,权限语言会再次发散。
+- 候选 C:保留三层边界,但把词表收敛到少量可记忆枚举 → ✅ **选定**:
+  - Adapter capability 表达工具物理能力。
+  - Role scope 表达岗位默认工作范围。
+  - Risk level 表达单次任务风险与审批。
+- 命令 UX:
+  - `/agents` 应回答“公司里有哪些可派工成员/工具入口”,所以默认显示 `claude` / `codex` 这类入口名,岗位名作为 role 标注。
+  - `/roles` 应回答“项目有哪些岗位、谁负责”,默认只展示核心/专家岗位;支持岗位和长说明按需展开。
+  - `/role <id>` 承担详情页职责,避免默认列表变成长配置。
+
+### 产出
+- 新增 `RoleScope` 枚举:`docs` / `code` / `tests` / `ops` / `audit`。
+- 更新默认 role 模板,把 `read_repo` / `write_docs` / `run_tests` 等细粒度默认 permissions 收敛为 5 个 role scope。
+- `/appoint <agent> as <role>` 不传 scope 时,自动继承 role 默认 scope。
+- `/agents` 默认输出改为工具入口名优先,例如 `claude -> claude-code [role: implementer]`。
+- `/roles` 默认输出改为紧凑岗位板:
+  - Core:`pm`、`implementer`、`reviewer`、`golden-tester`。
+  - Specialists:`senior-architect`、`security`、`legal-compliance`、`market-risk`。
+  - Support 默认隐藏到 `/roles all`。
+- 新增 `/role <id>` 详情视图,展示 owner、scope、approval 和 risk ladder。
+- 新增 ADR-0019,记录三层权限词表和紧凑团队视图决策。
+- 更新 `STATUS.md`、`CHANGELOG.md` 和 ADR 索引。
+- 更新单测覆盖 compact `/agents`、compact `/roles`、`/roles all`、`/role <id>`、默认 appointment scope 继承和 Phase1 默认 assignment scope。
+- 完整验证通过:
+  - 208 个单测
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:本轮不引入完整 RBAC;role scope 是岗位契约和 prompt/appointment 上下文,不是强运行时 ACL。
+- 🔒 **决策 2**:权限语言稳定为三层:Adapter capability、Role scope、Risk level。
+- 🔒 **决策 3**:`/roles` 默认视图遵守团队管理幅度,只展示少数关键岗位;全量信息进入 `/roles all` / `/role <id>`。
+
+### 留给下一轮
+- 如需让 role scope 真正参与执行门禁,新增 `RoleAuthorizationPolicy` 并写新 ADR,不要把 scope 检查散落进 `TaskBus`。
+- 对新 `/agents` / `/roles` / `/role <id>` 做 Telegram 真实体感复验。
+- Phase 6 集中真实验收仍未完成,不要直接跳 Phase 7。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 68。
+- Phase 5 已完成项补充 `/agents` 工具入口名优先展示和 `/roles` 紧凑视图。
+- 新增 ADR-0019。
+
+## Round 69 — 2026-05-13 — Codex
+
+### 输入
+- 人类发现多个任务进入 `waiting_approval` 后,裸 `/approve` 会返回:
+  `multiple pending approvals: e89c1271, b216b23d, ec63d793`。
+- 人类尝试 `/interrupt e89c1271` 清理待审批任务,但收到:
+  `task is waiting_approval, not running`。
+- 人类想测试 `lead` 某个 agent 后询问团队和项目问题,怀疑当前也无法自然实现。
+
+### 思考与讨论
+- 候选 A:新增完整 pending approval 管理器和 `/approvals` 命令 → ❌ **暂缓**:有用,但本轮真正阻塞是普通项目咨询误进审批队列,先修根因。
+- 候选 B:允许裸 `/approve` 默认 approve 最新 pending approval → ❌ **否决**:多个危险任务同时待审批时默认批准某一个不安全,也不符合可审批/可审计。
+- 候选 C:让 `/interrupt <task_id>` 可以取消 waiting approval → ✅ **选定**:符合“可中断”直觉,也提供清理 pending 队列的最小通用能力。
+- 候选 D:给 lead 问题新增 `/ask-info` 或 `/consult` 命令 → ❌ **否决**:会让用户记更多命令;老板在项目办公室里直接问 lead 问题应该自然工作。
+- 根因定位:
+  - project lead / role task 会渲染完整 Appointment Prompt Stack。
+  - 旧 `TextRiskAssessor` 扫整段 prompt,role summary / inline prompt 里的 `write`、`run tests` 等词会污染风险识别。
+  - 真正应该评估的是 `Current task:` 之后的人类请求。
+
+### 产出
+- 更新 `TextRiskAssessor`:
+  - 如果 task payload 包含 `Current task:`,只对最后一个 `Current task:` 后的文本做风险识别。
+  - 纯普通 task 仍按整段 payload 识别。
+  - 真实用户请求里出现 `run pytest` / `update STATUS.md` / destructive 词时仍触发审批。
+- 更新 `TaskBus.interrupt()`:
+  - running 任务仍按原逻辑中断 Adapter。
+  - `waiting_approval` 任务会被取消,任务状态改为 `interrupted`,pending approval 不再出现在 `/approve` 待选集合中。
+  - 记录 `approval_rejected` 和 `task_interrupted` 审计事件,detail 为 `interrupted before approval`。
+- 新增测试:
+  - risk assessor 忽略 appointment prompt scaffolding 中的 write/run。
+  - risk assessor 仍识别 `Current task` 内的真实写/执行请求。
+  - task bus interrupt 可取消 waiting approval。
+  - orchestrator 中 active project 普通团队/项目问题不会误触发 approval。
+- 更新 `STATUS.md` 和 `PITFALLS.md`。
+- 完整验证通过:
+  - `uv run pytest tests/unit/test_risk.py tests/unit/test_task_bus.py tests/unit/test_orchestrator.py`
+  - 72 passed
+  - `uv run pytest`
+  - 212 passed
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:风险识别的输入边界是用户真实请求,不是完整 system/role/project prompt。
+- 🔒 **决策 2**:`/interrupt <task_id>` 既可中断 running,也可取消 waiting approval;这比新增专门 cancel 命令更符合当前命令模型。
+- 🔒 **决策 3**:裸 `/approve` 在多个 pending approvals 时仍不默认选择,必须由用户指定 task id。
+
+### 留给下一轮
+- Telegram 真实复验:
+  - `/project aico`
+  - `/lead implementer`
+  - 直接问“这个项目现在团队分工和下一步重点是什么?”
+  - 确认不会进入 approval。
+  - 人为制造两个待审批任务,用 `/interrupt <short_id>` 取消其中一个,再 `/approve <short_id>` 或 `/reject <short_id>` 处理另一个。
+- 如果 pending approval 管理仍不顺手,再新增 `/approvals` 或把 `/tasks` 中 waiting approval 展示做得更突出。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 69。
+- 新增 PITFALL P-016 并标记 resolved。
+
+## Round 70 — 2026-05-14 — Codex
+
+### 输入
+- 人类要求让项目命令更有指导性、流程更丝滑。
+- 重点命令:`/role`、`/agent`、`/project`、`/team` 等查看类命令。
+- 人类希望看完 role 后知道如何授权 permission / scope,看完 agent 后知道如何 appoint,看完 project 后知道如何看日报/周报等。
+- 指导命令要足够简短,符合用户动线,同时可作为后续扩展命令的要求。
+
+### 思考与讨论
+- 候选 A:扩展 `/help` 为长帮助页 → ❌ **否决**:`/help` 已经是百科入口,不能解决每个页面看完后的下一步动线。
+- 候选 B:每个查看结果末尾追加短 `Next:` → ✅ **选定**:最小改动,直接改善 IM 操作流,也不会改变业务语义。
+- 候选 C:新增 `/scope <role> ...` 命令 → ❌ **暂缓**:有产品价值,但本轮不应新增权限写入命令;当前已有 `/appoint <agent> as <role> <scope>` 覆盖同 role appointment 的 scope,先复用它。
+- Next 设计原则:
+  - 每个查看结果只给少量下一步,不做长文档。
+  - 使用当前上下文填入真实 role / agent,减少占位符。
+  - 默认只推荐已有命令;scope 调整复用 `/appoint`。
+
+### 产出
+- `/agents` 输出新增 Next:
+  - `/agent <agent>`
+  - `/roles`
+  - `/appoint <agent> as <role>`
+- `/agent <agent>` 输出新增 Next:
+  - idle: `/roles`、`/appoint <agent> as <role>`、`/new <agent>`
+  - 非 idle: `/tasks`、`/status`、`/agent <agent>`
+- `/project` 输出新增 Next:
+  - `/brief`
+  - `/team`
+  - `/next`
+  - `/daily`
+  - `/weekly`
+- `/team` 输出新增 Next:
+  - 有 lead: `/ask <lead-role> <task>`、`/who <lead-role>`、`/roles`、`/lead <role>`
+  - 无 appointment: `/roles`、`/agents`、`/appoint <agent> as <role>`
+- `/roles` 输出新增 Next:
+  - `/role <role>`
+  - `/agents`
+  - `/appoint <agent> as <role>`
+  - `/roles all`
+- `/role <id>` 输出新增 Next:
+  - 未任命:`/agents`、`/appoint <agent> as <role>`、`/roles`
+  - 已任命:`/ask <role> <task>`、`/lead <role>`、`/appoint <agent> as <role> <scope>`、`/unappoint <role>`
+- 更新 `STATUS.md`、`CHANGELOG.md`、`docs/human/daily-ops.md`、`docs/architecture/project-assignment-layer.md`。
+- 新增/更新单测覆盖 project / team / roles / role / agents guidance。
+- 完整验证通过:
+  - `uv run pytest`
+  - 215 passed
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:Next guidance 是页面级动作提示,不是替代 `/help` 的完整命令说明。
+- 🔒 **决策 2**:本轮不新增 `/scope`;scope 调整先复用 `/appoint` 的同 role 覆盖语义。
+- 🔒 **决策 3**:Next guidance 不做复杂工作流引擎,只在 message builder 中基于已有上下文生成短命令列表。
+
+### 留给下一轮
+- Telegram 真实体感复验 `/project`、`/team`、`/roles`、`/role implementer`、`/agents`、`/agent claude` 的 Next 是否足够短。
+- 如果 `/appoint <agent> as <role> <scope>` 作为 scope 调整入口不够直觉,再单独设计 `/scope <role> ...`。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 70。
+- Phase 5 已完成项补充查看类命令 Next guidance。
+
+## Round 71 — 2026-05-14 — Codex
+
+### 输入
+- 人类在 Telegram 真实验证后发现:`/roles` 等项目消息里的 `Next:` 命令没有变蓝、不可触碰发送。
+- 对比现象:`/agents` 输出中的 `- /agent <agent>` 可以被 Telegram 识别,但项目消息中被转成 `• /role <role>` 后不行。
+- 预期:Next 中提示的 `/command` 应保持 Telegram 可识别的裸命令形态。
+
+### 根因定位
+- Project message renderer 会把普通 Markdown list 前缀 `- ` / `* ` 统一规范成 `• `。
+- 同一渲染链路还会给所有 `/command` 添加 `MessageTextStyle.CODE` span。
+- Telegram 发送 rich text 后,code span 和 bullet 规范化会压掉 bot command 的原生自动识别。
+- `/agents` 属于普通 command message builder,没有走 project message render spans,所以保留 `- /command` 后能被 Telegram 识别。
+
+### 产出
+- 更新 `src/aico/core/project_messages.py`:
+  - 识别形如 `- /command` / `* /command` 的 Next 引导命令行。
+  - 这类命令行不再规范化为 `• `,保留 `- /command`。
+  - 这类命令行不再添加 slash command code span,交给 Telegram 自动识别为可触碰命令。
+  - 非 Next 的项目事实、document snippet、blocker 文本仍保留原有 bullet 规范化和 `/approve` 等 code span。
+- 更新 `tests/unit/test_project_messages.py`:
+  - 覆盖 `/project`、`/team`、`/roles`、`/role` 的 Next 输出为 hyphen list。
+  - 覆盖 Next 区块中的 slash command 不生成 `MessageTextStyle.CODE` span。
+  - 保留 blockers / summary 中正文命令 code span 的回归覆盖。
+- 更新 `STATUS.md`。
+- 新增 PITFALL P-017。
+- 完整验证通过:
+  - `uv run pytest`
+  - 215 passed
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:用于触碰发送的 Next bot command 应优先尊重 IM 平台原生识别,不要强行包成 code rich text。
+- 🔒 **决策 2**:例外规则只作用于 `- /command` / `* /command` 这类引导命令行,不改变文档事实和普通正文渲染。
+- 🔒 **决策 3**:平台无关 render contract 继续保留,但 Telegram 原生命令识别属于 channel 体感边界,需要在 message builder 测试里锁住输出形态。
+
+### 留给下一轮
+- Telegram 真实复验:
+  - `/roles`
+  - `/role implementer`
+  - `/project`
+  - `/team`
+  - 确认 `Next:` 里的 `/command` 均为蓝色可触碰命令。
+- 如果 Feishu/其他 IM 对裸 `/command` 没有同类识别,保持 channel 内降级即可,不要为了单个平台重新改变核心 Next 文本。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 71。
+- 新增 PITFALL P-017 并标记 resolved。
+
+## Round 72 — 2026-05-14 — Codex
+
+### 输入
+- 人类完成命令验收后继续推进 Phase 6。
+- 人类指出 Telegram `/metrics` 手工制造 done / waiting approval / collaboration 任务,以及重启恢复验收都不太好测。
+- 人类要求由 Agent 编写一个省 token 的验证例子,验证这些能力,并给出最新项目状态。
+
+### 思考与方案
+- 候选 A:真实调用 Claude/Codex 造任务后在 Telegram 里验收 → ❌ **否决**:会消耗 token,还混入 provider 登录、网络和长任务不确定性。
+- 候选 B:只检查 `build_metrics_report()` 纯函数 → ❌ **不足**:能验证统计口径,但覆盖不到 `/metrics` 命令路径、audit JSONL 重启恢复和 CLI/glance 入口。
+- 候选 C:新增无 token acceptance test → ✅ **选定**:用 fake Telegram channel、fake Adapter 和临时 audit JSONL 覆盖完整产品路径,不碰真实 LLM。
+
+### 产出
+- 新增 `tests/unit/test_phase6_metrics_acceptance.py`:
+  - 使用 `NoTokenAdapter` 模拟 provider,只返回 `ok`,不调用真实 CLI/LLM。
+  - 通过 `Orchestrator.handle_incoming()` 模拟 Telegram 普通消息和 `/metrics`。
+  - 生成 1 个 done task、1 个 waiting approval task、1 条 collaboration request audit event。
+  - 通过 `JsonlAuditSink` 写入临时 audit JSONL。
+  - 新建“重启后”的 `Orchestrator + TaskBus`,只用 `InMemoryAuditLog(initial_events=...)` 回放 audit JSONL,再次验证 `/metrics`。
+  - 用同一份 audit JSONL 验证 `aico-metrics` text/json 和 `aico-glance` text/json。
+- 更新 `docs/playbooks/phase-6-observability.md`,加入省 token 本地验收命令:
+  - `uv run pytest tests/unit/test_phase6_metrics_acceptance.py`
+- 更新 `STATUS.md`:
+  - 记录 Phase 6 无 token `/metrics` live 验收、重启恢复验收、CLI/glance 验收已完成。
+  - 下一轮建议改为先决定是否接受无 token 自动验收作为 Phase 6 验收门槛;若接受,可进入 Phase 7 共享记忆层 ADR。
+
+### 验证结果
+- `uv run pytest tests/unit/test_phase6_metrics_acceptance.py`
+  - 1 passed
+- 完整验证通过:
+  - `uv run pytest`
+  - 216 passed
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:Phase 6 metrics 验收优先把 AICO 自身观测链路跑稳,不要为造样例而调用真实 LLM。
+- 🔒 **决策 2**:无 token acceptance test 必须覆盖产品入口 `/metrics`,不能只测纯统计函数。
+- 🔒 **决策 3**:重启恢复验收以 audit JSONL 为源,新建 TaskBus 时只注入 initial events,模拟真实重启后内存任务清空的状态。
+
+### 留给下一轮
+- 人类确认是否接受无 token 自动验收替代真实 Telegram 手工造数。
+- 若接受,将 Phase 6 收口并进入 Phase 7 共享记忆层 ADR。
+- 若仍要求 Telegram 网络复验,只复验 `/metrics` 文本展示即可,不要再真实调用 LLM 造任务。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 72。
+- Phase 6 新增无 token metrics acceptance 通过记录。
+
+## Round 73 — 2026-05-15 — Codex
+
+### 输入
+- 人类要求保留无 token acceptance case。
+- 人类希望再补一个需要 token 的简单任务验证 `/metrics` 相关命令,因为完全不对模型发起任务心里没谱。
+- 人类要求写简单 golden 测试并由 Agent 验证,全通过后下轮再继续。
+
+### 思考与方案
+- 候选 A:把真实 provider 调用放进普通单测 → ❌ **否决**:会让日常 `uv run pytest` 不稳定且持续烧 token。
+- 候选 B:只手工跑一条 CLI 命令,不入库 → ❌ **不足**:无法成为后续可复验的 golden。
+- 候选 C:新增 opt-in token golden → ✅ **选定**:默认跳过,设置环境变量时才消耗 token;覆盖真实 provider task、`/metrics`、audit replay 和 `aico-metrics`。
+
+### 产出
+- 保留 `tests/unit/test_phase6_metrics_acceptance.py` 无 token acceptance。
+- 新增 `tests/golden/test_phase6_metrics_token_golden.py`:
+  - 默认跳过;需要 `AICO_RUN_TOKEN_GOLDEN=1` 才运行。
+  - `AICO_TOKEN_GOLDEN_COMMAND` 可配置真实 provider CLI。
+  - 通过 `ClaudeCodeAdapter` 的通用 CLI 适配路径发起极简模型任务。
+  - golden prompt 固定为 `Return exactly this text: AICO_METRICS_TOKEN_SMOKE_OK`。
+  - 验证模型输出包含 `AICO_METRICS_TOKEN_SMOKE_OK`。
+  - 验证 live `/metrics` 显示 `done=1`、`agents: token-smoke=1`、`status: quiet`。
+  - 验证“重启后”只从 audit JSONL 恢复同一条 done task。
+  - 验证 `aico-metrics --audit-log ...` 与 live `/metrics` 口径一致。
+- 更新 `docs/playbooks/phase-6-observability.md`:
+  - 记录无 token acceptance 命令。
+  - 记录真实 provider token golden 命令。
+- 新增 PITFALL P-018:
+  - smoke prompt 中的否定危险词如 `Do not run tools` 也会触发 approval gate。
+  - provider token smoke 应使用无风险固定短答 prompt。
+- 更新 `STATUS.md`:
+  - 当前轮次更新为 Round 73。
+  - Phase 6 增加真实模型 token golden 通过记录。
+  - 下一轮建议改为 Phase 6 收口并开启 Phase 7 共享记忆层 ADR。
+
+### 验证结果
+- 默认 golden 跳过验证:
+  - `uv run pytest tests/golden/test_phase6_metrics_token_golden.py`
+  - 1 skipped
+- 真实 Codex token golden 通过:
+  - `env AICO_RUN_TOKEN_GOLDEN=1 AICO_TOKEN_GOLDEN_COMMAND='codex --ask-for-approval never exec --sandbox read-only --color never' uv run pytest tests/golden/test_phase6_metrics_token_golden.py`
+  - 初次通过 1 passed in 21.15s;清理导入后最终复跑 1 passed in 12.11s
+- 完整验证通过:
+  - `uv run pytest`
+  - 216 passed, 1 skipped
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:真实 provider golden 必须 opt-in,不能默认烧 token。
+- 🔒 **决策 2**:token golden 验证的是“真实模型任务完成后 metrics 口径可信”,不是验证 token/cost usage;当前 Adapter 仍不会伪造 usage。
+- 🔒 **决策 3**:golden prompt 保持短答,不包含 `run` / `modify` / `edit` 等风险词,避免验收目标被 approval gate 污染。
+
+### 留给下一轮
+- Phase 6 已有无 token acceptance 和真实 Codex token golden 双保险。
+- 下一轮建议收口 Phase 6,然后进入 Phase 7 共享记忆层 ADR。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 73。
+- 新增 PITFALL P-018 并标记 resolved。
+
+## Round 74 — 2026-05-15 — Codex
+
+### 输入
+- 人类明确要求:收口 Phase 6,开始 Phase 7。
+- 前置状态:Phase 6 已有无 token acceptance 和真实 Codex token golden 双保险,`/metrics`、audit replay、`aico-metrics`、`aico-glance` 口径已验证。
+
+### 思考与方案
+- 候选 A:直接开始写记忆存储代码 → ❌ **暂缓**:共享记忆会影响 Prompt Stack、项目报告和多 AI 协作,先定边界避免过度设计。
+- 候选 B:直接接向量库 / RAG → ❌ **否决**:第一版难以审计、难以纠错,也会引入新依赖和索引维护。
+- 候选 C:先收口 Phase 6,再用 ADR + playbook 启动 Phase 7 第一切片 → ✅ **选定**:符合 AGENTS 要求的重要架构决策先落 ADR,同时给下一轮实现明确验收路径。
+
+### 产出
+- Phase 6 状态收口:
+  - 阶段地图中 Phase 6 从进行中改为完成。
+  - Phase 6 `/metrics` Telegram 手工造数项改为由无 token acceptance / token golden 替代验收。
+  - `Phase 6 集中真实验收通过后进入 Phase 7` 标记完成。
+- Phase 7 启动:
+  - 阶段地图中 Phase 7 从未开始改为进行中。
+  - 新增 Phase 7 进度小节。
+  - 当前轮次更新为 Round 74。
+- 新增 ADR-0020 `Phase 7 Shared Memory Scope`:
+  - 决定第一版使用 AICO 本地可审计记忆账本。
+  - 第一切片包括 `MemoryRecord`、`MemoryStore`、`JsonlMemoryStore`、`/remember`、`/recall`、`/forget`。
+  - 明确不引入向量库、不自动记住所有聊天、不依赖 Provider 私有 session memory。
+- 新增 `docs/playbooks/phase-7-shared-memory.md`:
+  - 定义 Phase 7 第一切片实现范围。
+  - 定义本地单测和 IM 体感验收步骤。
+  - 记录失败排查边界。
+- 更新 ADR / playbook 索引。
+- 更新下一轮建议:
+  - 最高优先级改为实现 Phase 7 共享记忆第一切片。
+  - 多 Adapter 真实 smoke test、Feishu 部署层仍保留为高优后续项。
+
+### 验证结果
+- `uv run pytest`
+  - 216 passed, 1 skipped
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src tests`
+- `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:Phase 6 正式完成,后续观测相关工作作为增量能力而不是 Phase 6 阻塞项。
+- 🔒 **决策 2**:Phase 7 第一版共享记忆采用可审计 JSONL 账本,不直接上向量库。
+- 🔒 **决策 3**:共享记忆必须绑定项目 scope、source、created_by 和归档语义,不能成为不可追溯的黑箱。
+
+### 留给下一轮
+- 按 ADR-0020 和 `docs/playbooks/phase-7-shared-memory.md` 实现第一切片:
+  - `MemoryRecord`
+  - `MemoryStore`
+  - `JsonlMemoryStore`
+  - `AICO_MEMORY_PATH`
+  - `/remember` / `/recall` / `/forget`
+  - Prompt Stack 少量当前项目记忆注入
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 74。
+- Phase 6:进行中 → 完成。
+- Phase 7:未开始 → 进行中。
+- ADR-0020 Accepted。
+
+## Round 75 — 2026-05-15 — Codex
+
+### 输入
+- 人类明确 Phase 7 记忆层产品基调:
+  - `/remember` / `/recall` / `/forget` 可以存在。
+  - 但调用和触发这些命令的大比例应该来自 agent,而不是老板。
+  - AI Company OS 的目标是让老板方便管理自己的 agent 去做小中型项目,记忆不应变成老板手动维护的痛苦和恐惧来源。
+
+### 思考与讨论
+- 候选 A:沿用 ADR-0020 的“显式命令写入”作为主路径 → ❌ **修正**:这会把记忆层做成老板维护数据库,偏离“管理真实团队”的产品体感。
+- 候选 B:完全自动记住所有聊天和模型输出 → ❌ **否决**:会制造不可控记忆污染,也违反可审计、可纠错的 Phase 7 边界。
+- 候选 C:agent 主动维护记忆,命令作为纠错/补充/排障入口 → ✅ **选定**:老板主体验仍是项目管理命令,agent 负责沉淀和召回上下文。
+
+### 产出
+- 新增 ADR-0021 `Agent-Driven Memory Ownership`。
+- 更新 `docs/playbooks/phase-7-shared-memory.md`,明确 Phase 7 记忆层的产品基调:
+  - 记忆命令存在,但不是老板高频主路径。
+  - agent 在任务完成、项目交接、风险确认、日报/周报沉淀时主动写入稳定事实。
+  - agent 接项目任务前自动召回当前项目少量高置信记忆。
+  - 所有 agent 写入都必须带 source、created_by、confidence 和写入理由。
+- 更新 `STATUS.md` 和 ADR 索引,让下一轮实现按 ADR-0020 + ADR-0021 同时推进。
+
+### 关键决策
+- 🔒 **决策 1**:Phase 7 的价值不是多几个 slash command,而是让 agent 团队自动沉淀和使用项目上下文。
+- 🔒 **决策 2**:`/remember` / `/recall` / `/forget` 是老板的控制权和排障入口,不是主要工作流。
+- 🔒 **决策 3**:agent-driven memory 也必须可审计、可纠错、可归档,不能退化为“自动记住一切”。
+
+### 留给下一轮
+- 实现 Phase 7 第一切片时,除了命令 MVP,还要在 agent 任务链路设计记忆触发点:
+  - Prompt Stack 自动召回当前项目少量高置信记忆。
+  - 任务完成或报告生成后,由 agent 写入稳定项目事实。
+  - `/recall` 能解释这些记忆的来源和写入理由。
+- 避免把验收做成只测试 `/remember` / `/recall` / `/forget`;需要覆盖“老板自然发项目命令,agent 自动用记忆”的路径。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 75。
+- Phase 7 新增 ADR-0021,明确记忆层由 agent 主动维护。
+
+## Round 76 — 2026-05-15 — Codex
+
+### 输入
+- 人类担心 `/remember` / `/recall` 在 lead agent 与其他 agent 间交互设计上不够合理。
+- 人类要求设计一个符合 A2A 的记忆架构,并参考 `https://github.com/MarcelLeon/attack-on-memory`。
+- 必须满足:
+  - agent 间交互、agent 和人之间交互有记忆,由 A2A 发起的任务粒度必须包含 project 或 team,跨 team/project 不共享。
+  - boss 发起的会话有记忆总结提取能力,识别 boss 喜好/feedback 时一定要记录,具体层级由 LLM 判断确认。
+  - 重要记忆可以通过基础设施广播给 team 下全部 agent,老板开会显式触发和 agent 自发广播走通用底层机制。
+  - 试验用记忆广播减少 A2A 消息传递和 token 消耗。
+
+### 思考与讨论
+- 参考 `attack-on-memory` 后,确认可迁移思想是 Memory Atom、evidence、scope、graph edge、time-window retrieval、selective disclosure、BranchWorldModel,而不是直接引入该项目代码。
+- 候选 A:继续只做 `/remember` / `/recall` 命令 MVP → ❌ **否决**:命令会成为旁路,无法支撑 lead agent 和 team agent 的 A2A 协作。
+- 候选 B:直接引入向量库 / 图数据库 → ❌ **否决**:ADR-0020 已确定第一版 JSONL 权威源,此时引入新后端会把可审计边界打散。
+- 候选 C:设计 A2A-compatible Memory Fabric → ✅ **选定**:内部先不暴露完整 HTTP A2A,但领域对象和事件要能映射到 A2A Task / Message / Part / Artifact / Context / Push。
+
+### 产出
+- 新增 ADR-0022 `A2A Memory Fabric`。
+- 新增 `docs/architecture/a2a-memory-fabric.md`。
+- 更新 `docs/playbooks/phase-7-shared-memory.md`,把第一切片验收从“命令 MVP”扩展为:
+  - A2A 子任务必须带 project/team scope。
+  - boss 会话结束后能抽取候选记忆并判断层级。
+  - team 共识广播通过 `MemoryBroadcast` 写入并生成 receipt。
+  - token-saving 试验用 memory refs + MemoryPacket,失败时回退显式消息传递。
+- 更新 `STATUS.md` 和 ADR 索引。
+
+### 关键决策
+- 🔒 **决策 1**:AICO 记忆层的核心不是 slash command,而是 project/team-scoped A2A Memory Fabric。
+- 🔒 **决策 2**:默认禁止跨 project / team 共享记忆;boss global memory 只能用于偏好/工作方式,不能泄漏项目事实。
+- 🔒 **决策 3**:记忆广播是底层基础设施,不是 IM 群发;老板会议触发和 agent 自发共识广播必须复用同一机制。
+- 🔒 **决策 4**:用 memory refs 减少 A2A 消息传递只是实验,必须保留 citations,并以任务成功率和可审计性为前提。
+
+### 留给下一轮
+- 实现 Phase 7 第一切片时,先落 `MemoryAtom` / `MemoryScope` / `MemoryEvidence` / `MemoryEdge` / `MemoryPacket` 领域模型和 JSONL store。
+- 再接 Prompt Stack 自动召回,确保 project/team/role/boss scope 过滤正确。
+- 命令 MVP 只作为人工入口;不要先把 `/remember` 做成唯一写入路径。
+- 为 boss feedback extraction 和 team broadcast 分别补本地验收测试。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 76。
+- Phase 7 新增 ADR-0022 和 A2A Memory Fabric 架构说明。
+
+## Round 77 — 2026-05-15 — Codex
+
+### 输入
+- 人类要求给足自主权,把当前记忆架构设计拆成 5 个迭代以内可以落地的步骤。
+- 要求符合“以终为始”和 TDD 理念,准备好就开始实现。
+
+### 思考与讨论
+- 候选 A:先做 `/remember` / `/recall` / `/forget` → ❌ **否决**:会再次把记忆层做成命令插件,绕开 ADR-0022 的 A2A Memory Fabric。
+- 候选 B:一次性实现抽取、广播、Prompt Stack、命令和 token-saving → ❌ **否决**:范围过大,很难用 TDD 保持红绿循环。
+- 候选 C:先落可审计领域模型和 JSONL 权威源,再逐步接 Prompt Stack、命令、抽取和广播 → ✅ **选定**:这是 Memory Fabric 的最小可验证内核,后续迭代都能复用。
+
+### 产出
+- 更新 `docs/playbooks/phase-7-shared-memory.md`,把 Phase 7 记忆架构拆为 5 个 TDD 迭代:
+  - Iteration 1:记忆领域模型与 JSONL 权威源。
+  - Iteration 2:Prompt Stack 自动召回。
+  - Iteration 3:IM 控制入口。
+  - Iteration 4:Boss Feedback 抽取与候选记忆。
+  - Iteration 5:Team Broadcast 与 A2A Token-saving 实验。
+- 新增 `tests/unit/test_memory.py`,先写红灯测试覆盖:
+  - `MemoryAtom` 必须有 evidence 和 project/team scoped 记忆边界。
+  - `MemoryScope` 必须校验 boss/project/team/role/agent 层级字段。
+  - `JsonlMemoryStore` append/list/search/archive 后能从 JSONL 恢复。
+  - `MemoryEdge` 可持久化和恢复。
+- 新增 `src/aico/core/memory.py`:
+  - `MemoryScopeType`
+  - `MemorySensitivity`
+  - `MemoryStatus`
+  - `MemoryEdgeType`
+  - `MemoryScope`
+  - `MemoryEvidence`
+  - `MemoryAtom`
+  - `MemoryEdge`
+  - `MemoryStore`
+  - `JsonlMemoryStore`
+- 更新 `src/aico/core/__init__.py` 导出 memory 模型和 store。
+- 更新 `STATUS.md`,标记 `MemoryAtom / MemoryStore` 和 `JsonlMemoryStore` 完成,下一轮建议切到 Prompt Stack 自动召回。
+
+### 验证结果
+- 红灯验证:
+  - `uv run pytest tests/unit/test_memory.py`
+  - 初始失败:无法从 `aico.core` import `JsonlMemoryStore`。
+- 绿灯验证:
+  - `uv run pytest tests/unit/test_memory.py`
+  - 4 passed
+- 目标验证:
+  - `uv run pytest tests/unit/test_models.py tests/unit/test_memory.py tests/unit/test_audit.py`
+  - 12 passed
+  - `uv run ruff check src/aico/core/memory.py tests/unit/test_memory.py src/aico/core/__init__.py`
+  - `uv run ruff format --check src/aico/core/memory.py tests/unit/test_memory.py src/aico/core/__init__.py`
+  - `uv run mypy src/aico/core/memory.py tests/unit/test_memory.py`
+
+### 关键决策
+- 🔒 **决策 1**:Phase 7 实现顺序以 Memory Fabric 内核为第一步,不是先做 IM 命令。
+- 🔒 **决策 2**:第一版 `JsonlMemoryStore` 是 append-only 权威源,内存索引只做启动重建和运行期查询。
+- 🔒 **决策 3**:第一版 search 只做 scope + 子串/标签匹配;不引入向量库、图数据库或 LLM 检索。
+
+### 留给下一轮
+- Phase 7 Iteration 2:实现 Prompt Stack 自动召回:
+  - 新增 `MemoryPacket` / `MemoryRetriever` / 最小 `MemoryGovernor`。
+  - 在 project-scoped task prompt 中注入少量高置信 project/team/role/boss 记忆。
+  - 本地测试必须证明归档记忆不会被注入、跨 project/team 记忆不会串入 prompt。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 77。
+- Phase 7 `MemoryAtom / MemoryStore 核心模型` 标记完成。
+- Phase 7 `JsonlMemoryStore 本地可审计记忆账本` 标记完成。
+
+## Round 78 — 2026-05-15 — Codex
+
+### 输入
+- 人类要求继续开发 Phase 7 记忆架构。
+- 上轮已完成 Iteration 1:MemoryAtom / MemoryStore / JsonlMemoryStore。
+- `STATUS.md` 下一步指向 Iteration 2:Prompt Stack 自动召回。
+
+### 思考与讨论
+- 候选 A:直接做 `/remember` / `/recall` → ❌ **继续否决**:命令入口应建立在自动召回能力之上,否则老板仍会被迫手动维护记忆。
+- 候选 B:一次性接 LLM 抽取和 team broadcast → ❌ **暂缓**:还没有受控 `MemoryPacket` 和治理投影,直接抽取会把噪声注入 prompt。
+- 候选 C:先实现 `MemoryPacket` / `MemoryRetriever` / `MemoryGovernor`,并接入 appointment prompt 渲染 → ✅ **选定**:能让 agent 自动使用当前项目记忆,同时保持 scope 和 sensitivity 边界。
+
+### 产出
+- 扩展 `tests/unit/test_memory.py`:
+  - 覆盖 `MemoryRetriever` 从 project/team scope 构建 governed `MemoryPacket`。
+  - 验证 candidate、archived、restricted 和其它 project 记忆不会进入 packet。
+  - 验证 `MemoryPacket.render_prompt_section()` 输出紧凑 prompt section 和 citations。
+- 新增 `tests/unit/test_prompt_stack.py`:
+  - 验证 `render_appointment_prompt()` 会把 `Shared memory` 放在 `Current task` 之前。
+- 扩展 `tests/unit/test_orchestrator.py`:
+  - 验证 active project 普通任务会自动注入同 project 记忆,不会泄漏其它 project 记忆。
+- 扩展 `src/aico/core/memory.py`:
+  - `MemoryPacketItem`
+  - `MemoryCitation`
+  - `MemoryPacket`
+  - `MemoryGovernor`
+  - `MemoryRetriever`
+  - search 从整句子串匹配升级为 token 命中匹配,仍不引入向量库。
+- 扩展 `src/aico/core/prompt_stack.py`:
+  - `render_appointment_prompt(..., memory_packet=None)`。
+- 扩展 `src/aico/core/orchestrator.py`:
+  - 新增可选 `memory_store`。
+  - project-scoped task 渲染 prompt 前自动召回 project/role/agent scope 记忆。
+- 更新 `src/aico/core/__init__.py` 导出 memory packet / retriever / governor。
+- 更新 `STATUS.md`,标记 Prompt Stack 记忆召回完成,下一轮建议切到 Iteration 3。
+
+### 验证结果
+- 红灯验证:
+  - `uv run pytest tests/unit/test_memory.py tests/unit/test_prompt_stack.py`
+  - 初始失败:缺少 `MemoryCitation` 等导出。
+  - 新增 Orchestrator 红灯:缺少 `memory_store` 参数。
+- 绿灯验证:
+  - `uv run pytest tests/unit/test_memory.py tests/unit/test_prompt_stack.py`
+  - 7 passed
+  - `uv run pytest tests/unit/test_orchestrator.py::test_orchestrator_injects_project_memory_for_active_project_task tests/unit/test_memory.py tests/unit/test_prompt_stack.py`
+  - 8 passed
+- 目标验证:
+  - `uv run pytest tests/unit/test_memory.py tests/unit/test_prompt_stack.py tests/unit/test_orchestrator.py`
+  - 53 passed
+  - `uv run ruff check src/aico/core/memory.py src/aico/core/prompt_stack.py src/aico/core/orchestrator.py src/aico/core/__init__.py tests/unit/test_memory.py tests/unit/test_prompt_stack.py tests/unit/test_orchestrator.py`
+  - `uv run ruff format --check src/aico/core/memory.py src/aico/core/prompt_stack.py src/aico/core/orchestrator.py src/aico/core/__init__.py tests/unit/test_memory.py tests/unit/test_prompt_stack.py tests/unit/test_orchestrator.py`
+  - `uv run mypy src/aico/core/memory.py src/aico/core/prompt_stack.py src/aico/core/orchestrator.py tests/unit/test_memory.py tests/unit/test_prompt_stack.py tests/unit/test_orchestrator.py`
+
+### 关键决策
+- 🔒 **决策 1**:Prompt 注入使用 `MemoryPacket` 投影,不把完整 `MemoryAtom` JSON 塞进 provider prompt。
+- 🔒 **决策 2**:Orchestrator 的 memory store 是可选依赖;未配置时现有行为完全不变。
+- 🔒 **决策 3**:第一版召回只做确定性 scope + token 匹配 + confidence 排序,不接向量库或 LLM 检索。
+
+### 留给下一轮
+- Phase 7 Iteration 3:IM 控制入口:
+  - 新增 `AICO_MEMORY_PATH` 设置并在 `aico-phase1` runtime 中创建 `JsonlMemoryStore`。
+  - 新增 `/remember <text>`、`/recall [query]`、`/forget <memory_id>`。
+  - `/remember` 默认写当前 active project scope;没有 active project 时应明确提示先 `/project <project>`。
+  - `/recall` 输出 scope、confidence、source/evidence 摘要和短 Next。
+  - `/forget` 归档后要证明 prompt stack 不再注入该记忆。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 78。
+- Phase 7 `Prompt Stack 读取当前项目少量高置信记忆` 标记完成。
+
+## Round 79 — 2026-05-15 — Codex
+
+### 输入
+- 人类要求继续执行 Phase 7 记忆架构落地。
+- 上轮已完成 Iteration 2:Prompt Stack 自动召回。
+- `STATUS.md` 下一步指向 Iteration 3:IM 控制入口。
+
+### 思考与讨论
+- 候选 A:把 `/remember` / `/recall` / `/forget` 直接写进 `Orchestrator` → ❌ **否决**:`Orchestrator` 已经偏大,继续塞命令细节会违背 handler 拆分方向。
+- 候选 B:新增独立 `MemoryCommandHandler` 并只在 Orchestrator 接线 → ✅ **选定**:保持 project command / directory command 一致的命令处理结构,也让后续 agent 自动写入能复用底层 store。
+- 候选 C:未配置 `AICO_MEMORY_PATH` 时创建进程内 memory store → ❌ **暂缓**:当前 Phase 7 目标是可审计共享记忆;无持久化时保持无记忆行为更不容易给老板制造“我明明记住了但重启丢失”的错觉。
+
+### 产出
+- 扩展 `tests/unit/test_commands.py`:
+  - 验证 `/remember <text>`、`/recall [query]`、`/forget <memory_id>` 能解析为内建命令。
+- 扩展 `tests/unit/test_phase1_app.py`:
+  - 验证配置 `memory_path` 后,Phase1 runtime 给 Orchestrator 注入 `JsonlMemoryStore`。
+- 扩展 `tests/unit/test_orchestrator.py`:
+  - 验证没有 active project 时 `/remember` 提示先 `/project <project>`。
+  - 验证 `/remember` 写入当前 project scope,`/recall` 展示 claim / scope / confidence / evidence,`/forget` 归档后默认不再召回。
+  - 验证归档后的记忆不会再进入 project task prompt。
+- 新增 `src/aico/core/memory_commands.py`:
+  - `MemoryCommandHandler.handle_remember()`
+  - `MemoryCommandHandler.handle_recall()`
+  - `MemoryCommandHandler.handle_forget()`
+- 扩展 `src/aico/core/commands.py`:
+  - 新增 `remember` / `recall` / `forget` 命令和 `/help` 文案。
+- 扩展 `src/aico/core/orchestrator.py`:
+  - 接入 `MemoryCommandHandler`,保持 `Orchestrator` 只负责命令分发。
+- 扩展 `src/aico/app/phase1.py`:
+  - 新增 `Phase1Settings.memory_path`,对应 `AICO_MEMORY_PATH`。
+  - runtime 配置该路径后创建 `JsonlMemoryStore`。
+- 更新 `docs/human/daily-ops.md`、`docs/playbooks/phase-7-shared-memory.md`、`CHANGELOG.md` 和 `STATUS.md`。
+
+### 验证结果
+- 红灯验证:
+  - `uv run pytest tests/unit/test_commands.py::test_parse_command_accepts_memory_commands tests/unit/test_phase1_app.py::test_build_phase1_runtime_configures_memory_store_when_path_set tests/unit/test_orchestrator.py::test_orchestrator_memory_commands_require_active_project tests/unit/test_orchestrator.py::test_orchestrator_remember_recall_and_forget_project_memory`
+  - 初始失败:命令未解析、runtime 未注入 memory store、Orchestrator 未处理 memory commands。
+- 绿灯验证:
+  - 同一目标 pytest 命令:4 passed。
+  - `uv run ruff check src/aico/core/memory_commands.py src/aico/core/orchestrator.py src/aico/app/phase1.py tests/unit/test_commands.py tests/unit/test_orchestrator.py tests/unit/test_phase1_app.py`
+  - `uv run mypy src/aico/core/memory_commands.py src/aico/core/orchestrator.py src/aico/app/phase1.py tests/unit/test_commands.py tests/unit/test_orchestrator.py tests/unit/test_phase1_app.py`
+- 全量验证:
+  - `uv run pytest` → 228 passed, 1 skipped。
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:`/remember` 默认写当前 active project scope,没有 active project 时拒绝写入。
+- 🔒 **决策 2**:`/forget` 只 archive,不物理删除 JSONL 历史,以保留审计和回滚空间。
+- 🔒 **决策 3**:无 `AICO_MEMORY_PATH` 时保持无记忆行为,不悄悄启用不可恢复的进程内共享记忆。
+
+### 留给下一轮
+- Phase 7 Iteration 4:boss feedback 抽取与候选记忆:
+  - boss 明确偏好或反馈要被识别并落到 boss global / project / team / role / agent scope。
+  - scope 不确定或置信度不足时写成 `candidate`,不能直接进入 prompt stack。
+  - 需要继续保持“agent 主动维护记忆,命令只是纠错和验收入口”的产品基调。
+- Phase 7 本地验收流:
+  - 用 `AICO_MEMORY_PATH` 启动 runtime,跑 `/project aico`、`/remember`、`/recall`、`/forget` 和普通项目任务自动召回。
+  - 验证同一 JSONL 重启恢复。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 79。
+- Phase 7 `AICO_MEMORY_PATH 配置入口` 标记完成。
+- Phase 7 `/remember` / `/recall` / `/forget` IM 命令 MVP 标记完成。
+
+## Round 80 — 2026-05-15 — Codex
+
+### 输入
+- 人类要求继续迭代 Phase 7 记忆架构。
+- 上轮已完成 Iteration 3:`AICO_MEMORY_PATH` 和 `/remember` / `/recall` / `/forget`。
+- `STATUS.md` 下一步指向 Iteration 4-5:抽取与广播。
+
+### 思考与讨论
+- 候选 A:直接接真实 LLM 分类器抽取 boss feedback → ❌ **暂缓**:第一版还没有确认流和失败治理,直接让 LLM 写 active memory 容易把噪声灌入 prompt。
+- 候选 B:只做规则化 boss feedback capture service → ✅ **选定**:先覆盖明确偏好/反馈,可测试、可审计、可回滚;后续可把分类器替换为 LLM。
+- 候选 C:所有抽取结果都写 active memory → ❌ **否决**:不确定表达必须进入 `candidate`,避免污染 agent prompt。
+
+### 产出
+- 新增 `tests/unit/test_memory_capture.py`:
+  - 明确 project feedback 写入 project memory。
+  - 无 project context 的老板偏好写入 boss global memory。
+  - 不确定反馈写为 `candidate`。
+  - 普通任务文本不会误捕获。
+- 扩展 `tests/unit/test_orchestrator.py`:
+  - 非命令老板消息会自动写入当前 project memory。
+  - candidate feedback 不进入后续 prompt。
+  - boss global preference 可按 query 进入 project task prompt。
+- 新增 `src/aico/core/memory_capture.py`:
+  - `MemoryCaptureService.capture_boss_feedback()`。
+  - 第一版使用明确偏好/反馈 marker 和 project/global marker 做确定性分类。
+- 扩展 `src/aico/core/orchestrator.py`:
+  - 非命令消息路由前调用 boss feedback capture。
+  - project task 记忆召回 scope 增加 boss global + project + role + agent。
+- 更新 `src/aico/core/__init__.py` 导出 `MemoryCaptureService`。
+- 更新 `STATUS.md`、`CHANGELOG.md`、`docs/human/daily-ops.md` 和 Phase 7 playbook。
+
+### 验证结果
+- 红灯验证:
+  - `uv run pytest tests/unit/test_memory_capture.py tests/unit/test_orchestrator.py::test_orchestrator_captures_boss_feedback_for_active_project tests/unit/test_orchestrator.py::test_orchestrator_candidate_boss_feedback_stays_out_of_prompt`
+  - 初始失败:缺少 `aico.core.memory_capture`。
+- 绿灯验证:
+  - `uv run pytest tests/unit/test_memory_capture.py tests/unit/test_orchestrator.py::test_orchestrator_captures_boss_feedback_for_active_project tests/unit/test_orchestrator.py::test_orchestrator_candidate_boss_feedback_stays_out_of_prompt tests/unit/test_orchestrator.py::test_orchestrator_injects_captured_boss_global_preference`
+  - 7 passed。
+  - `uv run ruff check src/aico/core/memory_capture.py src/aico/core/orchestrator.py src/aico/core/__init__.py tests/unit/test_memory_capture.py tests/unit/test_orchestrator.py`
+  - `uv run ruff format --check src/aico/core/memory_capture.py src/aico/core/orchestrator.py src/aico/core/__init__.py tests/unit/test_memory_capture.py tests/unit/test_orchestrator.py`
+  - `uv run mypy src/aico/core/memory_capture.py src/aico/core/orchestrator.py tests/unit/test_memory_capture.py tests/unit/test_orchestrator.py`
+- 全量验证:
+  - `uv run pytest` → 235 passed, 1 skipped。
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:Boss feedback 自动抽取第一版只捕获显式偏好/反馈,不尝试从任意自然语言里猜隐含记忆。
+- 🔒 **决策 2**:不确定反馈写 `candidate`,不进入 Prompt Stack。
+- 🔒 **决策 3**:project task 可召回 boss global scope,但仍走 `MemoryRetriever` query 和 `MemoryGovernor` 投影。
+
+### 留给下一轮
+- Phase 7 Iteration 5:Team Broadcast 与 A2A token-saving 实验:
+  - 先做 `MemoryBroadcast` 的内部 service / edge / receipt,让老板会议触发和 agent 共识广播走同一底层机制。
+  - A2A 子任务必须带 project/team scope;目标 agent 只接收 governed `MemoryPacket`。
+  - token-saving 模式只做可关闭实验;召回失败必须回退显式消息传递。
+- Phase 7 本地验收流:
+  - 用 `AICO_MEMORY_PATH` 启动 runtime,覆盖命令入口、自动召回、boss feedback capture、candidate 不注入和 JSONL 重启恢复。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 80。
+- Phase 7 `Boss feedback 自动抽取与 candidate 记忆 MVP` 标记完成。
+
+## Round 81 — 2026-05-17 — Codex
+
+### 输入
+- 人类要求继续开发 Phase 7。
+- 上轮已完成 Iteration 4:boss feedback 自动抽取与 candidate memory。
+- `STATUS.md` 下一步指向 Iteration 5:Team Broadcast 与 A2A token-saving 实验。
+
+### 思考与讨论
+- 候选 A:直接加 `/memory broadcast` 命令 → ❌ **暂缓**:会把记忆广播再次做成老板手动命令插件,偏离 agent-operated 的 Phase 7 基调。
+- 候选 B:先做内部 `MemoryBroadcastService` + edge + receipt → ✅ **选定**:老板会议触发和 agent 自发共识后续都能复用同一底层服务。
+- 候选 C:默认用 `memory_refs` 替代 A2A 显式消息 → ❌ **否决**:token-saving 是实验,召回失败必须能回退显式消息。
+
+### 产出
+- 扩展 `tests/unit/test_memory.py`:
+  - 验证 `MemoryBroadcastService.broadcast_to_team()` 会创建 team memory。
+  - 验证写入 `broadcast_to` edge,并返回 `MemoryBroadcastReceipt`。
+  - 验证跨 project team scope 会被拒绝。
+- 扩展 `tests/unit/test_orchestrator.py`:
+  - 验证 broadcast 后的 team memory 会进入 active project task prompt。
+- 扩展 `tests/unit/test_collaboration.py`:
+  - 验证 `collaboration_payload(..., memory_refs=..., use_memory_refs=True)` 输出 `memory_refs + delta`。
+  - 验证无 refs 时仍回退原显式 payload。
+- 扩展 `src/aico/core/memory.py`:
+  - `MemoryStore.get_atom()`
+  - `JsonlMemoryStore.get_atom()`。
+- 新增 `src/aico/core/memory_broadcast.py`:
+  - `MemoryBroadcastReceipt`
+  - `MemoryBroadcastService`。
+- 扩展 `src/aico/core/orchestrator.py`:
+  - project task 召回 scope 加入 `MemoryScope.team(project_id, "default")`。
+- 扩展 `src/aico/core/collaboration.py`:
+  - `collaboration_payload()` 支持可关闭 `memory_refs + delta`。
+- 更新 `src/aico/core/__init__.py` 导出 broadcast 服务和 receipt。
+- 更新 `STATUS.md`、`CHANGELOG.md` 和 Phase 7 playbook。
+
+### 验证结果
+- 红灯验证:
+  - `uv run pytest tests/unit/test_memory.py::test_memory_broadcast_creates_team_memory_edge_and_receipt tests/unit/test_memory.py::test_memory_broadcast_rejects_cross_project_team_scope tests/unit/test_orchestrator.py::test_orchestrator_injects_broadcast_team_memory_for_active_project_task tests/unit/test_collaboration.py::test_collaboration_payload_can_use_memory_refs_when_enabled tests/unit/test_collaboration.py::test_collaboration_payload_falls_back_to_explicit_payload_without_refs`
+  - 初始失败:缺少 `MemoryBroadcastService` / `MemoryBroadcastReceipt` 导出。
+- 绿灯验证:
+  - 同一目标 pytest 命令:5 passed。
+  - `uv run ruff check src/aico/core/memory.py src/aico/core/memory_broadcast.py src/aico/core/collaboration.py src/aico/core/orchestrator.py src/aico/core/__init__.py tests/unit/test_memory.py tests/unit/test_orchestrator.py tests/unit/test_collaboration.py`
+  - `uv run ruff format --check src/aico/core/memory.py src/aico/core/memory_broadcast.py src/aico/core/collaboration.py src/aico/core/orchestrator.py src/aico/core/__init__.py tests/unit/test_memory.py tests/unit/test_orchestrator.py tests/unit/test_collaboration.py`
+  - `uv run mypy src/aico/core/memory.py src/aico/core/memory_broadcast.py src/aico/core/collaboration.py src/aico/core/orchestrator.py tests/unit/test_memory.py tests/unit/test_orchestrator.py tests/unit/test_collaboration.py`
+- 全量验证:
+  - `uv run pytest`:240 passed, 1 skipped。
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:Team Broadcast 先作为内部 service,不新增老板必须操作的新命令。
+- 🔒 **决策 2**:Broadcast 会生成新的 team-scoped atom,不改变原 atom 的 scope。
+- 🔒 **决策 3**:`memory_refs + delta` 是 opt-in payload 格式;无 refs 时保持完整显式消息。
+
+### 留给下一轮
+- Phase 7 共享记忆本地验收流:
+  - 用 `AICO_MEMORY_PATH` 覆盖命令入口、自动召回、boss feedback capture、candidate 不注入、team broadcast、JSONL 重启恢复。
+  - 验收后考虑将 Phase 7 标记为功能完成,再转向真实 smoke test 或 Phase 8 准备。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 81。
+- Phase 7 `Team Broadcast 与 A2A memory refs 实验 MVP` 标记完成。
+
+## Round 82 — 2026-05-17 — Codex
+
+### 输入
+- 人类要求继续开发完成 Phase 7,并给出能满足企业、团队管理常见场景的验收功能和验证方式。
+- `STATUS.md` 下一轮最高优先级是 Phase 7 共享记忆本地验收流。
+
+### 思考与讨论
+- 候选 A:只在最终回复列人工验收步骤 → ❌ **否决**:Phase 7 牵涉 agent/team/boss 共享状态,只靠口头步骤容易回归。
+- 候选 B:新增企业/团队管理 acceptance test → ✅ **选定**:用本地 fake adapter + Orchestrator + JsonlMemoryStore 串起真实产品路径。
+- 候选 C:顺手引入中文语义检索 → ❌ **暂缓**:第一版明确是 scope + 子串/标签匹配,语义检索需要单独设计权限、citation 和成本边界。
+
+### 产出
+- 新增 `tests/unit/test_phase7_memory_acceptance.py`:
+  - 覆盖 project memory 写入、`/recall` 和普通项目任务自动召回。
+  - 覆盖其它 project 记忆不串入当前 project prompt。
+  - 覆盖 boss global 偏好自动抽取并进入后续 prompt。
+  - 覆盖 project candidate feedback 被保存但不注入 Prompt Stack。
+  - 覆盖 `MemoryBroadcastService` 生成 team memory、`broadcast_to` edge 和 receipt。
+  - 覆盖同一 `AICO_MEMORY_PATH` 重启恢复后,team memory 仍进入后续任务 prompt。
+  - 覆盖 A2A `memory_refs + delta` 可用且无 refs 时回退完整显式 payload。
+  - 覆盖 `/forget` 归档恢复后的 project memory。
+- 更新 `docs/playbooks/phase-7-shared-memory.md`,新增企业/团队管理验收场景。
+- 更新 `docs/human/daily-ops.md`,补充 Shared Memory 团队管理验收重点和中文检索边界。
+- 更新 `docs/journal/PITFALLS.md`,记录 P-019:Phase 7 第一版中文记忆检索不是语义搜索。
+- 更新 `STATUS.md` 和 `CHANGELOG.md`,将 Phase 7 共享记忆本地验收流标记完成。
+
+### 验证结果
+- 红灯验证:
+  - `uv run pytest tests/unit/test_phase7_memory_acceptance.py`
+  - 初始失败:boss global 中文长句 query 没有命中短关键词记忆。
+- 绿灯验证:
+  - 将验收 query 收敛为第一版 deterministic 检索能稳定支持的关键词。
+  - `uv run pytest tests/unit/test_phase7_memory_acceptance.py`:1 passed。
+- 全量验证:
+  - `uv run pytest`:241 passed, 1 skipped。
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:Phase 7 完成标准是企业/团队场景 acceptance test 通过,不是只完成五个孤立能力切片。
+- 🔒 **决策 2**:第一版记忆检索保持可审计 deterministic 策略;中文语义检索作为后续增强,不混入 Phase 7 收口。
+- 🔒 **决策 3**:验收文档必须继续强调老板不应高频手动管理记忆,agent 自动捕获/召回是主路径。
+
+### 留给下一轮
+- Cursor / CodeFlicker / Trae / Gemini 真实 smoke test。
+- Feishu Channel 部署层与真实 smoke test。
+- Phase 8 离线托管模式 ADR。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 82。
+- Phase 7 `共享记忆本地验收流` 标记完成。
+- 阶段地图中 Phase 7 标记完成。
+
+## Round 83 — 2026-05-18 — Codex
+
+### 输入
+- 人类反馈操作 `/remember` 时报:`Memory store is not configured. Set AICO_MEMORY_PATH first.`
+
+### 思考与讨论
+- 候选 A:只回复让人类 export 环境变量 → ❌ **不够**:当前 IM 报错不具备可执行上下文,Quickstart 也没有 memory path,后续会继续踩中。
+- 候选 B:无配置时自动创建进程内 memory store → ❌ **否决**:Round 79 已明确无 `AICO_MEMORY_PATH` 时保持无记忆行为,避免“看似记住但重启丢失”。
+- 候选 C:保持持久化门槛,但把 IM 提示和 Quickstart 改成可执行 → ✅ **选定**:既保留可审计 JSONL 边界,又降低使用门槛。
+
+### 产出
+- 更新 `src/aico/core/memory_commands.py`:
+  - 未配置 memory store 时,提示当前 running process 未启用 shared memory。
+  - 明确需要启动 `aico-phase1` 前设置 `AICO_MEMORY_PATH` 并重启。
+  - 给出后续 `/use project <project>` 与 `/remember <fact>`。
+- 扩展 `tests/unit/test_orchestrator.py`:
+  - 覆盖 active project 下 `/remember` 遇到未配置 memory store 时的可执行提示。
+- 更新 `docs/human/quickstart.md`:
+  - 快速启动环境变量加入 `AICO_PROJECT_CONFIG_PATH` 和 `AICO_MEMORY_PATH`。
+  - 常用命令加入 `/use project aico`、`/remember`、`/recall` smoke。
+
+### 验证结果
+- 目标验证:
+  - `uv run pytest tests/unit/test_orchestrator.py::test_orchestrator_memory_commands_explain_how_to_enable_store tests/unit/test_orchestrator.py::test_orchestrator_remember_recall_and_forget_project_memory tests/unit/test_phase1_app.py::test_build_phase1_runtime_configures_memory_store_when_path_set`:3 passed。
+  - `uv run ruff check src/aico/core/memory_commands.py tests/unit/test_orchestrator.py`
+  - `uv run ruff format --check src/aico/core/memory_commands.py tests/unit/test_orchestrator.py`
+  - `uv run mypy src/aico/core/memory_commands.py tests/unit/test_orchestrator.py`
+- 全量验证:
+  - `uv run pytest`:242 passed, 1 skipped。
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:不悄悄启用进程内共享记忆;Phase 7 共享记忆必须由 `AICO_MEMORY_PATH` 指向可恢复 JSONL。
+- 🔒 **决策 2**:使用侧错误提示必须给出“设置环境变量 + 重启进程”的上下文,因为运行中的 Bot 不会动态读取新 env。
+
+### 留给下一轮
+- 如果希望彻底减少配置负担,可以设计显式默认持久化路径 ADR,例如 `.aico/memory.jsonl`;不要在当前修复中静默改变持久化语义。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 83。
+
+## Round 84 — 2026-05-18 — Codex
+
+### 输入
+- 人类验收后指出当前记忆召回像关键词 / 正则匹配,希望使用模型能力按语义检索。
+
+### 思考与讨论
+- 候选 A:继续要求老板使用稳定关键词 → ❌ **否决**:这会把记忆负担推回老板,不符合 Phase 7 agent-driven memory 方向。
+- 候选 B:每次 `/recall` / Prompt Stack 都调用外部 LLM rerank → ❌ **暂缓**:当前没有稳定模型 endpoint、结构化输出、成本和失败回退边界。
+- 候选 C:新增可插拔 `MemorySemanticScorer`,默认本地 semantic scorer,未来可替换 embedding / LLM rerank → ✅ **选定**:先解决中文长句和常见术语语义召回,同时保留 scope/governor/citation。
+
+### 产出
+- 更新 `src/aico/core/memory.py`:
+  - 新增 `MemorySemanticScorer` Protocol。
+  - 新增 `LocalSemanticMemoryScorer`,支持 ASCII token、CJK n-gram 和常见中英项目管理术语别名。
+  - `JsonlMemoryStore.search()` 使用 semantic score 排序,不再只按子串过滤。
+  - `MemoryRetriever` 先按 scope 收集候选,再按 semantic score 排序;candidate / restricted / archived 仍由 `MemoryGovernor` 排除。
+- 更新 `src/aico/core/__init__.py`,导出 semantic scorer 类型。
+- 扩展 `tests/unit/test_memory.py`:
+  - 中文长句 query 可召回 boss global 偏好。
+  - 中文“法务检查”可召回英文 `legal review` 项目记忆。
+- 更新 `tests/unit/test_phase7_memory_acceptance.py`,把 Round 82 收敛过的短 query 改回自然长句验收。
+- 新增 ADR-0023 `Memory Semantic Retrieval`。
+- 更新 Phase 7 playbook、daily ops、A2A memory fabric 架构说明和 P-019。
+
+### 验证结果
+- 红灯验证:
+  - `uv run pytest tests/unit/test_memory.py::test_memory_retriever_uses_semantic_scoring_for_chinese_long_query tests/unit/test_memory.py::test_memory_search_supports_bilingual_semantic_aliases`
+  - 初始失败:长中文 query 和“法务检查”都无法召回。
+- 绿灯验证:
+  - 同一目标 pytest 命令:2 passed。
+  - `uv run pytest tests/unit/test_phase7_memory_acceptance.py tests/unit/test_memory.py`:11 passed。
+- 全量验证:
+  - `uv run pytest`:244 passed, 1 skipped。
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run mypy src tests`
+  - `git diff --check`
+
+### 关键决策
+- 🔒 **决策 1**:语义召回先作为可插拔 scorer,不把完整 memory store 暴露给 agent 或 provider。
+- 🔒 **决策 2**:召回能力提升不能绕过 `MemoryGovernor`;candidate、archived、restricted 仍不能注入 prompt。
+- 🔒 **决策 3**:真实 embedding / LLM rerank 是下一层 scorer 实现,需要另行定义成本、延迟、结构化输出和失败回退。
+
+### 留给下一轮
+- 如需更强企业级语义召回,实现 embedding / LLM-backed `MemorySemanticScorer`,并增加离线缓存、超时回退和观测指标。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 84。
+- ADR 索引新增 ADR-0023。

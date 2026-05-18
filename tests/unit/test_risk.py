@@ -66,6 +66,42 @@ def test_text_risk_assessor_keeps_all_matching_reasons() -> None:
     )
 
 
+def test_text_risk_assessor_ignores_appointment_prompt_scaffolding() -> None:
+    task = Task(
+        task_id="task-1",
+        payload=(
+            "Role summary: Implement features, write docs, and run tests.\n\n"
+            "Appointment contract:\n"
+            "- Permissions: code, tests, docs\n\n"
+            "Current task:\n"
+            "这个项目现在团队分工是什么?"
+        ),
+        requester_id="user-1",
+        target_persona="implementer",
+    )
+
+    risk = TextRiskAssessor().assess(task)
+
+    assert risk.risk_level is RiskLevel.READ_ONLY
+    assert risk.requires_approval is False
+
+
+def test_text_risk_assessor_still_flags_current_task_in_appointment_prompt() -> None:
+    task = Task(
+        task_id="task-1",
+        payload=(
+            "Role summary: Review project docs.\n\nCurrent task:\nrun pytest and update STATUS.md"
+        ),
+        requester_id="user-1",
+        target_persona="implementer",
+    )
+
+    risk = TextRiskAssessor().assess(task)
+
+    assert risk.risk_level is RiskLevel.SHELL_EXEC
+    assert risk.requires_approval is True
+
+
 def test_text_risk_assessor_treats_internal_role_proposals_as_read_only() -> None:
     task = Task(
         task_id="task-1",

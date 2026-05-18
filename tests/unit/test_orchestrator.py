@@ -1,4 +1,6 @@
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from pathlib import Path
 
 from aico.channel import IMChannel, IncomingMessageHandler
 from aico.core import (
@@ -17,6 +19,12 @@ from aico.core import (
     HealthStatus,
     IncomingMessage,
     InMemoryAgentSessionStore,
+    JsonlMemoryStore,
+    MemoryAtom,
+    MemoryBroadcastService,
+    MemoryEvidence,
+    MemoryScope,
+    MemoryStatus,
     MessageContent,
     MessageRouter,
     Orchestrator,
@@ -238,7 +246,10 @@ async def test_orchestrator_reports_local_metrics_without_submitting_task() -> N
     await orchestrator.handle_incoming(_incoming_message(text="/metrics"))
 
     metrics = channel.sent_messages[-1].text
-    assert metrics.startswith("Metrics (local process)\n\n24h\n")
+    assert metrics.startswith("Metrics (local state + audit replay)\n\nglance\n")
+    assert "status: needs_approval" in metrics
+    assert "open: 1 (running=0, waiting_approval=1)" in metrics
+    assert "\n\n24h\n" in metrics
     assert "tasks: 2\n" in metrics
     assert "done=1" in metrics
     assert "waiting_approval=1" in metrics
@@ -733,11 +744,23 @@ async def test_orchestrator_reports_agents_and_agent_card() -> None:
     await orchestrator.handle_incoming(_incoming_message(text="/agent claude", mentions=()))
 
     assert channel.sent_messages[0] == MessageContent(
-        text="Agents:\n- implementer -> claude-code (idle)"
+        text=(
+            "Agents:\n"
+            "- claude -> claude-code (idle) [role: implementer]\n\n"
+            "Next:\n"
+            "- /agent <agent>\n"
+            "- /roles\n"
+            "- /appoint <agent> as <role>"
+        )
     )
-    assert channel.sent_messages[1].text.startswith("Agent: implementer\n")
+    assert channel.sent_messages[1].text.startswith("Agent: claude\n")
+    assert "role: implementer" in channel.sent_messages[1].text
     assert "provider: claude-code\n" in channel.sent_messages[1].text
-    assert "skills: provider_cli via /skills implementer" in channel.sent_messages[1].text
+    assert "skills: provider_cli via /skills claude" in channel.sent_messages[1].text
+    assert (
+        "Next:\n- /roles\n- /appoint claude as <role>\n- /new claude"
+        in channel.sent_messages[1].text
+    )
     assert adapter.received_tasks == []
 
 
@@ -860,10 +883,22 @@ async def test_orchestrator_reports_project_roles_and_appointment_gaps() -> None
     await orchestrator.handle_incoming(_incoming_message(text="/roles", mentions=()))
 
     roles = channel.sent_messages[-1].text
-    assert roles.startswith("Roles for aico [AI Company OS]:\n")
-    assert "• implementer: Implementation Lead -> claude" in roles
-    assert "• tester: Test Lead -> unappointed" in roles
-    assert "permissions:" in roles
+    assert roles.startswith("Roles: aico [AI Company OS]\n")
+    assert "Core\n• implementer | Implementation Lead | claude" in roles
+    assert "Hidden: tester" in roles
+    assert "permissions:" not in roles
+
+    await orchestrator.handle_incoming(_incoming_message(text="/roles all", mentions=()))
+
+    all_roles = channel.sent_messages[-1].text
+    assert "Support\n• tester | Test Lead | open" in all_roles
+
+    await orchestrator.handle_incoming(_incoming_message(text="/role implementer", mentions=()))
+
+    detail = channel.sent_messages[-1].text
+    assert detail.startswith("Role: implementer [aico]\n")
+    assert "scope: code, tests, docs" in detail
+    assert "risk ladder: read_only -> write_files -> shell_exec -> destructive" in detail
 
 
 async def test_orchestrator_proposes_and_confirms_project_role() -> None:
@@ -875,8 +910,8 @@ async def test_orchestrator_proposes_and_confirms_project_role() -> None:
               "id": "growth-analyst",
               "title": "Growth Analyst",
               "summary": "Analyze activation and retention opportunities.",
-              "default_permissions": ["read_docs", "read_audit"],
-              "approval_required": ["write_docs"],
+              "default_permissions": ["docs", "audit"],
+              "approval_required": ["destructive"],
               "inline_prompt": "Focus on measurable product opportunities."
             }
             """,
@@ -909,7 +944,7 @@ async def test_orchestrator_proposes_and_confirms_project_role() -> None:
     ]
     assert channel.sent_messages[3].text.startswith("Role added to aico: growth-analyst\n")
     roles = channel.sent_messages[4].text
-    assert "• growth-analyst: Growth Analyst -> unappointed" in roles
+    assert "Custom\n• growth-analyst | Growth Analyst | open" in roles
     assert adapter.received_tasks[0].metadata[-1].key == "aico.intent"
     assert adapter.received_tasks[0].metadata[-1].value == "role_proposal"
 
@@ -936,7 +971,7 @@ async def test_orchestrator_unappoints_project_role_and_updates_roles_view() -> 
     assert channel.sent_messages[2].text.startswith("Appointment removed\n\n")
     assert "claude is no longer appointed to aico as tester" in channel.sent_messages[2].text
     roles = channel.sent_messages[3].text
-    assert "• tester: Test Lead -> unappointed" in roles
+    assert "Hidden: tester" in roles
     assert channel.sent_messages[4] == MessageContent(text="Role not appointed in aico: tester")
 
 
@@ -1002,7 +1037,7 @@ async def test_orchestrator_project_team_acceptance_flow() -> None:
     assert any("Next actions: aico [AI Company OS]\n" in text for text in sent_texts)
     assert any("Daily report: aico [AI Company OS]\n" in text for text in sent_texts)
     assert any("Weekly report: aico [AI Company OS]\n" in text for text in sent_texts)
-    assert any("• tester: Test Lead -> unappointed" in text for text in sent_texts)
+    assert any("Hidden: tester" in text for text in sent_texts)
     assert any(
         "Appointment active\n\nclaude is appointed to aico as tester" in text for text in sent_texts
     )
@@ -1030,6 +1065,31 @@ async def test_orchestrator_project_team_acceptance_flow() -> None:
     assert "Current task:\nverify tests" in work_tasks[0].payload
     assert "Current task:\nplain tester task" in work_tasks[1].payload
     assert "Current task:\nplain fallback task" in work_tasks[2].payload
+
+
+async def test_orchestrator_lead_can_answer_project_questions_without_false_approval() -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    project_directory = _project_directory_with_risky_role_prompt()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-question"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=project_directory,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="这个项目现在团队分工和下一步重点是什么?", mentions=())
+    )
+
+    assert adapter.received_tasks
+    assert (
+        "Current task:\n这个项目现在团队分工和下一步重点是什么?"
+        in adapter.received_tasks[0].payload
+    )
+    assert all("Approval required" not in message.text for message in channel.sent_messages)
 
 
 async def test_orchestrator_reports_project_brief_and_risks() -> None:
@@ -1246,6 +1306,327 @@ async def test_orchestrator_routes_plain_message_to_active_project_default_assig
     assert second_provider.mode is ProviderSessionMode.RESUME
 
 
+async def test_orchestrator_injects_project_memory_for_active_project_task(
+    tmp_path: Path,
+) -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    memory_store.append_atom(
+        MemoryAtom(
+            memory_id="mem-aico",
+            claim="AICO memory must be agent-driven.",
+            evidence=(
+                MemoryEvidence(
+                    ref="audit:event-1",
+                    source="test",
+                    captured_at=datetime(2026, 5, 15, tzinfo=UTC),
+                ),
+            ),
+            scope=MemoryScope.project("aico"),
+            source="test",
+            confidence=0.92,
+            created_by="tester",
+            tags=("memory",),
+        )
+    )
+    memory_store.append_atom(
+        MemoryAtom(
+            memory_id="mem-other",
+            claim="Other project memory must not leak.",
+            evidence=(
+                MemoryEvidence(
+                    ref="audit:event-2",
+                    source="test",
+                    captured_at=datetime(2026, 5, 15, tzinfo=UTC),
+                ),
+            ),
+            scope=MemoryScope.project("other"),
+            source="test",
+            confidence=0.99,
+            created_by="tester",
+            tags=("memory",),
+        )
+    )
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-project"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/use project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="continue memory design", mentions=())
+    )
+
+    payload = adapter.received_tasks[0].payload
+
+    assert "Shared memory:\n- [mem-aico] AICO memory must be agent-driven." in payload
+    assert "Other project memory must not leak" not in payload
+    assert payload.index("Shared memory:") < payload.index("Current task:")
+
+
+async def test_orchestrator_injects_broadcast_team_memory_for_active_project_task(
+    tmp_path: Path,
+) -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    source = memory_store.append_atom(
+        MemoryAtom(
+            memory_id="mem-source",
+            claim="Team consensus: memory broadcasts should reduce repeated A2A context.",
+            evidence=(
+                MemoryEvidence(
+                    ref="audit:event-1",
+                    source="test",
+                    captured_at=datetime(2026, 5, 15, tzinfo=UTC),
+                ),
+            ),
+            scope=MemoryScope.project("aico"),
+            source="test",
+            confidence=0.92,
+            created_by="tester",
+            tags=("broadcast", "memory"),
+        )
+    )
+    MemoryBroadcastService(memory_store).broadcast_to_team(
+        source_memory_id=source.memory_id,
+        team_scope=MemoryScope.team("aico", "default"),
+        recipients=("claude",),
+        created_by="lead-agent",
+        reason="team consensus",
+    )
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-project"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/use project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="review broadcast memory", mentions=())
+    )
+
+    payload = adapter.received_tasks[0].payload
+    assert "Shared memory:" in payload
+    assert "Team consensus: memory broadcasts should reduce repeated A2A context." in payload
+    assert "scope: team:aico/default" in payload
+
+
+async def test_orchestrator_memory_commands_require_active_project(tmp_path: Path) -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-project"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/remember memory is project-scoped", mentions=())
+    )
+
+    assert channel.sent_messages == [
+        MessageContent(text="No active project. Use /project <project> first.")
+    ]
+    assert memory_store.list_atoms(MemoryScope.project("aico")) == ()
+    assert adapter.received_tasks == []
+
+
+async def test_orchestrator_memory_commands_explain_how_to_enable_store() -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-project"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/use project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/remember memory is project-scoped", mentions=())
+    )
+
+    assert channel.sent_messages[-1] == MessageContent(
+        text=(
+            "Shared memory is not enabled for this running AICO process.\n\n"
+            "Set AICO_MEMORY_PATH before starting aico-phase1, then restart it:\n"
+            'export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"\n\n'
+            "After restart:\n"
+            "- /use project <project>\n"
+            "- /remember <fact>"
+        )
+    )
+    assert adapter.received_tasks == []
+
+
+async def test_orchestrator_remember_recall_and_forget_project_memory(
+    tmp_path: Path,
+) -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-project"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/use project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/remember Phase 7 memory must be agent-driven.", mentions=())
+    )
+    memory_store.append_atom(
+        MemoryAtom(
+            memory_id="mem-other-project",
+            claim="Other project memory must not be archived from aico.",
+            evidence=(
+                MemoryEvidence(
+                    ref="audit:event-1",
+                    source="test",
+                    captured_at=datetime(2026, 5, 15, tzinfo=UTC),
+                ),
+            ),
+            scope=MemoryScope.project("other"),
+            source="test",
+            confidence=1.0,
+            created_by="tester",
+        )
+    )
+    atom = memory_store.list_atoms(MemoryScope.project("aico"))[0]
+    await orchestrator.handle_incoming(_incoming_message(text="/recall agent-driven", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/forget mem-other-project", mentions=())
+    )
+    await orchestrator.handle_incoming(
+        _incoming_message(text=f"/forget {atom.memory_id}", mentions=())
+    )
+    await orchestrator.handle_incoming(_incoming_message(text="/recall agent-driven", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="continue memory design", mentions=())
+    )
+
+    assert channel.sent_messages[1].text.startswith("Memory remembered\n")
+    assert f"id: {atom.memory_id}" in channel.sent_messages[1].text
+    assert "scope: project:aico" in channel.sent_messages[1].text
+    assert "project: aico" in channel.sent_messages[1].text
+    assert "Phase 7 memory must be agent-driven." in channel.sent_messages[2].text
+    assert f"- {atom.memory_id} | confidence: 1.00 | scope: project:aico" in (
+        channel.sent_messages[2].text
+    )
+    assert channel.sent_messages[3].text == "Memory not found in active project: mem-other-project"
+    assert channel.sent_messages[4].text == (
+        f"Memory archived\nid: {atom.memory_id}\nscope: project:aico"
+    )
+    assert channel.sent_messages[5].text == (
+        "No memories found for aico.\n\nNext:\n- /remember <fact>"
+    )
+    assert "Phase 7 memory must be agent-driven." not in adapter.received_tasks[0].payload
+    assert memory_store.list_atoms(MemoryScope.project("other"))[0].memory_id == "mem-other-project"
+
+
+async def test_orchestrator_captures_boss_feedback_for_active_project(
+    tmp_path: Path,
+) -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-project"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/use project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="以后这个项目汇报进度一定要告诉我还剩几阶段", mentions=())
+    )
+
+    atoms = memory_store.list_atoms(MemoryScope.project("aico"))
+    assert len(atoms) == 1
+    assert atoms[0].source == "boss_feedback_capture"
+    assert atoms[0].status is MemoryStatus.ACTIVE
+    assert "以后这个项目汇报进度一定要告诉我还剩几阶段" in atoms[0].claim
+    assert "Shared memory:" in adapter.received_tasks[0].payload
+    assert atoms[0].memory_id in adapter.received_tasks[0].payload
+
+
+async def test_orchestrator_candidate_boss_feedback_stays_out_of_prompt(
+    tmp_path: Path,
+) -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    task_ids = iter(("task-feedback", "task-next"))
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/use project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="这个项目我可能更喜欢先少写一点状态汇总", mentions=())
+    )
+    await orchestrator.handle_incoming(_incoming_message(text="继续项目", mentions=()))
+
+    atoms = memory_store.list_atoms(MemoryScope.project("aico"))
+    assert len(atoms) == 1
+    assert atoms[0].status is MemoryStatus.CANDIDATE
+    assert "Shared memory:" not in adapter.received_tasks[1].payload
+
+
+async def test_orchestrator_injects_captured_boss_global_preference(
+    tmp_path: Path,
+) -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    task_ids = iter(("task-preference", "task-progress"))
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(
+        _incoming_message(text="我更喜欢汇报进度时告诉我还有几阶段", mentions=())
+    )
+    await orchestrator.handle_incoming(_incoming_message(text="/use project aico", mentions=()))
+    await orchestrator.handle_incoming(_incoming_message(text="汇报进度", mentions=()))
+
+    atoms = memory_store.list_atoms(MemoryScope.boss("user-1"))
+    assert len(atoms) == 1
+    assert atoms[0].status is MemoryStatus.ACTIVE
+    assert atoms[0].memory_id in adapter.received_tasks[1].payload
+    assert "scope: boss:user-1" in adapter.received_tasks[1].payload
+
+
 async def test_orchestrator_routes_skills_command_to_provider_owned_introspection() -> None:
     adapter = ScriptedAdapter(name="claude-code")
     channel = RecordingChannel()
@@ -1405,8 +1786,16 @@ def _project_directory() -> ProjectAssignmentDirectory:
                 )
             },
             roles={
-                "implementer": RoleProfile(id="implementer", title="Implementation Lead"),
-                "tester": RoleProfile(id="tester", title="Test Lead"),
+                "implementer": RoleProfile(
+                    id="implementer",
+                    title="Implementation Lead",
+                    default_permissions=("code", "tests", "docs"),
+                ),
+                "tester": RoleProfile(
+                    id="tester",
+                    title="Test Lead",
+                    default_permissions=("code", "tests"),
+                ),
             },
             projects={
                 "aico": ProjectProfile(
@@ -1428,8 +1817,28 @@ def _project_directory() -> ProjectAssignmentDirectory:
                     agent="claude",
                     role="implementer",
                     seat="aico-implementer",
+                    permissions=("code", "tests", "docs"),
                 ),
             ),
+        )
+    )
+
+
+def _project_directory_with_risky_role_prompt() -> ProjectAssignmentDirectory:
+    config = _project_directory()._config  # noqa: SLF001
+    return ProjectAssignmentDirectory(
+        config.model_copy(
+            update={
+                "roles": {
+                    **config.roles,
+                    "implementer": RoleProfile(
+                        id="implementer",
+                        title="Implementation Lead",
+                        summary="Write code, run tests, update docs, and keep handoffs current.",
+                        default_permissions=("code", "tests", "docs"),
+                    ),
+                }
+            }
         )
     )
 

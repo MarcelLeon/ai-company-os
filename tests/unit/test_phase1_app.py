@@ -1,10 +1,21 @@
 from pathlib import Path
 
 from aico.adapter.claude_code import ClaudeCodeAdapter
+from aico.adapter.codeflicker import CodeFlickerAdapter
 from aico.adapter.codex import CodexAdapter
+from aico.adapter.cursor import CursorAdapter
+from aico.adapter.gemini import GeminiAdapter
+from aico.adapter.trae import TraeAdapter
 from aico.app.phase1 import Phase1Settings, build_phase1_runtime, configure_logging
 from aico.channel.telegram import TelegramChannel
-from aico.core import AuditEventType, RiskLevel, Task
+from aico.core import (
+    AuditEventType,
+    InMemoryAuditLog,
+    JsonlAuditSink,
+    JsonlMemoryStore,
+    RiskLevel,
+    Task,
+)
 
 
 def test_phase1_settings_parse_claude_command() -> None:
@@ -42,6 +53,54 @@ def test_phase1_settings_parse_codex_command() -> None:
         "exec",
         "--sandbox",
         "read-only",
+    )
+
+
+def test_phase1_settings_parse_cursor_command() -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        cursor_command="cursor-agent -p --force --output-format text",
+    )
+
+    assert settings.cursor_command_tuple() == (
+        "cursor-agent",
+        "-p",
+        "--force",
+        "--output-format",
+        "text",
+    )
+
+
+def test_phase1_settings_parse_codeflicker_command() -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        codeflicker_command="flickcli -q --approval-mode yolo --output-format text",
+    )
+
+    assert settings.codeflicker_command_tuple() == (
+        "flickcli",
+        "-q",
+        "--approval-mode",
+        "yolo",
+        "--output-format",
+        "text",
+    )
+
+
+def test_phase1_settings_parse_trae_and_gemini_commands() -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        trae_command="trae-cli --print --yolo",
+        gemini_command="gemini --approval-mode yolo --output-format text",
+    )
+
+    assert settings.trae_command_tuple() == ("trae-cli", "--print", "--yolo")
+    assert settings.gemini_command_tuple() == (
+        "gemini",
+        "--approval-mode",
+        "yolo",
+        "--output-format",
+        "text",
     )
 
 
@@ -93,6 +152,43 @@ def test_build_phase1_runtime_writes_audit_jsonl_when_configured(tmp_path: Path)
     assert '"event_type": "task_submitted"' in audit_path.read_text(encoding="utf-8")
 
 
+def test_build_phase1_runtime_loads_existing_audit_jsonl(tmp_path: Path) -> None:
+    audit_path = tmp_path / "audit" / "events.jsonl"
+    seed_log = InMemoryAuditLog(
+        event_id_factory=lambda: "event-1",
+        sinks=(JsonlAuditSink(audit_path),),
+    )
+    task = Task(
+        task_id="task-1",
+        payload="run pytest",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+    event = seed_log.record(AuditEventType.TASK_SUBMITTED, task)
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        claude_command="claude -p",
+        audit_log_path=audit_path,
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    assert runtime.orchestrator._task_bus.audit_events(limit=None) == (event,)  # noqa: SLF001
+
+
+def test_build_phase1_runtime_configures_memory_store_when_path_set(tmp_path: Path) -> None:
+    memory_path = tmp_path / "memory" / "shared.jsonl"
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        claude_command="claude -p",
+        memory_path=memory_path,
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    assert isinstance(runtime.orchestrator._memory_store, JsonlMemoryStore)  # noqa: SLF001
+
+
 def test_build_phase1_runtime_wires_telegram_channel_and_claude_adapter() -> None:
     settings = Phase1Settings(
         telegram_bot_token="token",
@@ -115,6 +211,10 @@ def test_build_phase1_runtime_can_enable_codex_adapter_for_status() -> None:
     settings = Phase1Settings(
         telegram_bot_token="token",
         enable_codex_adapter=True,
+        enable_cursor_adapter=False,
+        enable_codeflicker_adapter=False,
+        enable_trae_adapter=False,
+        enable_gemini_adapter=False,
         claude_command="claude -p",
         codex_command="codex --ask-for-approval never exec --sandbox read-only",
     )
@@ -126,6 +226,92 @@ def test_build_phase1_runtime_can_enable_codex_adapter_for_status() -> None:
     codex = runtime.registry.get("codex")
     assert isinstance(codex, CodexAdapter)
     assert codex._output_idle_timeout_seconds == 90.0  # noqa: SLF001
+
+
+def test_build_phase1_runtime_can_enable_cursor_adapter_for_agents() -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        enable_codex_adapter=False,
+        enable_cursor_adapter=True,
+        enable_codeflicker_adapter=False,
+        enable_trae_adapter=False,
+        enable_gemini_adapter=False,
+        claude_command="claude -p",
+        cursor_command="cursor-agent -p --force --output-format text",
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    snapshots = runtime.registry.snapshots()
+    assert [snapshot.name for snapshot in snapshots] == ["claude-code", "cursor"]
+    cursor = runtime.registry.get("cursor")
+    assert isinstance(cursor, CursorAdapter)
+    assert runtime.persona_registry.resolve("cursor-agent") is not None
+
+
+def test_build_phase1_runtime_can_enable_codeflicker_adapter_for_agents() -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        enable_codex_adapter=False,
+        enable_cursor_adapter=False,
+        enable_codeflicker_adapter=True,
+        enable_trae_adapter=False,
+        enable_gemini_adapter=False,
+        claude_command="claude -p",
+        codeflicker_command="flickcli -q --approval-mode yolo --output-format text",
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    snapshots = runtime.registry.snapshots()
+    assert [snapshot.name for snapshot in snapshots] == ["claude-code", "codeflicker"]
+    codeflicker = runtime.registry.get("codeflicker")
+    assert isinstance(codeflicker, CodeFlickerAdapter)
+    assert runtime.persona_registry.resolve("flickcli") is not None
+
+
+def test_build_phase1_runtime_can_enable_all_optional_adapters() -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        enable_codex_adapter=True,
+        enable_cursor_adapter=True,
+        enable_codeflicker_adapter=True,
+        enable_trae_adapter=True,
+        enable_gemini_adapter=True,
+        claude_command="claude -p",
+        codex_command="codex --ask-for-approval never exec --sandbox read-only",
+        cursor_command="cursor-agent -p --force --output-format text",
+        codeflicker_command="flickcli -q --approval-mode yolo --output-format text",
+        trae_command="trae-cli --print --yolo",
+        gemini_command="gemini --approval-mode yolo --output-format text",
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    assert [snapshot.name for snapshot in runtime.registry.snapshots()] == [
+        "claude-code",
+        "codex",
+        "cursor",
+        "codeflicker",
+        "trae",
+        "gemini",
+    ]
+    assert runtime.persona_registry.names() == (
+        "implementer",
+        "reviewer",
+        "cursor",
+        "codeflicker",
+        "trae",
+        "gemini",
+    )
+    assert [card.name for card in runtime.orchestrator._agent_directory.list()] == [  # noqa: SLF001
+        "implementer",
+        "reviewer",
+        "cursor",
+        "codeflicker",
+        "trae",
+        "gemini",
+    ]
 
 
 def test_build_phase1_runtime_registers_claude_alias() -> None:
@@ -143,6 +329,10 @@ def test_build_phase1_runtime_registers_default_personas() -> None:
     settings = Phase1Settings(
         telegram_bot_token="token",
         enable_codex_adapter=True,
+        enable_cursor_adapter=False,
+        enable_codeflicker_adapter=False,
+        enable_trae_adapter=False,
+        enable_gemini_adapter=False,
         claude_command="claude -p",
         codex_command="codex --ask-for-approval never exec --sandbox read-only",
     )
@@ -162,6 +352,10 @@ def test_build_phase1_runtime_registers_default_project_assignments() -> None:
     settings = Phase1Settings(
         telegram_bot_token="token",
         enable_codex_adapter=True,
+        enable_cursor_adapter=False,
+        enable_codeflicker_adapter=False,
+        enable_trae_adapter=False,
+        enable_gemini_adapter=False,
         claude_command="claude -p",
         codex_command="codex --ask-for-approval never exec --sandbox read-only",
     )
@@ -176,7 +370,32 @@ def test_build_phase1_runtime_registers_default_project_assignments() -> None:
         "aico-implementer",
         "aico-reviewer",
     ]
+    assert assignments[0].permissions == ("code", "tests", "docs")
+    assert assignments[1].permissions == ("code", "docs", "audit")
     assert runtime.project_directory.default_assignment("aico") == assignments[0]
+    assert runtime.project_directory.role("pm") is not None
+    assert runtime.project_directory.role("senior-architect") is not None
+    assert runtime.project_directory.role("golden-tester") is not None
+    assert runtime.project_directory.role("market-risk") is not None
+    assert runtime.project_directory.role("legal-compliance") is not None
+
+
+def test_build_phase1_runtime_can_enable_trae_and_gemini_adapters() -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        enable_trae_adapter=True,
+        enable_gemini_adapter=True,
+        claude_command="claude -p",
+        trae_command="trae-cli --print --yolo",
+        gemini_command="gemini --approval-mode yolo --output-format text",
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    assert isinstance(runtime.registry.get("trae"), TraeAdapter)
+    assert isinstance(runtime.registry.get("gemini"), GeminiAdapter)
+    assert runtime.persona_registry.resolve("trae-cli") is not None
+    assert runtime.persona_registry.resolve("gemini-cli") is not None
 
 
 def test_build_phase1_runtime_loads_project_assignments_from_config(tmp_path: Path) -> None:

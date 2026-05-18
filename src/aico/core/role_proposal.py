@@ -121,8 +121,7 @@ def role_proposal_prompt(project: ProjectProfile, request: str) -> str:
         '- "default_permissions": array of permission tokens\n'
         '- "approval_required": array of risky permission tokens\n'
         '- "inline_prompt": concise instruction for the appointed agent\n'
-        "Keep permissions concrete, for example read_repo, read_docs, write_docs, "
-        "write_code, run_tests, read_audit."
+        "Keep permissions to role scopes: docs, code, tests, ops, audit."
     )
 
 

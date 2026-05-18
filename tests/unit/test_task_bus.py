@@ -235,6 +235,33 @@ async def test_task_bus_approval_dispatches_waiting_task() -> None:
     ]
 
 
+async def test_task_bus_interrupt_cancels_waiting_approval_task() -> None:
+    adapter = RecordingAdapter("claude-code")
+    bus = TaskBus(AdapterRegistry([adapter]))
+    task = Task(
+        task_id="task-approval",
+        payload="modify src/aico/core/task_bus.py",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+
+    await bus.submit(task)
+    ack = await bus.interrupt("task-app")
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert ack.reason == "pending approval canceled"
+    assert adapter.received_tasks == []
+    assert bus.pending_approvals() == ()
+    assert bus.task_snapshots()[0].status is TaskStatus.INTERRUPTED
+    assert bus.task_snapshots()[0].reason == "interrupted before approval"
+    assert [event.event_type for event in bus.audit_events()] == [
+        AuditEventType.TASK_SUBMITTED,
+        AuditEventType.APPROVAL_REQUESTED,
+        AuditEventType.APPROVAL_REJECTED,
+        AuditEventType.TASK_INTERRUPTED,
+    ]
+
+
 async def test_task_bus_denies_approval_from_unlisted_reviewer() -> None:
     adapter = RecordingAdapter("claude-code")
     bus = TaskBus(AdapterRegistry([adapter]))

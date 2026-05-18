@@ -3,9 +3,9 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-05-07
-**当前轮次**:Round 61(Phase 6 Metrics MVP)
-**当前阶段**:🟡 Phase 6 进行中 — 可观测看板
+**最后更新**:2026-05-18
+**当前轮次**:Round 84(Phase 7 Semantic Memory Retrieval)
+**当前阶段**:🟢 Phase 7 完成 — 共享记忆层
 
 ---
 
@@ -25,11 +25,40 @@
 | Phase 3 | 人格化层 + 群聊编排 | 🟢 完成 | AI 有差异化人设,群聊能 broadcast 任务 |
 | Phase 4 | 审批与审计 | 🟢 完成 | 危险操作可推送审批,所有行为有 trace |
 | Phase 5 | AI 间协作 | 🟢 完成 | AI 之间可以互相 @ 协作,任务编排成型 |
-| Phase 6 | 可观测看板 | 🟡 进行中 | 工时/KPI/token 消耗可视化 |
-| Phase 7 | 共享记忆层 | ⚪ 未开始 | 所有 AI 共享上下文记忆 |
+| Phase 6 | 可观测看板 | 🟢 完成 | 工时/KPI/token 消耗可视化 |
+| Phase 7 | 共享记忆层 | 🟢 完成 | 所有 AI 共享上下文记忆 |
 | Phase 8 | 离线托管模式 | ⚪ 未开始 | 睡前下任务,早上看结果 |
 
 图例:🟢 完成 / 🟡 进行中 / ⚪ 未开始 / 🔴 阻塞
+
+---
+
+## 近期高优产品方向
+
+> 人类在 2026-05-07 明确:当前文档中的既有计划继续按进度推进,但近期要高优支持“更多可用 agents”和“更多 IM Channel”。
+
+### A. Adapter 扩展:让 `/agents` 有更多真实成员
+
+- [x] 新增 CodeFlicker Adapter MVP(可选启用、默认只读)。
+- [x] 新增 Cursor Adapter MVP(可选启用、默认只读)。
+- [x] Cursor / CodeFlicker 升级为审批保护下的完整 Adapter 能力(`code_edit` / `shell_exec`)。
+- [x] 新增 Trae CLI Adapter(可选启用,完整能力走 AICO 审批门禁)。
+- [x] 新增 Gemini CLI Adapter(可选启用,完整能力走 AICO 审批门禁)。
+- [x] `/agents` / `/agent <agent>` 能展示这些新 Adapter 对应的可用 agent/persona,让 Telegram 里的“虚拟公司成员池”明显变丰富。
+- [x] 保持可扩展可插拔:新增 Adapter 只能通过 `AIAdapter`、`AdapterRegistry`、persona/project 配置接入,不能在核心编排里写某个工具专属分支。
+- [x] 为后续 OpenClaw 等 Adapter 留同样接入路径;先复制既有 Claude/Codex Adapter 模式,不要为了未来工具过早重构协议。
+- [x] 进入实现前先做 CLI / API 形态核验,并补 Adapter mock 单测。
+- [ ] Cursor / CodeFlicker / Trae / Gemini 真实 smoke test。
+
+### B. Channel 扩展:降低 Telegram 单入口依赖
+
+- [x] 从飞书、钉钉、QQ、微信中选择 1 个先接入:优先飞书。
+- [x] Feishu Channel 第一切片:文本发送、编辑/删除、URL verification、`im.message.receive_v1` 文本事件解析。
+- [ ] 选择优先级按对接成本和协议标准化程度决定:官方 Bot/OpenAPI 是否稳定、是否支持文本收发、消息编辑或动作回调、鉴权/回调部署成本、群聊可用性、真实 dogfooding 门槛。
+- [ ] 先做最小文本收发 + 平台无关 render contract 映射;如果目标 IM 不支持编辑消息或 inline action,Channel 内部降级为新消息/纯文本动作提示,核心不感知平台差异。
+- [ ] 暂不承诺四个 IM 全量支持;QQ/微信等非标准或高摩擦协议只有在成本可控、合规明确后再进入实现。
+- [x] 新 Channel 必须实现 `IMChannel`,并用 mock HTTP/API 测试覆盖入站解析、发送、编辑/降级和回调/动作入口。
+- [ ] Feishu 真实 callback server / 端到端 smoke test。
 
 ---
 
@@ -108,16 +137,23 @@
 - [x] Codex provider session 显式绑定命令(`/bind`)
 - [x] Agent 能力体验命令(`/agents` / `/agent` / `/skills` / `/tools`)
 - [x] Agent 能力体验命令 Telegram 真实验收(`/agents` / `/skills` / `/tools`)
+- [x] `/agents` 默认展示改为工具入口名优先,避免岗位名和工具名混用。
+- [x] `/agents` / `/agent` 输出追加短 Next 指导命令,引导查看详情、任命或创建 session。
+- [x] Next 指导命令保留 Telegram 可识别的裸 `/command` 文本,避免富文本 code span 影响触碰发送。
 - [x] Project Assignment Layer 设计决策(Agent / Project / Assignment)
 - [x] 面向技术读者的架构图与核心概念工作流图(draw.io)
 - [x] Project Assignment Layer MVP 第一切片(配置模型、项目命令、project-scoped session)
 - [x] Project Team / Appointment 老板视角命令设计与 Role 体系完善
 - [x] Project Team / Appointment 命令 MVP(`/project` / `/team` / `/who` / `/appoint` / `/ask` / `/lead`)
+- [x] `/project` / `/team` 输出追加短 Next 指导命令,引导看 brief/team/next/daily/weekly、追问 role 或设置 lead。
 - [x] Project roles view MVP(`/roles`)
+- [x] Project roles view 紧凑化:默认只展示核心/专家岗位,详情进入 `/role <id>`,全量进入 `/roles all`。
+- [x] `/roles` / `/role <id>` 输出追加短 Next 指导命令,引导查看 agent、appoint、ask、lead 或调整 scope。
 - [x] Role proposal confirmation MVP(`/role propose` / `/role confirm` / `/role discard`)
 - [x] Project unappoint MVP(`/unappoint`)
 - [x] RoleTemplate / ProjectRoleOverride / Appointment 配置模型 MVP
 - [x] Appointment Prompt Stack MVP
+- [x] Project lead / role 普通咨询只按 `Current task` 做风险识别,避免 role prompt 中的 write/run 词误触发审批。
 - [x] Project brief / risks MVP(`/brief` / `/risks`)
 - [x] Project daily / weekly 本地报告 MVP(`/daily` / `/weekly`)
 - [x] Project blockers MVP(`/blockers`)
@@ -135,6 +171,7 @@
 - [x] Project report LLM summary MVP(`/daily` / `/weekly`)
 - [x] Project status Facts 小节 / slash command render spans
 - [x] IM 远程中断命令(`/interrupt`)
+- [x] `/interrupt <task_id>` 可取消 `waiting_approval` 任务,用于清理未 approve/reject 的待审批项。
 - [x] ProjectRoleCommandHandler 结构拆分
 - [x] ProjectStatusCommandHandler 结构拆分
 - [x] `/interrupt` Telegram 真实复验
@@ -154,14 +191,264 @@
 - [x] IM-first `/metrics` MVP
 - [x] MVP product entrypoints 判断(IM 主控 + macOS glance + CLI 排障)
 - [x] Phase 6 `/metrics` smoke test playbook
-- [ ] `/metrics` Telegram 真实验收
-- [ ] 可观测状态持久化
-- [ ] macOS Status Island / glance 原型
-- [ ] token / cost 数据接入(等待 Adapter 可稳定提供 usage)
+- [x] ADR-0015 Observability Event Replay
+- [x] audit JSONL 启动回放
+- [x] `/metrics` audit-backed task snapshot 重建
+- [x] MetricsReport 稳定查询模型(glance / summaries / token-cost 状态)
+- [x] `aico-metrics` CLI text/json 排障入口
+- [x] ADR-0016 Status Island and Usage Boundary
+- [x] macOS Status Island / glance 数据原型(`aico-glance`)
+- [x] token / cost usage 审计事件接入边界
+- [x] Phase 6 无 token 本地验收样例:覆盖 `/metrics` live done / waiting approval / collaboration。
+- [x] Phase 6 无 token 重启恢复验收:只从 audit JSONL 恢复 `/metrics` 历史指标。
+- [x] Phase 6 无 token CLI/glance 验收:`aico-metrics` / `aico-glance` text+json 同源验证。
+- [x] Phase 6 真实模型 token golden:Codex CLI 极简任务完成后验证 `/metrics` live、audit replay 和 `aico-metrics`。
+- [x] `/metrics` Telegram 真实验收替代:无 token acceptance 覆盖 live `/metrics` 命令路径。
+- [x] `/metrics` 重启后 Telegram 真实验收替代:audit JSONL replay acceptance 覆盖恢复路径。
+- [x] 可观测状态持久化第一切片(audit replay)
+- [x] Phase 6 集中真实验收通过后进入 Phase 7
+
+### Phase 7 进度
+
+- [x] ADR-0020 Phase 7 Shared Memory Scope
+- [x] Phase 7 shared memory playbook
+- [x] ADR-0021 Phase 7 记忆由 agent 主动维护,命令作为纠错和排障入口
+- [x] ADR-0022 A2A Memory Fabric
+- [x] A2A Memory Fabric 架构说明
+- [x] MemoryAtom / MemoryStore 核心模型
+- [x] JsonlMemoryStore 本地可审计记忆账本
+- [x] `AICO_MEMORY_PATH` 配置入口
+- [x] `/remember` / `/recall` / `/forget` IM 命令 MVP
+- [x] Prompt Stack 读取当前项目少量高置信记忆
+- [x] Boss feedback 自动抽取与 candidate 记忆 MVP
+- [x] Team Broadcast 与 A2A memory refs 实验 MVP
+- [x] Phase 7 共享记忆本地验收流
 
 ---
 
 ## 上一轮做了什么
+
+**Round 84**(2026-05-18,Codex):
+- 按人类验收反馈升级 Phase 7 记忆召回:从关键词/子串过滤提升为可插拔 semantic scorer 排序。
+- 新增 `MemorySemanticScorer` 接口和默认 `LocalSemanticMemoryScorer`,支持中文长句复述和常见中英项目管理术语别名。
+- `JsonlMemoryStore.search()` 和 `MemoryRetriever` 改为按 scope 收集候选后进行 semantic score 排序;`MemoryGovernor` 继续负责 active / candidate / sensitivity / confidence 投影。
+- 新增 ADR-0023 `Memory Semantic Retrieval`,明确后续 embedding / LLM rerank 只替换 scorer,不绕过 scope、governor 和 citation。
+- 测试覆盖:“汇报当前项目进度,并告诉我还有几阶段”可召回“我更喜欢汇报进度时告诉我还有几阶段”;“法务检查”可召回英文 `legal review` 记忆。
+- 验证通过:244 个单测、1 个 golden skipped、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 83**(2026-05-18,Codex):
+- 处理真实使用 `/remember` 时出现的 `Memory store is not configured. Set AICO_MEMORY_PATH first.`。
+- 确认根因:当前运行的 `aico-phase1` 进程启动时没有配置 `AICO_MEMORY_PATH`,因此 Orchestrator 未注入 `JsonlMemoryStore`。
+- 将 IM 报错改为可执行提示:说明需要在启动 `aico-phase1` 前设置 `AICO_MEMORY_PATH` 并重启,同时给出后续 `/use project` / `/remember` 操作。
+- 更新 `docs/human/quickstart.md`,把 `AICO_PROJECT_CONFIG_PATH` 和 `AICO_MEMORY_PATH` 纳入快速启动环境变量,并补充 memory smoke 命令。
+- 验证通过:242 个单测、1 个 golden skipped、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 82**(2026-05-17,Codex):
+- 完成 Phase 7 共享记忆本地验收流,新增 `tests/unit/test_phase7_memory_acceptance.py`。
+- 验收流覆盖企业/团队管理常见场景:项目级合同/法务记忆、跨项目隔离、老板全局汇报偏好、项目级 candidate 反馈不注入、team broadcast 共识、JSONL 重启恢复、A2A `memory_refs + delta` 可关闭回退。
+- 更新 Phase 7 playbook 和 daily ops,明确 `/remember` / `/recall` / `/forget` 是纠错/排障入口,老板日常主路径仍是自然管理项目和 agent。
+- 记录 deterministic 中文检索边界:第一版是 scope + 子串/标签匹配,长中文句需要使用稳定关键词验收;语义检索留到后续增强。
+- 验证通过:241 个单测、1 个 golden skipped、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 81**(2026-05-17,Codex):
+- 按 TDD 完成 Phase 7 Iteration 5:Team Broadcast 与 A2A memory refs 实验 MVP。
+- 新增 `MemoryBroadcastService` 和 `MemoryBroadcastReceipt`,可把 project / boss / team 记忆广播为 team-scoped consensus atom。
+- `JsonlMemoryStore` 增加 `get_atom()`,broadcast 服务会写入 team memory,并追加 `broadcast_to` edge 作为 receipt。
+- broadcast 会拒绝跨 project team scope,避免把一个项目的记忆直接广播到另一个项目。
+- project task Prompt Stack 召回 scope 增加 `team:<project>/default`,同 team agent 后续任务能自动看到广播共识。
+- `collaboration_payload()` 新增可关闭的 `memory_refs + delta` 格式;无 refs 时回退原显式消息。
+- 验证通过:240 个单测、1 个 golden skipped、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 80**(2026-05-15,Codex):
+- 按 TDD 完成 Phase 7 Iteration 4:Boss feedback 抽取与 candidate memory MVP。
+- 新增 `MemoryCaptureService`,从老板自然消息中识别明确偏好/feedback,自动写入 `MemoryAtom`。
+- scope 明确指向项目时写入 current project memory;无项目上下文或全局表达时写入 boss global memory。
+- 语气不确定的反馈写成 `candidate`,不会进入 Prompt Stack;明确偏好写成 active。
+- Orchestrator 在非命令消息路由前调用 capture service;命令仍走原处理链,避免把 `/remember` 等命令重复抽取。
+- project task 召回 scope 扩展为 boss global + project + role + agent,让老板全局偏好能按 query 自动进入 agent prompt。
+- 验证通过:235 个单测、1 个 golden skipped、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 79**(2026-05-15,Codex):
+- 按 TDD 完成 Phase 7 Iteration 3:IM 控制入口。
+- 新增 `MemoryCommandHandler`,把 `/remember`、`/recall`、`/forget` 做成 project-scoped 纠错/排障入口,不调用 provider。
+- `Phase1Settings` 新增 `AICO_MEMORY_PATH`;配置后 `aico-phase1` runtime 会创建 `JsonlMemoryStore` 并接入 Orchestrator prompt 自动召回。
+- `/remember <text>` 默认写当前 active project scope;没有 active project 时提示先 `/project <project>`。
+- `/recall [query]` 展示 claim、scope、confidence、source/evidence 摘要和短 Next。
+- `/forget <memory_id>` 只归档 JSONL 记忆,不物理删除历史;测试覆盖归档后 prompt stack 不再注入。
+- 验证通过:228 个单测、1 个 golden skipped、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 78**(2026-05-15,Codex):
+- 按 TDD 完成 Phase 7 Iteration 2:Prompt Stack 自动召回。
+- 先新增红灯测试:
+  - `MemoryRetriever` + `MemoryGovernor` 只能从指定 project/team scope 召回 active 且允许披露的记忆。
+  - candidate、archived、restricted 或其它 project 记忆不会进入 `MemoryPacket`。
+  - `render_appointment_prompt()` 会把 `MemoryPacket` 渲染到 `Current task` 之前。
+  - Orchestrator 在 active project 普通任务中自动注入当前 project 记忆,且不会串入其它 project。
+- 新增 `MemoryPacketItem`、`MemoryCitation`、`MemoryPacket`、`MemoryGovernor`、`MemoryRetriever`。
+- `render_appointment_prompt()` 支持可选 `memory_packet`。
+- `Orchestrator` 支持可选 `memory_store`,project-scoped task 会按 project/role/agent scope 自动召回少量受控记忆。
+- 验证通过:memory、prompt_stack、orchestrator 目标单测,目标 ruff、目标 format check、目标 mypy。
+
+**Round 77**(2026-05-15,Codex):
+- 将 Phase 7 A2A Memory Fabric 拆成 5 个 TDD 迭代:
+  - Iteration 1:MemoryAtom / MemoryScope / MemoryEvidence / MemoryEdge / JsonlMemoryStore。
+  - Iteration 2:Prompt Stack 自动召回。
+  - Iteration 3:/remember / /recall / /forget 控制入口。
+  - Iteration 4:boss feedback 抽取与 candidate memory。
+  - Iteration 5:team broadcast 与 A2A token-saving 实验。
+- 按 TDD 完成 Iteration 1:
+  - 先新增 `tests/unit/test_memory.py`,锁定 evidence、project/team scope、JSONL 恢复、archive 和 edge 持久化契约。
+  - 新增 `src/aico/core/memory.py`,实现 `MemoryAtom`、`MemoryScope`、`MemoryEvidence`、`MemoryEdge`、`MemoryStore` Protocol 和 `JsonlMemoryStore`。
+  - `JsonlMemoryStore` 使用 append-only JSONL 作为权威源,启动时重建内存索引;召回使用可插拔 semantic scorer。
+- 验证通过:memory/model/audit 相关单测、目标 ruff、目标 format check、目标 mypy。
+
+**Round 76**(2026-05-15,Codex):
+- 按人类要求设计符合 A2A 的 Phase 7 记忆架构,参考 `attack-on-memory` 的 Memory Atom、evidence、scope、graph edge、time-window retrieval、selective disclosure 和 BranchWorldModel 思路。
+- 新增 ADR-0022 `A2A Memory Fabric`,把 `/remember` / `/recall` 从孤立 IM 命令升级为 lead agent、team agent 和 boss 共享的记忆基础设施。
+- 新增 `docs/architecture/a2a-memory-fabric.md`,定义 MemoryAtom、MemoryEvidence、MemoryScope、MemoryEdge、MemoryPacket、MemoryStore、MemoryRetriever、MemoryGovernor、MemoryCaptureService、MemoryBroadcastService。
+- 明确记忆分层:boss global、project、team、role、agent working memory;默认禁止跨 project / team 共享。
+- 明确四个核心场景:agent 间协作有记忆、boss 会话抽取偏好/feedback、team 共识广播、用 memory refs + MemoryPacket 试验减少 A2A 长消息传递。
+- 本轮为文档/决策更新,未改代码。
+
+**Round 75**(2026-05-15,Codex):
+- 按人类明确基调修正 Phase 7 记忆层产品方向:记忆命令可以存在,但大比例触发应来自 agent,不是老板手动维护。
+- 新增 ADR-0021 `Agent-Driven Memory Ownership`,确定 `/remember` / `/recall` / `/forget` 是纠错、补充、排障和验收入口,不是老板主工作流。
+- 更新 Phase 7 playbook:agent 在任务完成、交接、风险确认、日报/周报沉淀时主动写入稳定事实;接项目任务前自动召回当前项目少量高置信记忆。
+- 下一轮实现 Phase 7 第一切片时,验收不能只测三个 slash command,还要覆盖“老板自然发项目命令,agent 自动使用记忆”的路径。
+- 本轮为文档/决策更新,未改代码。
+
+**Round 70**(2026-05-14,Codex):
+- 按人类要求让项目查看类命令更有指导性,减少“看完不知道下一步干嘛”的断点。
+- 在查看类输出末尾追加短 `Next:` 指导命令:
+  - `/agents`:提示 `/agent <agent>`、`/roles`、`/appoint <agent> as <role>`。
+  - `/agent <agent>`:idle 时提示 `/roles`、`/appoint <agent> as <role>`、`/new <agent>`;非 idle 时提示 `/tasks`、`/status`、`/agent <agent>`。
+  - `/project`:提示 `/brief`、`/team`、`/next`、`/daily`、`/weekly`。
+  - `/team`:已有 lead 时提示 `/ask <lead-role> <task>`、`/who <lead-role>`、`/roles`、`/lead <role>`;无任命时提示 `/roles`、`/agents`、`/appoint <agent> as <role>`。
+  - `/roles`:提示 `/role <role>`、`/agents`、`/appoint <agent> as <role>`、`/roles all`。
+  - `/role <id>`:未任命时提示 `/agents`、`/appoint <agent> as <role>`、`/roles`;已任命时提示 `/ask <role> <task>`、`/lead <role>`、`/appoint <agent> as <role> <scope>`、`/unappoint <role>`。
+- 没有新增新命令;role scope 调整先复用已有 `/appoint` 覆盖语义,避免过早设计 `/scope`。
+- 新增/更新单测覆盖 project / team / roles / role / agents guidance。
+- 验证通过:215 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 69**(2026-05-13,Codex):
+- 修复 project-scoped lead / role 普通咨询误触发审批的问题:
+  - `render_appointment_prompt()` 会把 Agent、Role、Project、Appointment Contract 和 `Current task` 拼成完整 prompt。
+  - 过去 `TextRiskAssessor` 扫整段 prompt,因此 role summary 里的 `write` / `run tests` 等词可能让“团队分工是什么?”这类只读问题进入 `waiting_approval`。
+  - 现在风险识别在 appointment prompt 中只检查 `Current task:` 之后的真实用户请求;如果真实请求要求 `run pytest` / `update STATUS.md` 等,仍会触发审批。
+- 修复待审批任务清理体验:
+  - `/interrupt <task_id>` 现在可以取消 `waiting_approval` 任务,会把任务状态记为 `interrupted`,并移出 pending approval 队列。
+  - 多个 pending approvals 时,用户可以用 `/interrupt <short_task_id>` 清理不想执行的项,再继续 `/approve <short_task_id>` 或 `/reject <short_task_id>`。
+- 新增回归测试覆盖:
+  - appointment prompt scaffolding 中出现 write/run 时,只读团队/项目问题不触发审批。
+  - `Current task` 真实要求执行命令或更新文件时仍触发审批。
+  - `/interrupt` 可取消 `waiting_approval` 并记录 approval rejected / task interrupted 审计事件。
+- 验证通过:212 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 68**(2026-05-13,Codex):
+- 按人类反馈收敛 `/agents` / `/roles` 的产品语义:
+  - `/agents` 现在优先展示工具入口名,如 `claude -> claude-code [role: implementer]`,避免 `implementer` / `reviewer` 与 `cursor` / `codeflicker` 混在同一命名层。
+  - `/roles` 默认变为紧凑岗位板,只展示 Core / Specialists;`tester`、`docs`、`ops`、`analyst`、`designer` 等支持岗位默认隐藏到 `/roles all`。
+  - 新增 `/role <id>` 详情视图,展示 owner、scope、approval 和 risk ladder。
+- 收敛权限词表为三层:
+  - Adapter capability: `code_review` / `code_edit` / `shell_exec` / `long_running` / `stream_output` / `interruptible`。
+  - Role scope: `docs` / `code` / `tests` / `ops` / `audit`。
+  - Risk level: `read_only` / `write_files` / `shell_exec` / `destructive`。
+- `/appoint <agent> as <role>` 不传 scope 时,现在自动继承 role 默认 scope。
+- 新增 ADR-0019,明确本轮不是引入完整 RBAC;role scope 仍是岗位契约,真实危险动作继续由 risk assessor、adapter capability 和 `/approve` 控制。
+- 验证通过:208 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 67**(2026-05-12,Codex):
+- 按人类要求把 Cursor / CodeFlicker 从“可选只读 MVP”升级为审批保护下的完整能力:
+  - Cursor 默认命令改为 `cursor-agent -p --force --output-format text`。
+  - CodeFlicker 默认命令改为 `flickcli -q --approval-mode yolo --output-format text`。
+  - 两者 capabilities 现在包含 `code_edit` / `shell_exec`;写文件、shell、destructive 任务仍先走 AICO 风险识别和 `/approve`。
+- 新增 `TraeAdapter`:
+  - 默认命令 `trae-cli --print --yolo`。
+  - 通过 `AICO_ENABLE_TRAE_ADAPTER=true` 启用。
+  - 支持 AICO provider session 新建 / resume 元数据映射到 `--session-id` / `--resume`。
+- 新增 `GeminiAdapter`:
+  - 默认命令 `gemini --approval-mode yolo --output-format text`。
+  - 通过 `AICO_ENABLE_GEMINI_ADAPTER=true` 启用。
+  - 支持已绑定 provider session 用 `--resume` 继续。
+- 默认 AI Company role 模板扩充 PM、Senior Architect、Golden Tester、Market Risk、Legal Compliance,并保留 implementer / reviewer / tester / security / docs / ops / analyst / designer 等有明确 AI 公司产出的岗位。
+- 在飞书、钉钉、QQ、微信中选择飞书作为第一个非 Telegram Channel:
+  - 新增 `FeishuChannel`,覆盖 tenant token、文本发送、编辑/删除、URL verification、`im.message.receive_v1` 文本事件解析。
+  - 新增 Feishu Channel playbook;真实公网 callback server 留给下一轮部署层切片。
+- 新增 ADR-0018,记录完整 Adapter 能力、role 扩充和 Feishu Channel 选择。
+- 验证通过:207 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`。
+- 本机 CLI 状态:
+  - `cursor-agent` 当前未安装。
+  - `flickcli` 已存在,help 确认支持 `--approval-mode`、`--cwd`、`--tools`、`--output-format`。
+  - `trae-cli` 已存在,help 会先报本机 keyring token store 不支持,但随后展示 `--print`、`--yolo`、`--session-id`、`--resume`。
+  - `gemini` 已存在,help 确认支持 `--approval-mode`、`--output-format`、`--resume`。
+
+**Round 66**(2026-05-07,Codex):
+- 按近期高优方向启动 Adapter 扩展第一切片。
+- 新增 ADR-0017,确定 Cursor / CodeFlicker 先作为可选只读 Adapter 接入,默认不授予写文件或 shell 能力。
+- 新增 `CursorAdapter`:
+  - 默认命令 `cursor-agent -p --output-format text`。
+  - 通过 `AICO_ENABLE_CURSOR_ADAPTER=true` 启用。
+  - 启用后内置 persona `cursor` 会进入 `/agents`。
+- 新增 `CodeFlickerAdapter`:
+  - 默认命令 `flickcli -q --output-format text --tools '{"bash":false,"write":false}'`。
+  - 通过 `AICO_ENABLE_CODEFLICKER_ADAPTER=true` 启用。
+  - 启用后内置 persona `codeflicker` 会进入 `/agents`。
+  - 有 `AICO_CLAUDE_WORKING_DIRECTORY` 时会在命令中补 `--cwd <path>`。
+- 新增单测覆盖两个 Adapter 默认命令、能力边界、CodeFlicker `--cwd` 注入和 `aico-phase1` 可选启用路径。
+- 新增 `docs/playbooks/optional-agent-adapters.md`,记录 Cursor / CodeFlicker 真实 smoke test 步骤。
+- 本机核验:
+  - `cursor-agent` 当前未安装,所以 Cursor 真实 smoke test 待安装登录后执行。
+  - `flickcli` 已存在,版本 `0.5.1`,help 确认支持 `-q`、`--cwd`、`--tools` 和 `--output-format`。
+- 验证通过:193 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 65**(2026-05-07,Codex):
+- 人类补充近期方向:既有 Phase 6 / Phase 7 计划继续推进,但近期要高优支持更多 Adapter 和更多 IM Channel。
+- 已把近期高优方向记录到 `STATUS.md`:
+  - Adapter 扩展:优先 CodeFlicker Adapter、Cursor Adapter,目标是让 Telegram `/agents` 出现更多真实可用 agents,并保持可插拔,为 Trae、OpenClaw 等后续 Adapter 留同一路径。
+  - Channel 扩展:从飞书、钉钉、QQ、微信里按对接成本和协议标准化程度选择 1-2 个先做,不追求一次性全量接入。
+- 决策边界:本轮只记录计划,不做实现;后续实现前需要核验目标工具/IM 的最新官方 CLI/API/Bot 能力,并分别补 ADR/playbook/mock 测试。
+
+**Round 64**(2026-05-07,Codex):
+- 人类要求把 Phase 6 规划的核心能力都开发完,随后集中验收,验收通过后进入 Phase 7。
+- 补齐 Phase 6 代码侧核心能力:
+  - 新增 ADR-0016,明确 Phase 6 不做完整 Mac GUI / Web dashboard,先完成 `aico-glance` 数据原型和 usage 审计事件接入边界。
+  - 新增 `StatusIslandSnapshot` / `StatusIslandTask`,从 `MetricsReport` 生成本地 glance 视图,包含 active agents、open/running/waiting/failed、最近任务和 `/task` / `/approve` / `/reject` / `/interrupt` 命令提示。
+  - 新增 `aico-glance` CLI,支持从 `--audit-log` 或 `AICO_AUDIT_LOG_PATH` 读取 audit JSONL,输出 text 或 JSON,供 macOS/xbar/后续原生菜单栏原型消费。
+  - 新增 `task_usage_recorded` 审计事件类型、`usage_audit_detail()` 和 `usage_records_from_audit_events()`,Adapter 未来上报真实 usage 后即可汇总 token/cost。
+  - `MetricsReport.token_cost` 在有 usage 审计事件时展示 input/output/total tokens 和 cost;没有真实 usage 时继续明确 unavailable。
+- 新增单测覆盖:
+  - Status Island snapshot text/json 与动作命令。
+  - `aico-glance` text/json 输出。
+  - usage audit detail 解析与 token/cost 汇总。
+- 验证通过:184 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+- 当前 Phase 6 代码侧核心能力已完成;剩余是集中真实验收项。
+
+**Round 63**(2026-05-07,Codex):
+- 继续 Phase 6 观测模型收口,先不做 Mac GUI / Web API,把 `/metrics` 背后的数据模型提炼为可复用结构:
+  - 新增 `MetricsReport` / `MetricsGlance` / `TokenCostSummary`,统一承载 generated_at、source、24h/7d summaries、glance 状态和 token/cost unavailable 原因。
+  - `/metrics` 改为渲染 `MetricsReport`,新增 `glance` 小节,快速显示 `needs_approval` / `working` / `attention` / `quiet` 与 open/running/waiting/failed 数。
+  - 新增 `metrics_report_to_dict()`,为后续 macOS Status Island / Web / 脚本消费提供稳定 JSON 形态。
+  - 新增 `aico-metrics` CLI,可从 `--audit-log` 或 `AICO_AUDIT_LOG_PATH` 读取 audit JSONL,输出 text 或 JSON,作为 CLI 排障与本地 glance 原型的数据入口。
+- 新增单测覆盖:
+  - Metrics report glance 和 token/cost unavailable 状态。
+  - Metrics JSON 序列化中的枚举 / 时间字段。
+  - `aico-metrics` text/json 输出。
+  - `/metrics` IM 输出中的 glance 小节。
+- 验证通过:179 个单测、`ruff check .`、`ruff format --check .`、`mypy src tests`、`git diff --check`。
+
+**Round 62**(2026-05-07,Codex):
+- 人类暂时没空验收新功能,要求先继续迭代,明天白天再验收能力。
+- 继续 Phase 6 可观测持久化第一切片:
+  - 新增 ADR-0015,决定先复用 audit JSONL replay,不新增 task snapshot JSONL 或 SQLite。
+  - `InMemoryAuditLog` 支持 `initial_events`,启动时可注入历史审计事件。
+  - 新增 `read_jsonl_audit_events(path)`,从 `AICO_AUDIT_LOG_PATH` 读取历史 JSONL 审计事件。
+  - `aico-phase1` 配置 `AICO_AUDIT_LOG_PATH` 后,启动时会回读旧审计事件。
+  - `/metrics` 会从 audit events 重建 metrics 用 task snapshot,并与当前进程内 task snapshot 合并;当前进程内状态优先。
+- 新增单测覆盖:
+  - audit JSONL 读取与恢复。
+  - 从 audit events 重建 task snapshot 最新状态。
+  - `/metrics` 同时统计重启前 audit 恢复任务和当前进程内 open work。
+  - phase1 runtime 启动时加载已有 audit JSONL。
 
 **Round 61**(2026-05-07,Codex):
 - 人类认为 `/task` parent / child trace 用户价值不大,询问 Phase 5 是否还有大功能,并同意进入 Phase 6。
@@ -568,18 +855,28 @@
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【高】重启后真实验收 `/metrics`**:跑几条 done / waiting approval / running / collaboration 任务后发送 `/metrics`,确认 24h / 7d、状态分布、open work 和 collaboration 数符合预期。
-2. **【高】Phase 6 观测状态持久化设计**:当前 `/metrics` 只看进程内状态;下一步建议设计轻量 Task/Audit repository 或复用 JSONL 读取,让重启后仍能看 24h / 7d。
-3. **【中】Mac Status Island 原型边界**:先消费 `/metrics` 同一套观测模型,只做 glance / approve / interrupt / jump,不要把完整项目管理搬进本地 UI。
-4. **【中】Phase 5 真实协作 smoke test 作为回归项**:重新跑 `@reviewer ...`,确认 child task accepted 后要么有 reviewer 输出,要么 90 秒 idle timeout 后恢复 `codex: idle`。
-5. **【中】Codex bind / Claude resume / 长文本复测**:继续确认 session 和长文本分片不被 Phase 6 命令影响。
-6. **【低】token / cost 接入**:等 Claude/Codex Adapter 能稳定提供 usage 后再接入,当前不要伪造数据。
+1. **【高】Cursor / CodeFlicker / Trae / Gemini 真实 smoke test**:
+   - 安装并登录 `cursor-agent`,启动 `AICO_ENABLE_CURSOR_ADAPTER=true`,在 Telegram 发送 `/agents`、`/cursor summarize this repo in one sentence, do not edit files` 和一个写文件审批任务。
+   - 确认 `flickcli` 已登录,启动 `AICO_ENABLE_CODEFLICKER_ADAPTER=true`,在 Telegram 发送 `/agents`、`/codeflicker summarize this repo in one sentence, do not edit files` 和一个写文件审批任务。
+   - 确认 `trae-cli` 已登录 / token 可用,启动 `AICO_ENABLE_TRAE_ADAPTER=true`,跑只读和写能力审批 smoke test。
+   - 确认 `gemini` 已登录 / API key 可用,启动 `AICO_ENABLE_GEMINI_ADAPTER=true`,跑只读和写能力审批 smoke test。
+   - 观察 `/status`、`/tasks`、idle timeout 和日志,确认失败时能释放 busy。
+2. **【高】Feishu Channel 部署层与真实 smoke test**:
+   - 用 FastAPI route 或现有部署入口把飞书事件 callback 接到 `FeishuChannel.handle_event(payload)`。
+   - 在飞书开放平台完成 URL verification,订阅 `im.message.receive_v1`。
+   - 配置 App ID / App Secret / Verification Token,跑文本入站、回复、编辑/删除降级 smoke test。
+3. **【中】Phase 8 离线托管模式 ADR**:
+   - 基于 Phase 4 审批、Phase 6 可观测和 Phase 7 共享记忆,先定义“睡前下任务、早上看结果”的托管边界。
+   - 如果飞书 action/card 暂不做,继续把 `MessageContent.actions` 降级为纯文本提示,核心不感知差异。
+5. **【高】Phase 5 真实协作 smoke test 作为后续回归项**:重新跑 `@reviewer ...`,确认 child task accepted 后要么有 reviewer 输出,要么 90 秒 idle timeout 后恢复 `codex: idle`。
+6. **【中】Codex bind / Claude resume / 长文本复测**:继续确认 session 和长文本分片不被 Phase 6 命令影响。
+7. **【低】Adapter usage 上报**:等 Claude/Codex Adapter 能稳定提供 usage 后,记录 `task_usage_recorded` 审计事件;当前只保留接入边界,不伪造数据。
 
 ---
 
 ## 当前卡点
 
-参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。B-001、B-002 均已解决;当前没有阻塞 Phase 6 的活跃卡点。
+参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。B-001、B-002 均已解决;当前没有阻塞 Phase 7 的活跃卡点。
 
 ---
 

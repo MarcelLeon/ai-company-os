@@ -57,6 +57,7 @@
 - Codex provider resume 命令构造支持:当 session 已有 Codex provider ref 时,Adapter 会使用 `codex exec resume <session_id> <prompt>`
 - `/bind <session_id|agent> <provider_session_id>` 显式 provider session 绑定,用于把已有 Codex/Claude 会话挂到 AICO session
 - `/agents`、`/agent <agent>`、`/skills <agent>`、`/tools <agent>` agent 体验命令;skills/tools 由底层 provider 自己回答
+- `/agents` 和 `/agent <agent>` 输出末尾追加短 `Next` 指导命令,引导查看详情、任命或创建 session
 - Project Assignment Layer MVP:新增 `agents` / `projects` / `assignments` 配置模型、`AICO_PROJECT_CONFIG_PATH`、`config/projects.example.json` 和项目任命查看命令
 - `/projects`、`/project <project>`、`/use project <project>`、`/assignments [project]`、`/assignment <seat>` 项目/工位命令
 - project-scoped session 绑定:普通消息在 active project 下会路由到默认 assignment seat,provider session ref 挂在 assignment 上
@@ -69,6 +70,9 @@
 - `/blockers [project]` 项目卡点命令,用于展示等待审批、失败/拒绝/中断任务和未知 persona 等当前卡住的工作
 - `/next [project]` 下一步动作建议命令,基于本地 project/team/task/audit 状态给出待审批、失败恢复或 lead role 派工建议
 - `/roles [project]` 项目岗位命令,展示 role 模板、默认权限和已任命 / 未任命状态
+- `/roles` 紧凑岗位板、`/roles all` 全量岗位板和 `/role <id>` 岗位详情,让 IM 中默认只显示核心/专家岗位
+- `/project`、`/team`、`/roles`、`/role <id>` 输出末尾追加短 `Next` 指导命令,让项目办公室流程更顺滑
+- Role scope 词表收敛为 `docs` / `code` / `tests` / `ops` / `audit`,并让 `/appoint <agent> as <role>` 默认继承岗位 scope
 - `/role propose <诉求>`、`/role confirm`、`/role discard` 岗位草案确认流,由当前项目 lead role 起草新 role,用户确认后加入当前项目进程内 roles
 - `/unappoint <role>` 项目撤任命令,用于撤销当前项目某个 role 的进程内 appointment
 - 平台无关 IM render contract 第一切片:`MessageContent` 支持文本 spans 和 actions,Telegram Channel 可映射为 HTML 与 inline keyboard
@@ -82,6 +86,28 @@
 - `/task <task_id>` 详情现在展示协作 parent / child trace,可从父任务跳到 reviewer 子任务,也可从子任务回看发起它的 persona 和父任务
 - ADR-0014 Phase 6 可观测范围决策,确定先做 IM-first `/metrics` MVP,再评估 Mac / Web 可视入口
 - `/metrics` 本地可观测命令,展示 24h / 7d 任务状态、agent 接活数、open work、协作次数和平均终态耗时
+- ADR-0015 Observability Event Replay,确定先复用 audit JSONL 为 `/metrics` 提供重启后历史指标恢复
+- MetricsReport 结构化观测模型,包含 summaries、glance 状态和 token/cost 可用性,供 IM / CLI / 后续 macOS 或 Web 入口复用
+- `aico-metrics` CLI,可从 audit JSONL 输出 text 或 JSON 指标,用于本地排障和未来 glance 原型
+- ADR-0016 Status Island and Usage Boundary,确定 Phase 6 以 glance 数据原型和 usage 审计事件边界收口
+- `aico-glance` CLI,可从 audit JSONL 输出本地 Status Island text/json 快照,包含最近任务和 `/task` / `/approve` / `/reject` / `/interrupt` 命令提示
+- `task_usage_recorded` 审计事件类型与 usage JSON detail 约定,供 Adapter 未来上报真实 token/cost
+- ADR-0017 Optional Agent Adapters,确定 Cursor / CodeFlicker 第一切片默认作为可选只读 Adapter 接入
+- Cursor Adapter MVP,通过 `AICO_ENABLE_CURSOR_ADAPTER=true` 启用后可进入 `/agents`
+- CodeFlicker Adapter MVP,通过 `AICO_ENABLE_CODEFLICKER_ADAPTER=true` 启用后可进入 `/agents`
+- ADR-0018 Full Agent Adapters and Feishu First Channel,确定在 AICO 审批门禁下开放 Cursor / CodeFlicker / Trae / Gemini 完整 CLI 能力,并选择飞书作为第一个非 Telegram Channel
+- Trae Adapter,通过 `AICO_ENABLE_TRAE_ADAPTER=true` 启用后可进入 `/agents`
+- Gemini Adapter,通过 `AICO_ENABLE_GEMINI_ADAPTER=true` 启用后可进入 `/agents`
+- Feishu Channel 第一切片,支持 tenant token、文本发送、消息编辑/删除、URL verification 和 `im.message.receive_v1` 文本事件解析
+- 默认 AI Company role 模板扩展 PM、Senior Architect、Golden Tester、Market Risk、Legal Compliance 等有效公司岗位
+- Phase 7 共享记忆第一迭代:新增 `MemoryAtom` / `MemoryScope` / `MemoryEvidence` / `MemoryEdge` / `MemoryStore` / `JsonlMemoryStore`,以 append-only JSONL 作为 A2A Memory Fabric 的可审计权威源
+- Phase 7 共享记忆第二迭代:新增 `MemoryPacket` / `MemoryRetriever` / `MemoryGovernor`,project-scoped task prompt 可自动注入受控共享记忆
+- Phase 7 共享记忆第三迭代:新增 `AICO_MEMORY_PATH` 和 `/remember` / `/recall` / `/forget` IM 控制入口,作为 project-scoped 记忆纠错、补充和排障通道
+- Phase 7 共享记忆第四迭代:新增 boss feedback 自动抽取,明确偏好可写入 boss global 或 project memory,不确定反馈进入 candidate 且不注入 prompt
+- Phase 7 共享记忆第五迭代:新增 `MemoryBroadcastService` / team receipt / `broadcast_to` edge,并提供可关闭的 A2A `memory_refs + delta` payload 实验
+- Phase 7 共享记忆验收流:新增企业/团队管理 acceptance test,覆盖跨项目隔离、老板偏好、candidate 不注入、team broadcast、JSONL 重启恢复和 A2A memory refs 回退
+- `/remember` 未启用 `AICO_MEMORY_PATH` 时返回可执行的重启配置提示,Quickstart 也默认展示 memory path 配置
+- Phase 7 记忆召回升级为可插拔 `MemorySemanticScorer`,默认支持中文长句复述和常见中英项目管理术语别名
 
 ### Changed
 - 将扁平化文档归位到 `docs/agent` / `docs/journal` / `docs/architecture` / `docs/human`
@@ -89,6 +115,7 @@
 - 将 `/role propose` / `/role confirm` / `/role discard` 命令处理从 `ProjectCommandHandler` 拆到 `ProjectRoleCommandHandler`,降低项目命令类体积
 - 将 `/brief` / `/risks` / `/blockers` / `/next` / `/daily` / `/weekly` 命令处理从 `ProjectCommandHandler` 拆到 `ProjectStatusCommandHandler`,集中项目状态与报告逻辑
 - `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 可配置 Codex accepted 后无 stdout 的空闲超时秒数
+- Cursor / CodeFlicker Adapter 从只读 MVP 升级为完整 `code_edit` / `shell_exec` 能力,危险任务仍先走 AICO `/approve`
 - 项目办公室关键消息现在使用 render hints 标记首行标题,`/role propose` 消息带 Confirm / Discard actions
 - 项目状态 LLM summary 会保留完整 `Facts` 原文;summary 失败时降级为原事实消息,不阻塞状态查询
 - Boss summary 中的轻量 Markdown 会转换为 render spans,避免 `**bold**`、反引号和列表标记在 Telegram 中裸露
@@ -112,6 +139,9 @@
 - `Orchestrator` 命令分发瘦身,大段 command dispatch 移出类体,保持单类行数低于硬约束
 - Project appointment 现在按 project + role 保持唯一负责人;重复 `/appoint` 同一 role 会覆盖原任命,不会在 `/team` 里追加重复成员
 - `/team` 现在展示当前 lead role,并在对应团队成员行标记 `[lead]`
+- 配置 `AICO_AUDIT_LOG_PATH` 后,启动时会回读旧 audit JSONL;`/metrics` 会从审计事件重建历史 task 指标,再与当前进程内 task 状态合并
+- `/metrics` 现在包含 `glance` 小节,快速展示当前 24h 的 open / running / waiting approval / failed 状态
+- `MetricsReport` 现在包含 recent tasks 和真实 usage audit events 汇总出的 token/cost 字段;无真实 usage 时仍显示 unavailable
 
 ### Deprecated
 - (无)

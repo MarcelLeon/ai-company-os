@@ -12,6 +12,7 @@ def test_role_proposal_prompt_requests_json_for_project_need() -> None:
     assert "Project: aico [AI Company OS]" in prompt
     assert "Need: 需要一个增长分析岗位" in prompt
     assert "Return only one JSON object" in prompt
+    assert "docs, code, tests, ops, audit" in prompt
 
 
 def test_role_from_llm_output_parses_json_role_draft() -> None:
@@ -21,8 +22,8 @@ def test_role_from_llm_output_parses_json_role_draft() -> None:
           "id": "Growth Analyst",
           "title": "Growth Analyst",
           "summary": "Analyze activation and retention opportunities.",
-          "default_permissions": ["read_docs", "read_audit"],
-          "approval_required": ["write_docs"],
+          "default_permissions": ["docs", "audit"],
+          "approval_required": ["destructive"],
           "inline_prompt": "Focus on measurable product opportunities."
         }
         """,
@@ -31,8 +32,8 @@ def test_role_from_llm_output_parses_json_role_draft() -> None:
 
     assert role.id == "growth-analyst"
     assert role.title == "Growth Analyst"
-    assert role.default_permissions == ("read_docs", "read_audit")
-    assert role.approval_required == ("write_docs",)
+    assert role.default_permissions == ("docs", "audit")
+    assert role.approval_required == ("destructive",)
     assert role.inline_prompt == "Focus on measurable product opportunities."
 
 

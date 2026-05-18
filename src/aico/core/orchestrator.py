@@ -26,6 +26,9 @@ from aico.core.command_messages import (
     status_message,
 )
 from aico.core.commands import Command, CommandName, help_text, parse_command, reject_parts
+from aico.core.memory import MemoryPacket, MemoryRetriever, MemoryScope, MemoryStore
+from aico.core.memory_capture import MemoryCaptureService
+from aico.core.memory_commands import MemoryCommandHandler
 from aico.core.models import (
     AckStatus,
     IncomingMessage,
@@ -68,6 +71,7 @@ class Orchestrator:
         provider_session_factory: ProviderSessionRefFactory | None = None,
         agent_directory: AgentDirectory | None = None,
         project_directory: ProjectAssignmentDirectory | None = None,
+        memory_store: MemoryStore | None = None,
     ) -> None:
         self._channel = channel
         self._router = router
@@ -76,6 +80,7 @@ class Orchestrator:
         self._provider_session_factory = provider_session_factory
         self._agent_directory = agent_directory or AgentDirectory()
         self._project_directory = project_directory or ProjectAssignmentDirectory()
+        self._memory_store = memory_store
         self._task_sessions: dict[str, str] = {}
         self._assignment_sessions: dict[str, str] = {}
         self._role_proposals = RoleProposalCoordinator(
@@ -111,6 +116,14 @@ class Orchestrator:
             propose_role=self._role_proposals.propose,
             summarize_project=self._project_summaries.summarize,
         )
+        self._memory_commands = MemoryCommandHandler(
+            channel=self._channel,
+            project_directory=self._project_directory,
+            memory_store=self._memory_store,
+        )
+        self._memory_capture = (
+            MemoryCaptureService(self._memory_store) if self._memory_store is not None else None
+        )
 
     def bind(self) -> None:
         self._channel.on_incoming(self.handle_incoming)
@@ -128,6 +141,7 @@ class Orchestrator:
             await self._handle_command(message, command)
             return
 
+        self._capture_boss_feedback(message)
         task, session = self._task_for_message(message)
         log.info(
             "Task routed: task_id=%s target=%s payload_chars=%s",
@@ -144,6 +158,14 @@ class Orchestrator:
 
     async def _handle_command(self, message: IncomingMessage, command: Command) -> None:
         await _handle_command(self, message, command)
+
+    def _capture_boss_feedback(self, message: IncomingMessage) -> None:
+        if self._memory_capture is None:
+            return
+        self._memory_capture.capture_boss_feedback(
+            message,
+            active_project=self._project_directory.active_project(session_scope(message)),
+        )
 
     async def _handle_broadcast(self, message: IncomingMessage, payload: str) -> None:
         if not payload:
@@ -387,6 +409,12 @@ class Orchestrator:
                         assignment.role,
                     ),
                     appointment=assignment,
+                    memory_packet=self._memory_packet_for_assignment(
+                        boss_id=message.sender_id,
+                        project_id=project.id,
+                        assignment=assignment,
+                        query=task.payload,
+                    ),
                 )
             }
         )
@@ -400,6 +428,29 @@ class Orchestrator:
             )
             task = task_with_provider_session(task, session.provider_ref, mode)
         return task, session
+
+    def _memory_packet_for_assignment(
+        self,
+        *,
+        boss_id: str,
+        project_id: str,
+        assignment: AssignmentProfile,
+        query: str,
+    ) -> MemoryPacket | None:
+        if self._memory_store is None:
+            return None
+        scopes = (
+            MemoryScope.boss(boss_id),
+            MemoryScope.project(project_id),
+            MemoryScope.team(project_id, "default"),
+            MemoryScope.role(project_id, "default", assignment.role),
+            MemoryScope.agent(project_id, "default", assignment.agent),
+        )
+        packet = MemoryRetriever(self._memory_store).retrieve_packet(
+            scopes=scopes,
+            query=query,
+        )
+        return packet if packet.items else None
 
     def _ensure_assignment_session(
         self,
@@ -598,6 +649,12 @@ async def _handle_command(
         await orchestrator._directory_commands.handle_skills(message, command.payload)
     elif command.name is CommandName.TOOLS:
         await orchestrator._directory_commands.handle_tools(message, command.payload)
+    elif command.name is CommandName.REMEMBER:
+        await orchestrator._memory_commands.handle_remember(message, command.payload)
+    elif command.name is CommandName.RECALL:
+        await orchestrator._memory_commands.handle_recall(message, command.payload)
+    elif command.name is CommandName.FORGET:
+        await orchestrator._memory_commands.handle_forget(message, command.payload)
     elif command.name is CommandName.APPROVE:
         await orchestrator._handle_approval(message, command.payload or None)
     elif command.name is CommandName.REJECT:

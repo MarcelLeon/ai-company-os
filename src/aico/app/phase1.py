@@ -17,7 +17,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aico.adapter import AIAdapter
 from aico.adapter.claude_code import ClaudeCodeAdapter
+from aico.adapter.codeflicker import CodeFlickerAdapter
 from aico.adapter.codex import CodexAdapter
+from aico.adapter.cursor import CursorAdapter
+from aico.adapter.gemini import GeminiAdapter
+from aico.adapter.trae import TraeAdapter
 from aico.channel.telegram import TelegramChannel
 from aico.core import (
     AdapterRegistry,
@@ -28,6 +32,7 @@ from aico.core import (
     InMemoryAgentSessionStore,
     InMemoryAuditLog,
     JsonlAuditSink,
+    JsonlMemoryStore,
     MessageRouter,
     Orchestrator,
     PersonaProfile,
@@ -39,8 +44,10 @@ from aico.core import (
     ProviderSessionRef,
     RequesterOrListedApproverPolicy,
     RoleProfile,
+    RoleScope,
     TaskBus,
     agent_cards_from_personas,
+    read_jsonl_audit_events,
 )
 
 
@@ -63,10 +70,32 @@ class Phase1Settings(BaseSettings):
         min_length=1,
     )
     codex_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
+    enable_cursor_adapter: bool = False
+    cursor_command: str = Field(
+        default="cursor-agent -p --force --output-format text",
+        min_length=1,
+    )
+    cursor_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
+    enable_codeflicker_adapter: bool = False
+    codeflicker_command: str = Field(
+        default="flickcli -q --approval-mode yolo --output-format text",
+        min_length=1,
+    )
+    codeflicker_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
+    enable_trae_adapter: bool = False
+    trae_command: str = Field(default="trae-cli --print --yolo", min_length=1)
+    trae_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
+    enable_gemini_adapter: bool = False
+    gemini_command: str = Field(
+        default="gemini --approval-mode yolo --output-format text",
+        min_length=1,
+    )
+    gemini_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
     persona_config_path: Path | None = None
     project_config_path: Path | None = None
     approval_reviewer_ids: str = ""
     audit_log_path: Path | None = None
+    memory_path: Path | None = None
     log_level: str = "INFO"
     log_path: Path | None = Path("logs/aico.log")
 
@@ -80,6 +109,18 @@ class Phase1Settings(BaseSettings):
 
     def codex_command_tuple(self) -> tuple[str, ...]:
         return _split_command(self.codex_command)
+
+    def cursor_command_tuple(self) -> tuple[str, ...]:
+        return _split_command(self.cursor_command)
+
+    def codeflicker_command_tuple(self) -> tuple[str, ...]:
+        return _split_command(self.codeflicker_command)
+
+    def trae_command_tuple(self) -> tuple[str, ...]:
+        return _split_command(self.trae_command)
+
+    def gemini_command_tuple(self) -> tuple[str, ...]:
+        return _split_command(self.gemini_command)
 
     def approval_reviewer_id_tuple(self) -> tuple[str, ...]:
         return tuple(
@@ -132,6 +173,38 @@ def build_phase1_runtime(settings: Phase1Settings) -> Phase1Runtime:
                 output_idle_timeout_seconds=settings.codex_output_idle_timeout_seconds,
             )
         )
+    if settings.enable_cursor_adapter:
+        adapters.append(
+            CursorAdapter(
+                command=settings.cursor_command_tuple(),
+                cwd=settings.claude_working_directory,
+                output_idle_timeout_seconds=settings.cursor_output_idle_timeout_seconds,
+            )
+        )
+    if settings.enable_codeflicker_adapter:
+        adapters.append(
+            CodeFlickerAdapter(
+                command=settings.codeflicker_command_tuple(),
+                cwd=settings.claude_working_directory,
+                output_idle_timeout_seconds=settings.codeflicker_output_idle_timeout_seconds,
+            )
+        )
+    if settings.enable_trae_adapter:
+        adapters.append(
+            TraeAdapter(
+                command=settings.trae_command_tuple(),
+                cwd=settings.claude_working_directory,
+                output_idle_timeout_seconds=settings.trae_output_idle_timeout_seconds,
+            )
+        )
+    if settings.enable_gemini_adapter:
+        adapters.append(
+            GeminiAdapter(
+                command=settings.gemini_command_tuple(),
+                cwd=settings.claude_working_directory,
+                output_idle_timeout_seconds=settings.gemini_output_idle_timeout_seconds,
+            )
+        )
     registry = AdapterRegistry(
         adapters,
         default_adapter_name=adapter.name,
@@ -156,6 +229,7 @@ def build_phase1_runtime(settings: Phase1Settings) -> Phase1Runtime:
         provider_session_factory=_provider_session_factory(persona_registry),
         agent_directory=agent_directory,
         project_directory=project_directory,
+        memory_store=JsonlMemoryStore(settings.memory_path) if settings.memory_path else None,
     )
     return Phase1Runtime(
         channel=channel,
@@ -217,7 +291,7 @@ async def _wait_forever() -> None:
         await asyncio.sleep(3600)
 
 
-def _default_personas(*, enable_codex: bool) -> tuple[PersonaProfile, ...]:
+def _default_personas(settings: Phase1Settings) -> tuple[PersonaProfile, ...]:
     personas = [
         PersonaProfile(
             name="implementer",
@@ -230,7 +304,7 @@ def _default_personas(*, enable_codex: bool) -> tuple[PersonaProfile, ...]:
             ),
         )
     ]
-    if enable_codex:
+    if settings.enable_codex_adapter:
         personas.append(
             PersonaProfile(
                 name="reviewer",
@@ -242,12 +316,60 @@ def _default_personas(*, enable_codex: bool) -> tuple[PersonaProfile, ...]:
                 ),
             )
         )
+    if settings.enable_cursor_adapter:
+        personas.append(
+            PersonaProfile(
+                name="cursor",
+                adapter_name="cursor",
+                aliases=("cursor-agent",),
+                role_instruction=(
+                    "Role: cursor. Use Cursor Agent CLI for codebase analysis, "
+                    "implementation, review, and safe command execution after AICO approval."
+                ),
+            )
+        )
+    if settings.enable_codeflicker_adapter:
+        personas.append(
+            PersonaProfile(
+                name="codeflicker",
+                adapter_name="codeflicker",
+                aliases=("flicker", "flickcli"),
+                role_instruction=(
+                    "Role: codeflicker. Use CodeFlicker CLI for codebase analysis, "
+                    "implementation, review, and safe command execution after AICO approval."
+                ),
+            )
+        )
+    if settings.enable_trae_adapter:
+        personas.append(
+            PersonaProfile(
+                name="trae",
+                adapter_name="trae",
+                aliases=("trae-cli", "trae-agent"),
+                role_instruction=(
+                    "Role: trae. Use Trae CLI for implementation, debugging, refactoring, "
+                    "tests, and transparent engineering task execution after AICO approval."
+                ),
+            )
+        )
+    if settings.enable_gemini_adapter:
+        personas.append(
+            PersonaProfile(
+                name="gemini",
+                adapter_name="gemini",
+                aliases=("gemini-cli",),
+                role_instruction=(
+                    "Role: gemini. Use Gemini CLI for broad codebase reasoning, "
+                    "implementation, review, and verification after AICO approval."
+                ),
+            )
+        )
     return tuple(personas)
 
 
 def _load_personas(settings: Phase1Settings) -> tuple[PersonaProfile, ...]:
     if settings.persona_config_path is None:
-        return _default_personas(enable_codex=settings.enable_codex_adapter)
+        return _default_personas(settings)
 
     raw = json.loads(settings.persona_config_path.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
@@ -294,6 +416,10 @@ def _default_project_assignment_config(
                 agent=agent_id,
                 role=card.name,
                 seat=f"aico-{card.name}",
+                permissions=roles.get(
+                    card.name,
+                    RoleProfile(id=card.name, title=card.name),
+                ).default_permissions,
                 session_policy=_default_assignment_session_policy(card.adapter_name),
                 risk_policy=_default_assignment_risk_policy(card.adapter_name),
             )
@@ -312,13 +438,10 @@ def _default_project_assignment_config(
                 journal="docs/journal/ROUNDS.md",
                 blockers_doc="docs/journal/BLOCKERS.md",
                 pitfalls_doc="docs/journal/PITFALLS.md",
-                current_phase="Phase 5 - AI 间协作",
+                current_phase="Phase 6 - 可观测看板",
                 default_role="implementer",
                 default_assignment=default_assignment,
-                roles={
-                    "implementer": ProjectRoleProfile(role="implementer"),
-                    "reviewer": ProjectRoleProfile(role="reviewer"),
-                },
+                roles={role_id: ProjectRoleProfile(role=role_id) for role_id in roles},
             )
         },
         assignments=tuple(assignments),
@@ -327,6 +450,27 @@ def _default_project_assignment_config(
 
 def _default_roles() -> dict[str, RoleProfile]:
     return {
+        **_delivery_roles(),
+        **_governance_roles(),
+        **_support_roles(),
+    }
+
+
+def _delivery_roles() -> dict[str, RoleProfile]:
+    return {
+        "pm": RoleProfile(
+            id="pm",
+            title="Project Manager",
+            summary=(
+                "Own scope, milestones, priorities, handoffs, status reports, and blocker "
+                "escalation."
+            ),
+            inline_prompt=(
+                "Turn broad goals into ordered work, define acceptance criteria, surface "
+                "tradeoffs, and keep STATUS/ROUNDS-style handoffs crisp."
+            ),
+            default_permissions=(RoleScope.DOCS, RoleScope.AUDIT),
+        ),
         "implementer": RoleProfile(
             id="implementer",
             title="Implementation Lead",
@@ -334,7 +478,7 @@ def _default_roles() -> dict[str, RoleProfile]:
             inline_prompt=(
                 "Work in small, reviewable steps. Keep tests and project handoff docs current."
             ),
-            default_permissions=("read_repo", "write_code", "run_tests", "write_docs"),
+            default_permissions=(RoleScope.CODE, RoleScope.TESTS, RoleScope.DOCS),
             approval_required=("shell_exec", "destructive"),
         ),
         "reviewer": RoleProfile(
@@ -344,43 +488,97 @@ def _default_roles() -> dict[str, RoleProfile]:
             inline_prompt=(
                 "Prioritize concrete bugs, design risks, missing tests, and maintainability."
             ),
-            default_permissions=("read_repo", "read_docs", "read_audit"),
+            default_permissions=(RoleScope.CODE, RoleScope.DOCS, RoleScope.AUDIT),
         ),
         "tester": RoleProfile(
             id="tester",
             title="Test Lead",
-            summary="Design test strategy, add test cases, run verification, and explain failures.",
-            default_permissions=("read_repo", "run_tests", "write_tests"),
+            summary=(
+                "Design normal-path and regression tests, add focused cases, run verification, "
+                "and explain failures."
+            ),
+            default_permissions=(RoleScope.CODE, RoleScope.TESTS),
         ),
-        "pm": RoleProfile(
-            id="pm",
-            title="Project Manager",
-            summary="Break down work, summarize progress, maintain reports, and surface blockers.",
-            default_permissions=("read_docs", "write_docs"),
+        "golden-tester": RoleProfile(
+            id="golden-tester",
+            title="Golden Path Tester",
+            summary=(
+                "Validate end-to-end dogfooding flows and user-visible acceptance paths, "
+                "separate from ordinary unit/regression testing."
+            ),
+            inline_prompt=(
+                "Act like the final acceptance gate. Reproduce the user's real workflow, "
+                "check command UX, state transitions, observability, and rollback notes."
+            ),
+            default_permissions=(RoleScope.CODE, RoleScope.TESTS, RoleScope.AUDIT),
         ),
-        "architect": RoleProfile(
-            id="architect",
-            title="Architect",
-            summary="Evaluate module boundaries, ADRs, abstractions, and evolution plans.",
-            default_permissions=("read_repo", "read_docs", "write_docs"),
+    }
+
+
+def _governance_roles() -> dict[str, RoleProfile]:
+    return {
+        "senior-architect": RoleProfile(
+            id="senior-architect",
+            title="Senior Architect",
+            summary=(
+                "Review architecture, module boundaries, protocol fit, extension paths, and "
+                "long-term maintainability."
+            ),
+            inline_prompt=(
+                "Challenge architecture with concrete alternatives. Prefer protocol-first, "
+                "adapterized, observable, pluggable designs and explain why rejected options "
+                "were not chosen."
+            ),
+            default_permissions=(RoleScope.CODE, RoleScope.DOCS, RoleScope.AUDIT),
         ),
         "security": RoleProfile(
             id="security",
             title="Security Reviewer",
             summary="Review permissions, secrets, dangerous operations, and supply-chain risk.",
-            default_permissions=("read_repo", "read_docs"),
+            default_permissions=(RoleScope.CODE, RoleScope.AUDIT),
         ),
+        "market-risk": RoleProfile(
+            id="market-risk",
+            title="Market Risk Analyst",
+            summary=(
+                "Evaluate user value, adoption friction, competitive risk, and whether a "
+                "feature strengthens the virtual-company product wedge."
+            ),
+            inline_prompt=(
+                "Be commercially skeptical. Focus on dogfooding value, differentiation, "
+                "setup friction, and opportunity cost."
+            ),
+            default_permissions=(RoleScope.DOCS,),
+        ),
+        "legal-compliance": RoleProfile(
+            id="legal-compliance",
+            title="Legal and Compliance Reviewer",
+            summary=(
+                "Review platform terms, privacy, data retention, approval/audit posture, and "
+                "safe integration boundaries."
+            ),
+            inline_prompt=(
+                "Flag legal, compliance, privacy, and platform policy risks. Suggest a "
+                "minimal compliant path instead of blocking by default."
+            ),
+            default_permissions=(RoleScope.DOCS, RoleScope.AUDIT),
+        ),
+    }
+
+
+def _support_roles() -> dict[str, RoleProfile]:
+    return {
         "docs": RoleProfile(
             id="docs",
             title="Documentation Lead",
             summary="Maintain README, playbooks, handoff notes, and changelog entries.",
-            default_permissions=("read_docs", "write_docs"),
+            default_permissions=(RoleScope.DOCS,),
         ),
         "ops": RoleProfile(
             id="ops",
             title="Operations Lead",
             summary="Handle startup, deployment, logs, alerts, and incident troubleshooting.",
-            default_permissions=("read_repo", "read_docs", "run_tests"),
+            default_permissions=(RoleScope.CODE, RoleScope.TESTS, RoleScope.OPS, RoleScope.AUDIT),
             approval_required=("shell_exec", "destructive"),
         ),
         "analyst": RoleProfile(
@@ -389,13 +587,13 @@ def _default_roles() -> dict[str, RoleProfile]:
             summary=(
                 "Analyze markets, competitors, requirements, and data into structured findings."
             ),
-            default_permissions=("read_docs",),
+            default_permissions=(RoleScope.DOCS,),
         ),
         "designer": RoleProfile(
             id="designer",
             title="Product Designer",
             summary="Design user flows, command semantics, and information architecture.",
-            default_permissions=("read_docs", "write_docs"),
+            default_permissions=(RoleScope.DOCS,),
         ),
     }
 
@@ -441,7 +639,10 @@ def _validate_personas(
 def _build_audit_log(settings: Phase1Settings) -> InMemoryAuditLog:
     if settings.audit_log_path is None:
         return InMemoryAuditLog()
-    return InMemoryAuditLog(sinks=(JsonlAuditSink(settings.audit_log_path),))
+    return InMemoryAuditLog(
+        sinks=(JsonlAuditSink(settings.audit_log_path),),
+        initial_events=read_jsonl_audit_events(settings.audit_log_path),
+    )
 
 
 def _provider_session_factory(
@@ -450,12 +651,17 @@ def _provider_session_factory(
     def factory(session: AgentSession) -> ProviderSessionRef | None:
         persona = persona_registry.resolve(session.agent_name)
         adapter_name = session.agent_name if persona is None else persona.adapter_name
-        if adapter_name != "claude-code":
+        if adapter_name not in {"claude-code", "codeflicker", "trae"}:
             return None
+        resume_hints = {
+            "claude-code": f"claude --resume {session.session_id}",
+            "codeflicker": f"flickcli --resume {session.session_id}",
+            "trae": f"trae-cli --resume {session.session_id}",
+        }
         return ProviderSessionRef(
-            provider_name="claude-code",
+            provider_name=adapter_name,
             session_id=session.session_id,
-            resume_hint=f"claude --resume {session.session_id}",
+            resume_hint=resume_hints[adapter_name],
         )
 
     return factory

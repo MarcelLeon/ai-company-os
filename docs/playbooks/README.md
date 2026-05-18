@@ -76,6 +76,9 @@ Playbook = "可执行的步骤清单",特点:
 - [x] [`phase-4-approval-audit.md`](phase-4-approval-audit.md) — Phase 4 审批与审计 smoke test
 - [x] [`phase-5-collaboration.md`](phase-5-collaboration.md) — Phase 5 AI 间协作 smoke test
 - [x] [`phase-6-observability.md`](phase-6-observability.md) — Phase 6 `/metrics` 可观测 smoke test
+- [x] [`phase-7-shared-memory.md`](phase-7-shared-memory.md) — Phase 7 共享记忆第一切片验收
+- [x] [`optional-agent-adapters.md`](optional-agent-adapters.md) — Cursor / CodeFlicker / Trae / Gemini 可选 Adapter 验收
+- [x] [`feishu-channel.md`](feishu-channel.md) — Feishu Channel 文本收发第一切片 smoke test
 - [ ] `test-new-telegram-bot.md` — 验证新 Telegram Bot 配置
 - [ ] `test-claude-code-adapter.md` — 验证 Claude Code Adapter
 

@@ -29,6 +29,8 @@ export AICO_TELEGRAM_BOT_TOKEN="你的 Telegram Bot Token"
 export AICO_ENABLE_CODEX_ADAPTER=true
 export AICO_CLAUDE_WORKING_DIRECTORY="/Users/wangzq/VsCodeProjects/ai-company-os"
 export AICO_PERSONA_CONFIG_PATH="config/personas.example.json"
+export AICO_PROJECT_CONFIG_PATH="config/projects.example.json"
+export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
 
 # 3. 安装依赖
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python /opt/homebrew/bin/python3.11
@@ -44,12 +46,16 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 
 ```text
 /status
+/use project aico
+/remember Phase 7 memory is enabled.
+/recall phase 7
 /claude summarize this repo in one sentence
 /codex summarize this repo in one sentence
 /broadcast summarize this repo in one sentence
 ```
 
 预期效果:Bot 把请求派发给对应 persona / Adapter,执行结果回到 Telegram。`/status` 会显示 Adapter 状态和最近任务状态。
+指定 `AICO_MEMORY_PATH` 后,`/remember` / `/recall` / `/forget` 会使用本地 JSONL 共享记忆;如果启动时没带这个环境变量,运行中的 Bot 需要重启后才会启用记忆。
 
 ---
 

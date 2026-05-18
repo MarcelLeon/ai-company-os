@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from aico.core.agent_session import AgentCard
-from aico.core.metrics import MetricsSummary, build_metrics_summaries
+from aico.core.metrics import MetricsReport, MetricsSummary, build_metrics_report
 from aico.core.models import (
     AckStatus,
     AdapterSnapshot,
@@ -70,11 +70,18 @@ def metrics_message(
     task_snapshots: tuple[TaskSnapshot, ...],
     audit_events: tuple[AuditEvent, ...],
 ) -> MessageContent:
-    summaries = build_metrics_summaries(task_snapshots, audit_events)
-    blocks = ["Metrics (local process)"]
-    blocks.extend(_metrics_window_block(summary) for summary in summaries)
-    blocks.append("token/cost: unavailable from current CLI adapters")
-    return MessageContent(text="\n\n".join(blocks))
+    report = build_metrics_report(task_snapshots, audit_events)
+    return MessageContent(text=metrics_report_text(report))
+
+
+def metrics_report_text(report: MetricsReport) -> str:
+    blocks = [
+        f"Metrics ({report.source_label})",
+        _metrics_glance_block(report),
+    ]
+    blocks.extend(_metrics_window_block(summary) for summary in report.summaries)
+    blocks.append(_token_cost_line(report))
+    return "\n\n".join(blocks)
 
 
 def task_detail_message(
@@ -124,9 +131,9 @@ def agent_list_message(
     statuses = _adapter_statuses(adapter_snapshots)
     lines = ["Agents:"]
     lines.extend(
-        f"- {card.name} -> {card.adapter_name} ({statuses.get(card.adapter_name, 'unknown')})"
-        for card in cards
+        _agent_list_line(card, statuses.get(card.adapter_name, "unknown")) for card in cards
     )
+    lines.extend(_next_lines(("/agent <agent>", "/roles", "/appoint <agent> as <role>")))
     return MessageContent(text="\n".join(lines))
 
 
@@ -138,20 +145,49 @@ def agent_card_message(
     capabilities = ", ".join(sorted(capability.value for capability in card.capabilities)) or "-"
     aliases = ", ".join(card.aliases) or "-"
     sessions = ", ".join(card.session_features) or "-"
+    display_name = _agent_display_name(card)
+    role = card.name if display_name != card.name else card.role_description
+    status = statuses.get(card.adapter_name, "unknown")
+    next_lines = _agent_next_lines(display_name, status)
     return MessageContent(
         text=(
-            f"Agent: {card.name}\n"
+            f"Agent: {display_name}\n"
             f"adapter: {card.adapter_name}\n"
             f"provider: {card.provider_name}\n"
-            f"status: {statuses.get(card.adapter_name, 'unknown')}\n"
-            f"role: {card.role_description}\n"
+            f"status: {status}\n"
+            f"role: {role}\n"
             f"aliases: {aliases}\n"
             f"capabilities: {capabilities}\n"
-            f"tools: {card.tools_source.value} via /tools {card.name}\n"
-            f"skills: {card.skills_source.value} via /skills {card.name}\n"
+            f"tools: {card.tools_source.value} via /tools {display_name}\n"
+            f"skills: {card.skills_source.value} via /skills {display_name}\n"
             f"sessions: {sessions}"
+            f"{next_lines}"
         )
     )
+
+
+def _agent_list_line(card: AgentCard, status: str) -> str:
+    display_name = _agent_display_name(card)
+    role = f" [role: {card.name}]" if display_name != card.name else ""
+    return f"- {display_name} -> {card.adapter_name} ({status}){role}"
+
+
+def _agent_display_name(card: AgentCard) -> str:
+    if card.name in {"implementer", "reviewer"} and card.aliases:
+        return card.aliases[0]
+    return card.name
+
+
+def _agent_next_lines(agent_name: str, status: str) -> str:
+    if status == "idle":
+        commands = ("/roles", f"/appoint {agent_name} as <role>", f"/new {agent_name}")
+    else:
+        commands = ("/tasks", "/status", f"/agent {agent_name}")
+    return "\n" + "\n".join(_next_lines(commands))
+
+
+def _next_lines(commands: tuple[str, ...]) -> tuple[str, ...]:
+    return ("", "Next:", *(f"- {command}" for command in commands))
 
 
 def short_id_text(value: str) -> str:
@@ -170,6 +206,31 @@ def _metrics_window_block(summary: MetricsSummary) -> str:
     ]
     lines.extend(_metrics_open_work_lines(summary.open_tasks))
     return "\n".join(lines)
+
+
+def _metrics_glance_block(report: MetricsReport) -> str:
+    return (
+        "glance\n"
+        f"status: {report.glance.status}\n"
+        f"open: {report.glance.open_tasks} "
+        f"(running={report.glance.running_tasks}, "
+        f"waiting_approval={report.glance.waiting_approval_tasks})\n"
+        f"failed: {report.glance.failed_tasks}"
+    )
+
+
+def _token_cost_line(report: MetricsReport) -> str:
+    token_cost = report.token_cost
+    if not token_cost.available:
+        return f"token/cost: {token_cost.reason}"
+    cost = "-" if token_cost.cost_usd is None else f"${token_cost.cost_usd:.4f}"
+    return (
+        "token/cost: "
+        f"total={token_cost.total_tokens}, "
+        f"input={token_cost.input_tokens}, "
+        f"output={token_cost.output_tokens}, "
+        f"cost={cost}"
+    )
 
 
 def _status_count_text(summary: MetricsSummary) -> str:

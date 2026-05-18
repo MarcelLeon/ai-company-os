@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from aico.core.memory import MemoryPacket
 from aico.core.models import Task
 from aico.core.project_assignment import (
     AssignmentProfile,
@@ -20,12 +21,14 @@ def render_appointment_prompt(
     project: ProjectProfile,
     project_role: ProjectRoleProfile | None,
     appointment: AssignmentProfile,
+    memory_packet: MemoryPacket | None = None,
 ) -> str:
     sections = [
         _agent_section(agent, appointment),
         _role_section(role, appointment),
         _project_section(project, project_role),
         _appointment_section(project, appointment),
+        _memory_section(memory_packet),
         _runtime_section(task),
     ]
     return "\n\n".join(section for section in sections if section)
@@ -92,6 +95,12 @@ def _appointment_section(project: ProjectProfile, appointment: AssignmentProfile
             f"- Seat: {appointment.seat}",
         )
     )
+
+
+def _memory_section(memory_packet: MemoryPacket | None) -> str:
+    if memory_packet is None:
+        return ""
+    return memory_packet.render_prompt_section()
 
 
 def _runtime_section(task: Task) -> str:

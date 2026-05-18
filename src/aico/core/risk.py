@@ -16,7 +16,7 @@ class TextRiskAssessor:
         if _is_internal_read_only_task(task):
             return RiskAssessment(risk_level=RiskLevel.READ_ONLY)
 
-        text = task.payload.lower()
+        text = _risk_text(task.payload).lower()
         reasons: list[str] = []
         level = RiskLevel.READ_ONLY
 
@@ -34,6 +34,13 @@ class TextRiskAssessor:
 
 def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
     return any(marker in text for marker in markers)
+
+
+def _risk_text(payload: str) -> str:
+    _, separator, current_task = payload.rpartition("Current task:")
+    if separator:
+        return current_task
+    return payload
 
 
 def _is_internal_read_only_task(task: Task) -> bool:

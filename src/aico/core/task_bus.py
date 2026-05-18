@@ -301,6 +301,13 @@ class TaskBus:
             return task
 
         task_id = task.task_id
+        if task.status is TaskStatus.WAITING_APPROVAL:
+            self._cancel_waiting_approval(task_id)
+            return TaskAck(
+                task_id=task_id,
+                status=AckStatus.ACCEPTED,
+                reason="pending approval canceled",
+            )
         if task.status is not TaskStatus.RUNNING:
             return TaskAck(
                 task_id=task_id,
@@ -349,6 +356,29 @@ class TaskBus:
 
     def pending_approvals(self) -> tuple[ApprovalRequest, ...]:
         return tuple(a for a in self._approvals.values() if a.status is ApprovalStatus.PENDING)
+
+    def _cancel_waiting_approval(self, task_id: str) -> None:
+        approval = self._approvals.get(task_id)
+        if approval is not None and approval.status is ApprovalStatus.PENDING:
+            self._approvals[task_id] = approval.model_copy(
+                update={
+                    "status": ApprovalStatus.REJECTED,
+                    "reason": "interrupted before approval",
+                    "updated_at": utc_now(),
+                }
+            )
+            self._audit_log.record(
+                AuditEventType.APPROVAL_REJECTED,
+                approval.task,
+                risk_level=approval.risk.risk_level,
+                detail="interrupted before approval",
+            )
+        self._update_task(task_id, TaskStatus.INTERRUPTED, reason="interrupted before approval")
+        self._record_audit_for_task(
+            task_id,
+            AuditEventType.TASK_INTERRUPTED,
+            detail="interrupted before approval",
+        )
 
     def broadcast_targets(self) -> tuple[str, ...]:
         if self._persona_registry is not None:

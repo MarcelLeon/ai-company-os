@@ -88,6 +88,7 @@ class AuditEventType(StrEnum):
     TASK_FAILED = "task_failed"
     TASK_INTERRUPTED = "task_interrupted"
     TASK_REJECTED = "task_rejected"
+    TASK_USAGE_RECORDED = "task_usage_recorded"
 
 
 class MessageKind(StrEnum):

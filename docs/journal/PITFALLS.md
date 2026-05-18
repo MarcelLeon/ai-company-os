@@ -42,6 +42,7 @@
 
 ### 人格化与状态
 - P-013:Project Team 同一 role 可出现多个 appointment 导致 `/team` 重复成员
+- P-016:Appointment prompt 脚手架导致普通项目咨询误触发审批
 
 ### 部署与运维
 - (待填充)
@@ -55,6 +56,7 @@
 
 ### Adapter 层
 - P-005:Codex CLI 全局参数必须放在子命令前
+- P-015:Trae CLI help 先尝试 keyring token store 导致误判为不可用
 
 ---
 
@@ -255,6 +257,37 @@ codex --ask-for-approval never exec --sandbox read-only --color never "hello"
 
 **相关链接**
 - ROUNDS Round 9
+
+### [P-015] Trae CLI help 先尝试 keyring token store 导致误判为不可用
+
+**状态**:🟡 MITIGATED
+**首次踩中**:Round 67
+**最后更新**:2026-05-12
+**影响范围**:`src/aico/adapter/trae.py`, `docs/playbooks/optional-agent-adapters.md`
+
+**症状**
+本机执行 `trae-cli --help` 时先输出:
+
+```text
+ERROR failed to create token store error="keyring is not supported on this system"
+```
+
+随后仍继续输出完整 help,包含 `--print`、`--yolo`、`--session-id`、`--resume` 等参数。
+
+**根因**
+Trae CLI 启动时会初始化 token store / keyring。当前运行环境不支持该 keyring 后端,但 help 命令仍可继续执行并返回 CLI 形态信息。
+
+**解决方案 / 缓解措施**
+Round 67 没把这个错误当作 CLI 不存在或参数不可用;仍以 help 后续输出作为命令形态依据。真实 smoke test 前需要单独解决 Trae 登录/token 配置问题。
+
+**如何避免再次踩中**
+- 看到该 keyring 错误时,先确认命令是否继续输出 help 和退出码,不要直接判定 `trae-cli` 不可用。
+- Trae 真实验收前先处理登录/token store,再启用 `AICO_ENABLE_TRAE_ADAPTER=true`。
+- 如果真实任务仍因 keyring 失败退出,只修 Trae Adapter 命令或运行环境,不要改核心 `AIAdapter` 协议。
+
+**相关链接**
+- ROUNDS Round 67
+- ADR-0018
 
 ### [P-006] 审批命令依赖完整 task id 导致 Telegram 真实交互失败
 
@@ -535,3 +568,122 @@ Round 57 真实复测再次卡在 `Task accepted ... [reviewer]`,此时 `/interr
 **相关链接**
 - ROUNDS Round 53
 - ROUNDS Round 57
+
+### [P-016] Appointment prompt 脚手架导致普通项目咨询误触发审批
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 69
+**最后更新**:2026-05-13
+**影响范围**:`src/aico/core/risk.py`, `src/aico/core/task_bus.py`, `src/aico/core/prompt_stack.py`
+
+**症状**
+用户在 active project 中 `lead` 某个 agent 后,只是询问团队或项目问题,也可能收到
+`Approval required`。如果用户没有及时 `/approve` 或 `/reject`,继续操作会积累多个
+`waiting_approval` 任务;随后裸 `/approve` 会提示多个 pending approvals,而
+`/interrupt <task_id>` 又会返回 `task is waiting_approval, not running`。
+
+**根因**
+project-scoped task 会通过 Appointment Prompt Stack 拼入 Agent、Role、Project、
+Appointment Contract 和 `Current task`。旧风险识别扫描整段 prompt,因此 role summary /
+inline prompt 里的 `write`、`run tests`、`command` 等词会污染真实用户请求的风险级别。
+
+同时,`/interrupt` 只支持 running 任务,无法用来清理还没 approve/reject 的 waiting approval。
+
+**解决方案 / 缓解措施**
+- `TextRiskAssessor` 在检测到 appointment prompt 的 `Current task:` 段时,只对其后的真实用户请求做风险识别。
+- 如果真实 `Current task` 要求写文件、执行命令或 destructive 操作,仍按原规则触发审批。
+- `TaskBus.interrupt()` 对 `waiting_approval` 任务执行取消:更新任务为 `interrupted`,把 approval 从 pending 中移除,并记录 `approval_rejected` / `task_interrupted` 审计事件。
+
+**如何避免再次踩中**
+- 风险识别应检查用户真实意图,不要把 system/role/project prompt scaffolding 当作用户请求。
+- 新增 prompt stack 字段时,不要让这些字段直接影响 approval gate;如需影响,应通过显式 metadata 或新 ADR 设计。
+- 多个 pending approvals 时,可以用 `/interrupt <short_task_id>` 清理不想执行的待审批任务。
+
+**相关链接**
+- ROUNDS Round 69
+
+### [P-017] Project Next 命令被富文本化后 Telegram 不再识别为可触碰命令
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 71
+**最后更新**:2026-05-14
+**影响范围**:`src/aico/core/project_messages.py`, `src/aico/channel/telegram.py`
+
+**症状**
+`/roles`、`/role`、`/project`、`/team` 等项目消息末尾的 `Next:` 引导命令在 Telegram
+里显示为普通白字,不能像 `/agents` 输出里的 `- /agent <agent>` 一样变成蓝色可触碰命令。
+
+**根因**
+Project message renderer 会把 `- ` / `* ` 统一规范成 `• `,并给所有裸 `/command`
+追加 `MessageTextStyle.CODE` span。Telegram Bot API 发送 HTML rich text 后,code 样式和
+项目侧 bullet 规范化会压掉 Telegram 对 bot command 的自动识别。
+
+**解决方案 / 缓解措施**
+- 对形如 `- /command` 或 `* /command` 的 Next 引导命令行保留原始 hyphen list 文本。
+- Next 命令行不再添加 slash command code span,交给 Telegram 自动识别为可触碰命令。
+- 正文、blocker、Facts 等非 Next 命令仍保留原有 Markdown 清洗和 code span 行为。
+
+**如何避免再次踩中**
+- IM 里希望用户直接触碰发送的 bot command,优先使用裸文本 `- /command`,不要包成 code。
+- 新增项目侧 `Next:` guidance 时,用单测确认输出是 `- /command` 且 Next 区块没有 command code span。
+- 平台无关 render contract 不应假设所有富文本样式都比 IM 原生识别更友好。
+
+**相关链接**
+- ROUNDS Round 71
+
+### [P-018] Smoke prompt 里的否定危险词也会触发 approval gate
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 73
+**最后更新**:2026-05-15
+**影响范围**:`src/aico/core/risk.py`, `tests/golden/test_phase6_metrics_token_golden.py`
+
+**症状**
+真实 provider token golden 起初没有发给模型,而是停在 approval 前。原因不是 Adapter
+或 CLI 失败,而是 smoke prompt 写了 `Do not run tools`,其中的 `run` 被风险识别判定为
+shell 风险。
+
+**根因**
+当前 `TextRiskAssessor` 是保守词法规则,不会理解“不要 run”这种否定语义。只要用户请求文本中
+出现 shell/write/destructive 触发词,就可能进入审批门禁。这符合安全优先,但会让验收 prompt
+本身污染测试目标。
+
+**解决方案 / 缓解措施**
+- token golden prompt 改为纯短答:`Return exactly this text: AICO_METRICS_TOKEN_SMOKE_OK`。
+- Phase 6 playbook 记录:smoke prompt 不要写 `run`、`modify`、`edit` 等风险词,即便是否定句也避免。
+
+**如何避免再次踩中**
+- 验证“只读模型调用”时,不要在 prompt 里描述不做哪些危险事;直接要求返回固定短文本。
+- 如果要测试 approval gate,单独写 approval case,不要和 provider token smoke 混在同一个 golden。
+
+**相关链接**
+- ROUNDS Round 73
+
+### [P-019] Phase 7 第一版中文记忆检索不是语义搜索
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 82
+**最后更新**:2026-05-18
+**影响范围**:`src/aico/core/memory.py`, Phase 7 acceptance / IM 体感验收
+
+**症状**
+验收 boss global 偏好时,记忆 claim 是“我更喜欢汇报进度时告诉我还有几阶段”,但任务 query 写成
+“汇报当前项目进度,并告诉我还有几阶段”时没有召回该记忆。
+
+**根因**
+Phase 7 第一版 search 故意只做 scope + 子串/标签匹配,不引入向量库或分词器。
+英文长句能靠空格 token 部分命中,中文长句没有空格时会被当成一个完整 token,导致近义长句无法命中。
+
+**解决方案 / 缓解措施**
+- Round 84 新增 `MemorySemanticScorer` 和默认 `LocalSemanticMemoryScorer`。
+- `MemoryRetriever` 改为先按 scope 收集候选,再按 semantic score 排序;`MemoryGovernor` 继续做 active / sensitivity / confidence 投影。
+- `/recall` 和 Prompt Stack 可召回中文长句复述,也支持少量常见中英项目术语别名,例如“法务检查”匹配 `legal review`。
+- 后续如果要接真实 embedding / LLM rerank,应替换 scorer 实现,不要绕过 scope、candidate、sensitivity 和 citation。
+
+**如何避免再次踩中**
+- 新增语义 scorer 时,先写跨 project / candidate / restricted 回归测试,避免召回能力提升导致越权披露。
+- 真实模型 rerank 必须有结构化输出、失败回退和成本/延迟边界。
+
+**相关链接**
+- ROUNDS Round 82
+- ROUNDS Round 84

@@ -44,6 +44,19 @@ def test_project_assignment_directory_updates_default_role_and_appointments() ->
     assert directory.default_assignment("aico") == appointment
 
 
+def test_project_assignment_directory_inherits_role_permissions_when_appointing() -> None:
+    directory = ProjectAssignmentDirectory(_config())
+
+    appointment = directory.upsert_appointment(
+        project_id="aico",
+        agent_id="claude",
+        role_id="tester",
+    )
+
+    assert appointment is not None
+    assert appointment.permissions == ("code", "tests")
+
+
 def test_project_assignment_directory_keeps_one_appointment_per_project_role() -> None:
     directory = ProjectAssignmentDirectory(
         _config().model_copy(
@@ -190,8 +203,16 @@ def _config() -> ProjectAssignmentConfig:
             )
         },
         roles={
-            "implementer": RoleProfile(id="implementer", title="Implementation Lead"),
-            "tester": RoleProfile(id="tester", title="Test Lead"),
+            "implementer": RoleProfile(
+                id="implementer",
+                title="Implementation Lead",
+                default_permissions=("code", "tests", "docs"),
+            ),
+            "tester": RoleProfile(
+                id="tester",
+                title="Test Lead",
+                default_permissions=("code", "tests"),
+            ),
         },
         projects={
             "aico": ProjectProfile(

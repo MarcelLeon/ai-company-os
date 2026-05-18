@@ -19,14 +19,48 @@ from aico.core.approval import (
     ApprovalPolicy,
     RequesterOrListedApproverPolicy,
 )
-from aico.core.audit import InMemoryAuditLog, JsonlAuditSink
+from aico.core.audit import InMemoryAuditLog, JsonlAuditSink, read_jsonl_audit_events
 from aico.core.collaboration import (
     CollaborationDirective,
     collaboration_payload,
     parse_collaboration_directive,
 )
 from aico.core.commands import Command, CommandName, parse_command, reject_parts
-from aico.core.metrics import MetricsSummary, MetricsWindow, build_metrics_summaries
+from aico.core.memory import (
+    JsonlMemoryStore,
+    LocalSemanticMemoryScorer,
+    MemoryAtom,
+    MemoryCitation,
+    MemoryEdge,
+    MemoryEdgeType,
+    MemoryEvidence,
+    MemoryGovernor,
+    MemoryPacket,
+    MemoryPacketItem,
+    MemoryRetriever,
+    MemoryScope,
+    MemoryScopeType,
+    MemorySemanticScorer,
+    MemorySensitivity,
+    MemoryStatus,
+    MemoryStore,
+)
+from aico.core.memory_broadcast import MemoryBroadcastReceipt, MemoryBroadcastService
+from aico.core.memory_capture import MemoryCaptureService
+from aico.core.metrics import (
+    MetricsGlance,
+    MetricsReport,
+    MetricsSummary,
+    MetricsWindow,
+    TokenCostSummary,
+    UsageRecord,
+    build_metrics_report,
+    build_metrics_summaries,
+    metrics_report_to_dict,
+    task_snapshots_from_audit_events,
+    usage_audit_detail,
+    usage_records_from_audit_events,
+)
 from aico.core.models import (
     AckStatus,
     AdapterSnapshot,
@@ -66,11 +100,19 @@ from aico.core.project_assignment import (
     ProjectProfile,
     ProjectRoleProfile,
     RoleProfile,
+    RoleScope,
     task_with_assignment_context,
 )
 from aico.core.prompt_stack import render_appointment_prompt
 from aico.core.risk import TextRiskAssessor
 from aico.core.router import MessageRouter
+from aico.core.status_island import (
+    StatusIslandSnapshot,
+    StatusIslandTask,
+    build_status_island_snapshot,
+    status_island_text,
+    status_island_to_dict,
+)
 from aico.core.streaming import STREAM_MESSAGE_TEXT_LIMIT, StreamedMessageWriter
 from aico.core.task_bus import TaskBus
 
@@ -101,6 +143,8 @@ __all__ = [
     "InMemoryAgentSessionStore",
     "InMemoryAuditLog",
     "JsonlAuditSink",
+    "JsonlMemoryStore",
+    "LocalSemanticMemoryScorer",
     "MessageAction",
     "MessageContent",
     "MessageKind",
@@ -109,7 +153,27 @@ __all__ = [
     "MessageTextStyle",
     "MetadataEntry",
     "MetricsSummary",
+    "MetricsGlance",
+    "MetricsReport",
     "MetricsWindow",
+    "MemoryAtom",
+    "MemoryBroadcastReceipt",
+    "MemoryBroadcastService",
+    "MemoryCitation",
+    "MemoryEdge",
+    "MemoryEdgeType",
+    "MemoryEvidence",
+    "MemoryGovernor",
+    "MemoryPacket",
+    "MemoryPacketItem",
+    "MemoryRetriever",
+    "MemoryScope",
+    "MemoryScopeType",
+    "MemorySensitivity",
+    "MemorySemanticScorer",
+    "MemoryStatus",
+    "MemoryStore",
+    "MemoryCaptureService",
     "Orchestrator",
     "OutputType",
     "PersonaProfile",
@@ -126,8 +190,11 @@ __all__ = [
     "RiskAssessment",
     "RiskLevel",
     "RoleProfile",
+    "RoleScope",
     "STREAM_MESSAGE_TEXT_LIMIT",
     "SentMessage",
+    "StatusIslandSnapshot",
+    "StatusIslandTask",
     "StreamedMessageWriter",
     "Task",
     "TaskAck",
@@ -135,15 +202,26 @@ __all__ = [
     "TaskOutput",
     "TaskSnapshot",
     "TaskStatus",
+    "TokenCostSummary",
+    "UsageRecord",
     "TextRiskAssessor",
     "agent_cards_from_personas",
+    "build_metrics_report",
     "build_metrics_summaries",
+    "build_status_island_snapshot",
     "collaboration_payload",
+    "metrics_report_to_dict",
     "parse_collaboration_directive",
     "parse_command",
     "provider_session_from_task",
     "reject_parts",
     "render_appointment_prompt",
+    "read_jsonl_audit_events",
     "task_with_provider_session",
     "task_with_assignment_context",
+    "task_snapshots_from_audit_events",
+    "status_island_text",
+    "status_island_to_dict",
+    "usage_audit_detail",
+    "usage_records_from_audit_events",
 ]
