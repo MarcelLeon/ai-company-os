@@ -72,3 +72,4 @@ htmlcov/
 local-config/
 .aico-cache/
 mnt/
+docs/assets/*.mov

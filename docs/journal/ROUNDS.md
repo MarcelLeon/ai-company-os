@@ -4218,3 +4218,420 @@
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 84。
 - ADR 索引新增 ADR-0023。
+
+## Round 85 — 2026-05-18 — Codex
+
+### 输入
+- 人类要求开发飞书 Channel,对齐当前 Telegram。
+
+### 思考与讨论
+- 候选 A:把飞书塞进 `aico-phase1` long polling 生命周期 → ❌ **否决**:飞书是事件订阅 webhook 模式,强行复用 Telegram polling 会让 channel 生命周期语义变形。
+- 候选 B:只保留 `FeishuChannel.handle_event()` 给未来接入 → ❌ **不足**:人类问的是“开发飞书 channel”,当前缺的是可运行 callback server 和验收路径。
+- 候选 C:保留 Telegram 默认入口,新增 `AICO_CHANNEL=feishu` runtime wiring 和独立 `aico-feishu-webhook` FastAPI 入口 → ✅ **选定**:对齐 Telegram 的 Orchestrator 能力,同时尊重飞书 webhook 部署模型。
+
+### 产出
+- 更新 `Phase1Settings`:
+  - 新增 `AICO_CHANNEL=telegram|feishu`。
+  - 新增飞书 App ID、App Secret、Verification Token、API base URL、webhook host / port / path 配置。
+- 更新 `build_phase1_runtime()`:
+  - 默认仍构造 `TelegramChannel`。
+  - `AICO_CHANNEL=feishu` 时构造 `FeishuChannel`,并复用现有 Orchestrator、项目办公室、审批、记忆和报告能力。
+- 新增 `src/aico/app/feishu_webhook.py`:
+  - `GET /healthz` 健康检查。
+  - `POST /feishu/events` 默认事件回调。
+  - URL verification 返回 challenge。
+  - verification token 不匹配时返回 400。
+- 新增 `aico-feishu-webhook` CLI 脚本。
+- 新增/更新单测:
+  - Feishu runtime wiring。
+  - Feishu webhook healthz。
+  - URL verification challenge。
+  - verification token 拒绝路径。
+- 更新 daily ops、Feishu playbook、playbook 索引、STATUS 和 CHANGELOG。
+
+### 验证结果
+- 目标验证:
+  - `uv run pytest tests/unit/test_feishu_channel.py tests/unit/test_feishu_webhook.py tests/unit/test_phase1_app.py::test_build_phase1_runtime_wires_feishu_channel tests/unit/test_phase1_app.py::test_build_phase1_runtime_requires_feishu_credentials`:10 passed。
+  - `uv run ruff check src/aico/app/phase1.py src/aico/app/feishu_webhook.py tests/unit/test_phase1_app.py tests/unit/test_feishu_webhook.py`
+  - `uv run ruff format --check src/aico/app/phase1.py src/aico/app/feishu_webhook.py tests/unit/test_phase1_app.py tests/unit/test_feishu_webhook.py`
+  - `uv run mypy src/aico/app/phase1.py src/aico/app/feishu_webhook.py tests/unit/test_phase1_app.py tests/unit/test_feishu_webhook.py`
+
+### 关键决策
+- 🔒 **决策 1**:Telegram 仍是默认 `aico-phase1` 主控入口;飞书使用独立 `aico-feishu-webhook` 进程。
+- 🔒 **决策 2**:飞书 action/card 不在本轮做专属交互;平台无关 `MessageContent.actions` 继续在 Feishu Channel 内降级为文本提示。
+- 🔒 **决策 3**:真实 smoke test 不能用 mock 替代,需要企业自建应用凭据和公网 HTTPS callback URL。
+
+### 留给下一轮
+- 执行飞书开放平台真实 URL verification。
+- 订阅 `im.message.receive_v1`,向机器人发送 `/help` / `/status` / `/project`,确认文本命令进入现有 Orchestrator 并能回包。
+- 如需要飞书按钮体验,在 `FeishuChannel` 内增加 interactive card 映射,不要修改 `IMChannel` 核心协议。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 85。
+
+## Round 86 — 2026-05-18 — Codex
+
+### 输入
+- 人类表示飞书 Channel 晚点验证,询问后续还有什么要开发,要求继续开发。
+
+### 思考与讨论
+- 当前剩余真实飞书 smoke test 需要企业自建应用凭据和公网 HTTPS callback,不适合在本轮强行推进。
+- 飞书官方事件文档说明:2.0 事件用 `header.event_id` 唯一标识,1.0 事件用 `uuid`;事件接收失败会重试,成功接收后也可能因至少一次投递策略收到重复事件。
+- 候选 A:等待真实 Feishu 凭据再处理重复事件 → ❌ **否决**:重复投递是 webhook 平台的基础风险,可以本地 TDD 先闭环。
+- 候选 B:把幂等塞进 Orchestrator 或 TaskBus → ❌ **否决**:这是 Feishu webhook 投递语义,不应污染核心编排。
+- 候选 C:在 `FeishuChannel` 内按 event id / uuid 做进程内 TTL 去重 → ✅ **选定**:对齐 Telegram offset 的“不要重复消费”效果,又保持 Channel 可插拔边界。
+
+### 产出
+- 更新 `src/aico/channel/feishu.py`:
+  - 新增本地 event id 去重缓存。
+  - 默认 TTL 为 8 小时,覆盖飞书重试窗口。
+  - 默认最多保留 4096 个 event id,超限时淘汰最早记录。
+  - v2 payload 使用 `header.event_id`;v1 payload 使用 `uuid`。
+  - 缺少唯一 id 的 payload 保持原路径处理,避免误丢非标准消息。
+- 扩展 `tests/unit/test_feishu_channel.py`:
+  - 覆盖 v2 `event_id` 重复投递只派发一次。
+  - 覆盖 v1 `uuid` 重复投递只派发一次。
+  - 覆盖 TTL 到期后允许同一 id 再次处理。
+- 更新 daily ops、Feishu playbook、STATUS 和 CHANGELOG。
+
+### 验证结果
+- 目标验证:
+  - `uv run pytest tests/unit/test_feishu_channel.py tests/unit/test_feishu_webhook.py`:11 passed。
+  - `uv run ruff check src/aico/channel/feishu.py tests/unit/test_feishu_channel.py`
+  - `uv run ruff format --check src/aico/channel/feishu.py tests/unit/test_feishu_channel.py`
+  - `uv run mypy src/aico/channel/feishu.py tests/unit/test_feishu_channel.py`
+
+### 关键决策
+- 🔒 **决策 1**:Feishu 重试幂等属于 Channel 边界,不进入核心 Orchestrator。
+- 🔒 **决策 2**:本轮先做进程内 TTL 去重,不引入新持久化后端;如果真实 dogfooding 发现重启后重复投递造成问题,再升级为 audit / JSONL backed 去重。
+- 🔒 **决策 3**:缺少 event id / uuid 的事件不直接丢弃,因为第一切片仍要优先保证文本入口可用。
+
+### 留给下一轮
+- 真实飞书开放平台 URL verification 和文本回包 smoke test。
+- Feishu signature / encrypted event 支持可作为下一个生产化切片,前提是确认自建应用事件订阅配置需要 Encrypt Key。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 86。
+
+## Round 87 — 2026-05-18 — Codex
+
+### 输入
+- 人类表示飞书 Channel 真实验证先晚点一起做;如果没有其它问题,开始 Phase 8。
+
+### 思考与讨论
+- Phase 8 目标是“睡前下任务,早上看结果”。它必须服务于老板管理项目和团队,不是新增一个危险的无人值守脚本入口。
+- 候选 A:直接实现 cron / scheduler / night worker → ❌ **否决**:需要持久化、重启恢复、权限预算和失败恢复;第一切片容易绕过 `/approve`。
+- 候选 B:只告诉用户继续用普通项目消息 → ❌ **不足**:没有“托管工单”语义,老板无法区分睡前派工和普通咨询。
+- 候选 C:新增 `/overnight <goal>` project-scoped offline delegation work order → ✅ **选定**:派给当前项目 lead/default role,复用已有 appointment prompt、memory、provider session、approval、audit 和 `/daily`。
+
+### 产出
+- 新增 ADR-0024 `Phase 8 Offline Delegation Scope`。
+- 新增 `src/aico/core/offline_delegation.py`:
+  - `OfflineDelegationCommandHandler`
+  - `OfflineDelegationRecord`
+  - `offline_delegation_prompt()`
+  - `offline_delegation_started_message()`
+- 新增 `/overnight <goal>`:
+  - 需要 active project。
+  - 使用当前项目 default assignment / lead role。
+  - 创建 `aico.intent=offline_delegation` 元数据。
+  - prompt 要求 lead 留下 morning handoff:done、blocked、risks、next actions。
+  - 运行仍走 `TaskBus`,因此风险任务继续进入 `/approve`。
+- 新增 `/overnight`:
+  - 展示当前 active project 本进程内最近托管工单。
+  - 给出早报入口 `/daily <project>` 和 `/tasks`。
+- 更新 help、daily ops、Phase 8 playbook、STATUS、CHANGELOG 和 ADR 索引。
+
+### 验证结果
+- 目标验证:
+  - `uv run pytest tests/unit/test_commands.py tests/unit/test_orchestrator.py::test_orchestrator_queues_overnight_delegation_to_project_lead tests/unit/test_orchestrator.py::test_orchestrator_overnight_requires_active_project tests/unit/test_orchestrator.py::test_orchestrator_overnight_keeps_risky_goal_waiting_for_approval`:13 passed。
+  - `uv run ruff check src/aico/core/commands.py src/aico/core/offline_delegation.py src/aico/core/orchestrator.py src/aico/core/__init__.py tests/unit/test_commands.py tests/unit/test_orchestrator.py`
+  - `uv run ruff format src/aico/core/offline_delegation.py tests/unit/test_orchestrator.py`
+  - `uv run mypy src/aico/core/commands.py src/aico/core/offline_delegation.py src/aico/core/orchestrator.py src/aico/core/__init__.py tests/unit/test_commands.py tests/unit/test_orchestrator.py`
+
+### 关键决策
+- 🔒 **决策 1**:Phase 8 第一切片是“托管工单”,不是无人值守调度器。
+- 🔒 **决策 2**:`/overnight` 不绕过 Phase 4 风险审批;它只改变管理语义和交接要求。
+- 🔒 **决策 3**:托管范围默认 project-scoped,通过当前 project lead/default role 承接,不跨 project/team 自动共享上下文。
+
+### 留给下一轮
+- 为 `/overnight` 增加持久化记录,让重启后可以从 audit JSONL 恢复托管工单列表。
+- 设计多 step / 多 agent 夜间编排,但必须保留审批、审计和中断边界。
+- 评估是否需要“早报自动推送”机制,而不是只让老板手动 `/daily`。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 87。
+- Phase 8 从未开始变为进行中。
+
+## Round 88 — 2026-05-18 — Codex
+
+### 输入
+- 人类反馈“AI 开源维护者的一晚”展示不全,体现不了项目团队、角色、记忆架构等能力。
+- 人类要求给 Codex 足够自由度,把主 demo 项目搞出来;若缺框架能力先梳理对齐,最终落成符合现实团队协作的完整 demo。
+
+### 思考与讨论
+- 候选 A:继续做“修一个 issue”的轻量 demo → ❌ **否决**:只能展示 `/overnight` 和单任务派发,无法体现 AICO 的 project office、team appointment、shared memory、approval/audit 和 report 面。
+- 候选 B:直接做真实大型开源项目 release demo → ❌ **否决**:外部项目上下文大、失败面太广,首个开源 demo 容易被底层 AI 能力和仓库复杂度吞没。
+- 候选 C:内置一个小型 `notes-cli` release room → ✅ **选定**:仓库小到 AI team 能真实完成,但流程足够完整,可以展示 PM / implementer / tester / reviewer / release-manager 的现实协作。
+- 候选 D:本轮同时新增 orchestration framework 能力 → ❌ **暂缓**:现有 project/team/memory/approval/audit/overnight 能支撑 Stage 1 demo package;真正需要的新能力是 Stage 2 的 fake transcript / acceptance harness,应先让 demo 资产稳定。
+
+### 产出
+- 新增 `docs/examples/README.md` 和 `docs/examples/release-room.md`,定义 open-source examples 的选择标准和 Release Room 主 demo。
+- 新增 `docs/playbooks/release-room-demo.md`,覆盖启动环境变量、IM 操作步骤、录屏建议、验证和 fallback。
+- 新增 `examples/release-room/aico-project.json`,配置 release-room 项目团队:
+  - `pm -> claude`
+  - `implementer -> claude`
+  - `tester -> codex`
+  - `reviewer -> codex`
+  - `release-manager -> claude`
+- 新增 `examples/release-room/demo-script.md` 和 `examples/release-room/recording-storyboard.md`,把 `/use project`、`/team`、`/remember`、`/ask`、`/role propose`、`/overnight`、`/daily`、`/audit` 串成录屏脚本。
+- 新增 `examples/release-room/notes-cli` 示例仓库:
+  - v0.1 Python stdlib CLI。
+  - `NORTH_STAR.md`、`STATUS.md`、journal 三件套、issue、release notes 草稿。
+  - v0.1 通过测试和 v0.2 skipped release contract tests。
+- 新增 `tests/unit/test_release_room_example.py`,验证 demo config 能被 `ProjectAssignmentConfig` / `ProjectAssignmentDirectory` 加载,且示例仓库关键项目文档存在。
+- 更新 README 和 playbook index,把 Release Room 作为主 demo 入口。
+
+### 验证结果
+- `uv run pytest tests/unit/test_release_room_example.py`:2 passed。
+- `uv run pytest examples/release-room/notes-cli/tests`:2 passed,3 skipped。
+- `uv run ruff check docs/examples README.md docs/playbooks/release-room-demo.md examples/release-room tests/unit/test_release_room_example.py`:passed。
+- `uv run ruff format --check examples/release-room tests/unit/test_release_room_example.py`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:主开源 demo 选择 Release Room,以“小型真实 release 流程”展示 AICO 的团队管理能力,而不是以单 issue 修复展示 coding agent 能力。
+- 🔒 **决策 2**:demo 第一阶段只新增静态资产和配置校验,不新增核心抽象;Stage 2 再做 fake adapter transcript / acceptance harness。
+- 🔒 **决策 3**:示例仓库保留 skipped v0.2 contract tests,让 AI team 的目标清晰可验收,同时不让 demo 初始状态在普通测试中失败。
+
+### 留给下一轮
+- Release Room Stage 2:新增本地端到端 transcript/acceptance,用 fake adapters 跑完整管理路径,覆盖团队、记忆、审批、任务追踪、早报和审计。
+- Release Room Stage 3:用真实 Telegram/Feishu + Claude/Codex 跑核心脚本并录制 GIF。
+- 如果 Stage 2 发现现有框架无法稳定表达多角色 release handoff,再单独设计能力缺口,不要把 demo 需求硬塞进核心。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 88。
+- 近期高优产品方向新增 Open-source Showcase。
+- 开源 Demo 进度新增 Release Room Stage 1 完成,Stage 2/3 待做。
+
+## Round 89 — 2026-05-18 — Codex
+
+### 输入
+- 人类要求开始 Release Room Stage 2。
+- Stage 1 已有示例仓库、AICO project/team 配置、playbook、demo script 和录屏 storyboard。
+
+### 思考与讨论
+- 候选 A:直接用真实 Claude/Codex 跑 demo → ❌ **暂缓**:真实 IM / CLI 输出有环境依赖,不适合作为第一个可重复验收基线。
+- 候选 B:只手写一份 transcript → ❌ **否决**:会退化成说明文档,无法证明 AICO 的 project/team/memory/approval/audit/report 链路真的能跑。
+- 候选 C:用 fake adapters 驱动真实 Orchestrator/TaskBus/MemoryStore → ✅ **选定**:底层 AI 输出确定,但 AICO 管理链路真实执行,能稳定回归。
+- 候选 D:为了 demo 新增通用 transcript runner 框架 → ❌ **暂缓**:当前只有一个主 demo,按 Rule of Three 不先抽象;等 Stage 3 或第二个 demo 出现再考虑。
+
+### 产出
+- 新增 `tests/unit/test_release_room_acceptance.py`:
+  - 读取真实 `examples/release-room/aico-project.json`。
+  - 使用 `ProjectAssignmentDirectory`、`Orchestrator`、`TaskBus`、`AdapterRegistry`、`JsonlMemoryStore`。
+  - 使用 deterministic `ReleaseRoomAdapter` 代替 Claude/Codex。
+  - 驱动完整管理路径:`/team`、3 条 `/remember`、PM 拆工、implementer 审批、tester/reviewer 独立验收、release-manager release notes、`/overnight`、`/daily`、`/tasks`、`/metrics`、`/audit`。
+  - 验证 memory 注入、approval requested/approved audit、offline delegation metadata 和 daily Boss summary。
+- 新增 `examples/release-room/transcript.md`,作为无真实 token 的本地 transcript 和后续录屏素材。
+- 更新 `docs/examples/release-room.md`、`docs/playbooks/release-room-demo.md`、`examples/release-room/README.md`、`STATUS.md` 和 `CHANGELOG.md`,将 Stage 2 标记完成。
+
+### 验证结果
+- `uv run pytest tests/unit/test_release_room_acceptance.py tests/unit/test_release_room_example.py`:4 passed。
+- `uv run pytest examples/release-room/notes-cli/tests`:2 passed,3 skipped。
+- `uv run ruff check examples/release-room tests/unit/test_release_room_acceptance.py tests/unit/test_release_room_example.py docs/examples docs/playbooks/release-room-demo.md README.md`:passed。
+- `uv run ruff format --check examples/release-room tests/unit/test_release_room_acceptance.py tests/unit/test_release_room_example.py`:passed。
+- `uv run mypy tests/unit/test_release_room_acceptance.py tests/unit/test_release_room_example.py`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:Release Room Stage 2 的验收对象是 AICO 管理链路,不是底层 AI 代码生成质量;底层输出用 fake adapters 固定。
+- 🔒 **决策 2**:暂不抽象 transcript runner;一个主 demo 先用本地测试表达,避免为了展示而新增框架。
+- 🔒 **决策 3**:真实录屏前先维护 `examples/release-room/transcript.md` 作为镜头节奏和 README/GIF 素材。
+
+### 留给下一轮
+- Release Room Stage 3:用真实 Telegram/Feishu + Claude/Codex 跑核心脚本并录制 30-60 秒 GIF。
+- Phase 8 `/overnight` 持久化:让重启后仍能从 audit JSONL 恢复托管工单列表,支撑真实“早上看结果”录屏。
+- 如果真实 Stage 3 发现 project role 输出仍过多暴露 agent/provider 名称,再设计 role-first transcript/render 修正。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 89。
+- Release Room Stage 2 local acceptance transcript 标记完成。
+
+## Round 90 — 2026-05-18 — Codex
+
+### 输入
+- 人类要求开始 Release Room Stage 3 中的“拿 transcript 做镜头节奏”。
+- 人类说明本机有 Telegram App、Claude CLI(但无 Claude Pro)和 Codex,没有 GIF 转换工具。
+
+### 思考与讨论
+- 候选 A:直接进入真实 Telegram + Claude/Codex 录屏 → ❌ **暂缓**:Claude 无 Pro 时额度和输出稳定性不适合先作为 README GIF 的节奏基线;直接拍真实长输出也容易把观众注意力带到底层 AI。
+- 候选 B:要求先安装 `gifski` 或其它剪辑工具 → ❌ **否决**:本机已有 `ffmpeg`,Stage 3 第一段不应被工具安装卡住。
+- 候选 C:先把 Stage 2 transcript 压成 shot rhythm,再用真实 IM 只拍精简管理路径 → ✅ **选定**:保持 README GIF 稳定聚焦 project office / team / memory / approval / audit,真实 dogfooding 后续按同一节奏补拍。
+
+### 产出
+- 新增 `examples/release-room/shot-rhythm.md`:
+  - 56 秒 README GIF 时间线。
+  - 精简命令清单。
+  - 保留/删减规则。
+  - Claude 无 Pro 时的录制降级建议。
+  - README GIF 交付路径 `docs/assets/release-room-demo.gif`。
+- 新增 `examples/release-room/make-gif.sh`:
+  - 使用 `ffmpeg` 的 palettegen / paletteuse 两段转换。
+  - 支持 `AICO_GIF_FPS` 和 `AICO_GIF_WIDTH`。
+  - 不依赖 `gifski`。
+- 更新 `examples/release-room/README.md`、`recording-storyboard.md`、`docs/examples/release-room.md`、`docs/playbooks/release-room-demo.md` 和 `CHANGELOG.md`。
+
+### 验证结果
+- `bash -n examples/release-room/make-gif.sh`:passed。
+- `git diff --check`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:README GIF 先以 Stage 2 transcript 的管理链路做节奏基线,真实 IM dogfooding 录屏按同一节奏补拍。
+- 🔒 **决策 2**:没有 `gifski` 不作为卡点;优先复用本机 `ffmpeg`。
+- 🔒 **决策 3**:Stage 3 GIF 不拍 role proposal、完整 `/metrics` 或长代码输出;这些留给长版 demo。
+
+### 留给下一轮
+- 按 `examples/release-room/shot-rhythm.md` 在 Telegram App 中录 30-60 秒主 GIF 素材。
+- 用 `examples/release-room/make-gif.sh` 转出 `docs/assets/release-room-demo.gif`。
+- 将 GIF 嵌入 README 首屏,再做一次 README 视觉和体积检查。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 90。
+- Release Room Stage 3 recording rhythm and GIF conversion path 标记完成;public GIF / README showcase 仍未完成。
+
+## Round 91 — 2026-05-18 — Codex
+
+### 输入
+- 人类批准继续执行 Stage 3,并允许在 Telegram App 中向 AICO Bot 发送 Release Room demo 指令。
+
+### 思考与讨论
+- 候选 A:按 shot rhythm 直接完整录真实 Claude/Codex public GIF → ❌ **阻塞**:真实 provider 输出首屏不稳定,会把 README demo 从 AICO 管理面拖到底层 CLI 噪音。
+- 候选 B:继续硬等 Claude 或继续让 Codex 输出 → ❌ **否决**:会污染 Telegram 对话,且不能解决 public GIF 的质量问题。
+- 候选 C:保留真实 dogfooding 证据,把 provider 输出问题记录为 blocker,同时修复日志 token 泄露风险 → ✅ **选定**:先保护安全和交接质量,public GIF 改走 transcript-driven 稳定素材。
+
+### 产出
+- 真实 Telegram dogfooding:
+  - 停掉重复 `aico-phase1` 实例,解决 Telegram `409 Conflict`。
+  - 用真实 Telegram Bot API 启动单实例,并将 `AICO_TELEGRAM_POLL_TIMEOUT_SECONDS=3` 降低 long-polling 空白 warning。
+  - 发送 `/use project release-room`、`/team` 和 3 条 `/remember`,均真实回包。
+  - `/ask pm ...` 触发 Claude CLI 长时间无输出后,用 `/interrupt 4c0b914a` 成功中断。
+  - 临时 `/appoint codex as pm docs audit` 后重试 PM 拆工,发现 Codex CLI warning / HTML / resume error 原样刷进 Telegram。
+- 新增 `BLOCKERS.md` B-003:真实 provider 输出不适合作为 public GIF。
+- 新增 `PITFALLS.md` P-017:真实 Stage 3 录屏被底层 CLI 噪音污染。
+- 新增 `PITFALLS.md` P-018:httpx INFO 日志会把 Telegram Bot token 打进日志。
+- 修复 `src/aico/app/phase1.py`:将 `httpx` / `httpcore` logger 降到 WARNING。
+- 更新 `tests/unit/test_phase1_app.py`:新增 `test_phase1_logging_suppresses_http_client_info_logs`。
+- 更新 `examples/release-room/shot-rhythm.md`、`STATUS.md`。
+
+### 验证结果
+- `uv run pytest tests/unit/test_phase1_app.py::test_phase1_logging_suppresses_http_client_info_logs`:1 passed。
+- `uv run ruff check src/aico/app/phase1.py tests/unit/test_phase1_app.py`:passed。
+- `uv run ruff format --check src/aico/app/phase1.py tests/unit/test_phase1_app.py`:passed。
+- `uv run mypy src/aico/app/phase1.py tests/unit/test_phase1_app.py`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:B-003 未解前,不要把真实 Claude/Codex 原始输出直接做成 README public GIF。
+- 🔒 **决策 2**:Stage 3 public showcase 可以先使用 transcript-driven 稳定素材;真实 provider dogfooding 单独作为验收证据。
+- 🔒 **决策 3**:AICO 默认 INFO 日志不应记录 httpx/httpcore 请求 URL,因为 Telegram token 位于 URL path。
+
+### 留给下一轮
+- 清理 Codex/Claude Adapter 输出:过滤 CLI warning、HTML 片段、内部路径和 resume error,或增加 public-demo 摘要层。
+- 用 transcript-driven 素材生成 `docs/assets/release-room-demo.gif`,嵌入 README。
+- B-003 解开后再重录真实 provider public GIF。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 91。
+- B-003 作为当前活跃卡点新增。
+
+## Round 92 — 2026-05-18 — Codex
+
+### 输入
+- 人类已删除 `logs/aico.log`,并要求对齐生成 GIF 的卡点:
+  - Claude 输出不适合做图,是否可以用 Claude Code CLI。
+  - Codex warning / HTML / resume error 不清楚原因,要求继续处理。
+
+### 思考与讨论
+- 候选 A:把 Claude 命令从 `claude` 改成 `cc` → ❌ **否决**:本机 `claude --version` 显示 `2.1.143 (Claude Code)`,AICO 默认已经使用 Claude Code CLI;本机 `cc` 是 `/usr/bin/cc` C 编译器。
+- 候选 B:只在 shot rhythm 文档里提示“不要拍 Codex 长输出” → ❌ **不足**:真实 Telegram 已证明 Codex 短输出也可能被 CLI 噪音污染,需要 Adapter 层兜底。
+- 候选 C:修 provider session 边界 + Codex stdout 过滤 + role 改任命 session 重建 → ✅ **选定**:解决 `thread/resume failed` 根因,并避免 warning/HTML 噪音进入 IM。
+
+### 产出
+- `ClaudeCodeAdapter`:
+  - 只在 `provider_session.provider_name == adapter.name` 时使用 provider session。
+  - 增加 `_process_stdout_line()` 和 `_process_error_content()` hook,让具体 Adapter 能清洗输出。
+- `CodexAdapter`:
+  - 忽略非 Codex provider session,不再拿 Claude/AICO session id 跑 `codex exec resume`。
+  - 过滤典型 timestamped Codex warning、`codex_core_plugins::manifest`、HTML tag、`sqlx::query` 和 `thread/resume failed`。
+- `Orchestrator._ensure_assignment_session()`:
+  - 同一 assignment seat 改任命到不同 agent/adapter 后关闭旧 session 并重建,避免沿用旧 provider ref。
+- 测试:
+  - Claude Adapter 忽略其它 provider session ref。
+  - Codex Adapter 忽略其它 provider session ref。
+  - Codex stdout 噪音过滤。
+  - Orchestrator role 改任命后重建 assignment session。
+- 真实 Telegram dry run:
+  - `/use project release-room`
+  - `/appoint codex as pm docs audit`
+  - `/ask pm Give a 3-bullet release plan for v0.2. No code. No markdown table.`
+  - 结果:Telegram 收到干净 3-bullet release plan,没有 warning / HTML / resume error。
+- 更新 B-003、P-017、shot rhythm、STATUS 和 CHANGELOG。
+
+### 验证结果
+- `uv run pytest tests/unit/test_orchestrator.py::test_orchestrator_rebuilds_assignment_session_after_reappointing_role tests/unit/test_codex_adapter.py tests/unit/test_claude_code_adapter.py`:19 passed。
+- `uv run ruff check src/aico/adapter/claude_code.py src/aico/adapter/codex.py src/aico/core/orchestrator.py tests/unit/test_claude_code_adapter.py tests/unit/test_codex_adapter.py tests/unit/test_orchestrator.py`:passed。
+- `uv run ruff format --check src/aico/adapter/claude_code.py src/aico/adapter/codex.py src/aico/core/orchestrator.py tests/unit/test_claude_code_adapter.py tests/unit/test_codex_adapter.py tests/unit/test_orchestrator.py`:passed。
+- `uv run mypy src/aico/adapter/claude_code.py src/aico/adapter/codex.py src/aico/core/orchestrator.py tests/unit/test_claude_code_adapter.py tests/unit/test_codex_adapter.py tests/unit/test_orchestrator.py`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:Claude Code CLI 命令仍是 `claude`;不要把 `cc` 当 Claude Code 命令。
+- 🔒 **决策 2**:Provider session metadata 只能被匹配的 Adapter 消费,防止跨 provider resume。
+- 🔒 **决策 3**:IM 默认展示 provider 的干净业务输出;CLI warning / HTML / 内部路径类噪音留在日志或被过滤。
+
+### 留给下一轮
+- 按 `shot-rhythm.md` 录制真实 Telegram GIF:Codex 负责 PM/test/review 短输出,Claude 只拍 approval gate / task accepted。
+- 如需继续拍 Claude 长输出,先确认无 Pro 环境下的非交互输出稳定性,或把 Claude implementer prompt 压到极短摘要。
+- 生成 `docs/assets/release-room-demo.gif` 并嵌入 README。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 92。
+- B-003 从 BLOCKING 调整为 DEFERRED。
+
+## Round 93 — 2026-05-18 — Codex
+
+### 输入
+- 人类确认“可以,实际录一遍”,要求按 Stage 3 真实 Telegram flow 录制 demo。
+
+### 产出
+- 启动真实 AICO Telegram runtime,使用 fresh project memory / audit JSONL 做 Release Room dogfooding。
+- 用 macOS ffmpeg AVFoundation 屏幕采集录制 Telegram 窗口区域:
+  - `docs/assets/release-room-demo.mov`:第一段原始录屏。
+  - `docs/assets/release-room-demo-part2.mov`:日报和审计收尾原始录屏。
+  - `docs/assets/release-room-demo-trimmed.mov`:35 秒剪辑版视频。
+  - `docs/assets/release-room-demo.gif`:README 可嵌入 GIF。
+- 实录覆盖:
+  - `/use project release-room`
+  - `/team`
+  - 3 条 `/remember`
+  - `/appoint codex as pm docs audit`
+  - Codex PM handoff 短输出
+  - Codex tester regression checklist
+  - `/daily release-room`
+  - `/audit`
+- README 增加 `docs/assets/release-room-demo.gif` 首屏展示。
+- 新增 P-020:Codex read-only sandbox 里直接跑 pytest 可能没有可写临时目录。
+
+### 验证结果
+- `ffprobe` 确认 `docs/assets/release-room-demo.gif` 时长 35.26 秒、大小约 6.0MB。
+- 抽帧检查确认 GIF 主体是 Telegram 窗口,包含 `/team`、project memory、tester output、`/daily` 和 `/audit` 镜头。
+- `env AICO_GIF_FPS=8 AICO_GIF_WIDTH=720 bash examples/release-room/make-gif.sh docs/assets/release-room-demo-trimmed.mov docs/assets/release-room-demo.gif`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:本轮保留真实 dogfooding 瑕疵,不伪造 transcript;Codex read-only pytest 临时目录失败单独记入 P-020。
+- 🔒 **决策 2**:README 先嵌入 35 秒真实 GIF,后续再精剪 approval gate / 减少旧消息露出。
+
+### 留给下一轮
+- 复剪更干净的 public GIF:开头直接从 `/use` 开始,减少旧聊天记录露出。
+- 若要展示 tester 真跑测试,先处理 Codex read-only 可写临时目录或调整为审批保护的执行路径。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 93。
+- Release Room Stage 3 GIF 从待办改为已完成。

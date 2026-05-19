@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -35,18 +37,29 @@ class FeishuChannel:
         app_secret: str,
         verification_token: str | None = None,
         api_base_url: str = "https://open.feishu.cn",
+        event_dedupe_ttl_seconds: float = 8 * 60 * 60,
+        event_dedupe_max_entries: int = 4096,
         client: httpx.AsyncClient | None = None,
         name: str = "feishu",
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if not app_id:
             raise ValueError("app_id must not be empty")
         if not app_secret:
             raise ValueError("app_secret must not be empty")
+        if event_dedupe_ttl_seconds <= 0:
+            raise ValueError("event_dedupe_ttl_seconds must be positive")
+        if event_dedupe_max_entries <= 0:
+            raise ValueError("event_dedupe_max_entries must be positive")
         self._name = name
         self._app_id = app_id
         self._app_secret = app_secret
         self._verification_token = verification_token
         self._api_base_url = api_base_url.rstrip("/")
+        self._event_dedupe_ttl_seconds = event_dedupe_ttl_seconds
+        self._event_dedupe_max_entries = event_dedupe_max_entries
+        self._seen_event_ids: dict[str, float] = {}
+        self._clock = clock
         self._client = client or httpx.AsyncClient()
         self._owns_client = client is None
         self._handler: IncomingMessageHandler | None = None
@@ -138,6 +151,9 @@ class FeishuChannel:
             raise FeishuAPIError("invalid Feishu verification token")
         message = _to_incoming_message(self._name, payload)
         if message is not None and self._handler is not None:
+            if self._is_duplicate_event(payload):
+                log.info("Feishu duplicate event skipped: raw_ref=%s", message.raw_ref)
+                return None
             self._schedule_handler(message)
         return None
 
@@ -172,6 +188,36 @@ class FeishuChannel:
             raise
         except Exception:
             log.exception("Feishu incoming message handler failed: raw_ref=%s", message.raw_ref)
+
+    def _is_duplicate_event(self, payload: dict[str, Any]) -> bool:
+        event_id = _event_unique_id(payload)
+        if event_id is None:
+            return False
+        now = self._clock()
+        self._prune_seen_event_ids(now)
+        if event_id in self._seen_event_ids:
+            return True
+        self._seen_event_ids[event_id] = now
+        return False
+
+    def _prune_seen_event_ids(self, now: float) -> None:
+        expires_before = now - self._event_dedupe_ttl_seconds
+        expired_ids = [
+            event_id
+            for event_id, seen_at in self._seen_event_ids.items()
+            if seen_at < expires_before
+        ]
+        for event_id in expired_ids:
+            del self._seen_event_ids[event_id]
+        overflow = len(self._seen_event_ids) - self._event_dedupe_max_entries
+        if overflow <= 0:
+            return
+        oldest_ids = sorted(
+            self._seen_event_ids,
+            key=self._seen_event_ids.__getitem__,
+        )[:overflow]
+        for event_id in oldest_ids:
+            del self._seen_event_ids[event_id]
 
 
 def _challenge_response(
@@ -220,6 +266,16 @@ def _to_incoming_message(channel_name: str, payload: dict[str, Any]) -> Incoming
         content=MessageContent(text=text),
         raw_ref=message_id,
     )
+
+
+def _event_unique_id(payload: dict[str, Any]) -> str | None:
+    header = payload.get("header", {})
+    if isinstance(header, dict):
+        event_id = header.get("event_id")
+        if isinstance(event_id, str) and event_id:
+            return event_id
+    uuid = payload.get("uuid")
+    return uuid if isinstance(uuid, str) and uuid else None
 
 
 def _event_text(message: dict[str, Any]) -> str | None:

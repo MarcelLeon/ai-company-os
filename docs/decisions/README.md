@@ -42,6 +42,7 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0021 | Agent-Driven Memory Ownership | Accepted | 2026-05-15 |
 | ADR-0022 | A2A Memory Fabric | Accepted | 2026-05-15 |
 | ADR-0023 | Memory Semantic Retrieval | Accepted | 2026-05-18 |
+| ADR-0024 | Phase 8 Offline Delegation Scope | Accepted | 2026-05-18 |
 
 **状态图例**:
 - `Proposed`(提议中)

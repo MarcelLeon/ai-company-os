@@ -258,7 +258,7 @@ class ClaudeCodeAdapter:
                 return
 
             stderr_text = await _read_remaining(process.stderr)
-            content = stderr_text or f"Claude Code exited with code {return_code}"
+            content = self._process_error_content(stderr_text, return_code)
             await queue.put(_output(task.task_id, sequence, OutputType.ERROR, content))
         except asyncio.CancelledError:
             raise
@@ -282,9 +282,18 @@ class ClaudeCodeAdapter:
 
         sequence = start_sequence
         while line := await self._readline(reader, sequence):
-            await queue.put(_output(task_id, sequence, OutputType.TEXT, _decode(line)))
+            content = self._process_stdout_line(_decode(line))
+            if content is None:
+                continue
+            await queue.put(_output(task_id, sequence, OutputType.TEXT, content))
             sequence += 1
         return sequence
+
+    def _process_stdout_line(self, content: str) -> str | None:
+        return content
+
+    def _process_error_content(self, stderr_text: str, return_code: int) -> str:
+        return stderr_text or f"Claude Code exited with code {return_code}"
 
     async def _readline(
         self,
@@ -316,7 +325,11 @@ class ClaudeCodeAdapter:
 
     def _command_for_task(self, task: Task) -> tuple[str, ...]:
         provider_session = provider_session_from_task(task)
-        if provider_session is None or _has_claude_session_option(self._command):
+        if (
+            provider_session is None
+            or provider_session.provider_name != self._name
+            or _has_claude_session_option(self._command)
+        ):
             return (*self._command, task.payload)
 
         if provider_session.mode is ProviderSessionMode.NEW:

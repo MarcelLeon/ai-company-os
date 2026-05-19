@@ -70,6 +70,7 @@ Playbook = "可执行的步骤清单",特点:
 - [ ] `add-new-capability.md` — 给 Adapter 添加新能力
 
 ### 测试类
+- [x] [`release-room-demo.md`](release-room-demo.md) — 主开源 demo:远程 AI release room 验收步骤
 - [x] [`phase-1-mvp.md`](phase-1-mvp.md) — Phase 1 单链路验收步骤
 - [x] [`phase-2-multi-adapter.md`](phase-2-multi-adapter.md) — Phase 2 多 Adapter 状态与路由验收步骤
 - [x] [`phase-3-persona-broadcast.md`](phase-3-persona-broadcast.md) — Phase 3 Persona 与 Broadcast 验收步骤
@@ -77,8 +78,9 @@ Playbook = "可执行的步骤清单",特点:
 - [x] [`phase-5-collaboration.md`](phase-5-collaboration.md) — Phase 5 AI 间协作 smoke test
 - [x] [`phase-6-observability.md`](phase-6-observability.md) — Phase 6 `/metrics` 可观测 smoke test
 - [x] [`phase-7-shared-memory.md`](phase-7-shared-memory.md) — Phase 7 共享记忆第一切片验收
+- [x] [`phase-8-offline-delegation.md`](phase-8-offline-delegation.md) — Phase 8 离线托管第一切片验收
 - [x] [`optional-agent-adapters.md`](optional-agent-adapters.md) — Cursor / CodeFlicker / Trae / Gemini 可选 Adapter 验收
-- [x] [`feishu-channel.md`](feishu-channel.md) — Feishu Channel 文本收发第一切片 smoke test
+- [x] [`feishu-channel.md`](feishu-channel.md) — Feishu Channel webhook 文本收发 smoke test
 - [ ] `test-new-telegram-bot.md` — 验证新 Telegram Bot 配置
 - [ ] `test-claude-code-adapter.md` — 验证 Claude Code Adapter
 

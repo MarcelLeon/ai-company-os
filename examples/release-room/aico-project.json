@@ -1,0 +1,145 @@
+{
+  "agents": {
+    "claude": {
+      "id": "claude",
+      "provider": "claude-code",
+      "title": "Implementation Lead",
+      "capabilities": ["code_edit", "shell_exec", "long_running", "stream_output", "interruptible"]
+    },
+    "codex": {
+      "id": "codex",
+      "provider": "codex",
+      "title": "Review and Test Lead",
+      "capabilities": ["code_review", "web_browse", "stream_output", "interruptible"]
+    }
+  },
+  "roles": {
+    "pm": {
+      "id": "pm",
+      "title": "Release PM",
+      "summary": "Own release scope, acceptance criteria, task split, handoffs, and blocker escalation.",
+      "default_permissions": ["docs", "audit"],
+      "inline_prompt": "Convert the broad v0.2 goal into a release plan with role tasks, acceptance criteria, risks, and handoff notes."
+    },
+    "implementer": {
+      "id": "implementer",
+      "title": "Implementation Lead",
+      "summary": "Implement release features and fixes, update tests, and keep handoff docs current.",
+      "default_permissions": ["code", "tests", "docs"],
+      "approval_required": ["shell_exec", "destructive"],
+      "inline_prompt": "Work in small reviewable steps. Prefer tests before behavior changes, and keep README/CHANGELOG aligned with code."
+    },
+    "tester": {
+      "id": "tester",
+      "title": "Release Test Lead",
+      "summary": "Turn release requirements into regression tests, run verification, and explain failures.",
+      "default_permissions": ["code", "tests", "audit"],
+      "inline_prompt": "Use tests/test_v02_contract.py as the release contract. Report exact commands, failures, and remaining gaps."
+    },
+    "reviewer": {
+      "id": "reviewer",
+      "title": "Release Reviewer",
+      "summary": "Review behavior risk, missing tests, documentation consistency, and maintainability.",
+      "default_permissions": ["code", "docs", "audit"],
+      "inline_prompt": "Prioritize concrete bugs, untested behavior, documentation drift, and risky shortcuts. Findings first."
+    },
+    "release-manager": {
+      "id": "release-manager",
+      "title": "Release Manager",
+      "summary": "Prepare release notes, changelog, final checklist, and morning handoff.",
+      "default_permissions": ["docs", "audit"],
+      "inline_prompt": "Keep release notes grounded in actual changes. Use Added / Fixed / Changed / Verification."
+    }
+  },
+  "projects": {
+    "release-room": {
+      "id": "release-room",
+      "name": "Notes CLI Release Room",
+      "repo": "examples/release-room/notes-cli",
+      "north_star": "NORTH_STAR.md",
+      "status_doc": "STATUS.md",
+      "journal": "docs/journal/ROUNDS.md",
+      "blockers_doc": "docs/journal/BLOCKERS.md",
+      "pitfalls_doc": "docs/journal/PITFALLS.md",
+      "current_phase": "v0.2 release planning",
+      "brief": "Release v0.2 of a small notes CLI by adding tags, search, JSON export, tests, README, changelog, and release notes.",
+      "default_role": "pm",
+      "default_assignment": "release-room-pm",
+      "roles": {
+        "pm": {
+          "role": "pm",
+          "resources": ["STATUS.md", "issues/003-v02-release.md"]
+        },
+        "implementer": {
+          "role": "implementer",
+          "resources": ["src/notes_cli/__main__.py", "tests/test_notes_cli.py", "tests/test_v02_contract.py"]
+        },
+        "tester": {
+          "role": "tester",
+          "resources": ["tests/test_notes_cli.py", "tests/test_v02_contract.py"]
+        },
+        "reviewer": {
+          "role": "reviewer",
+          "resources": ["README.md", "CHANGELOG.md", "src/notes_cli/__main__.py", "tests/"]
+        },
+        "release-manager": {
+          "role": "release-manager",
+          "resources": ["README.md", "CHANGELOG.md", "docs/release-notes/v0.2.md"]
+        }
+      }
+    }
+  },
+  "appointments": [
+    {
+      "project": "release-room",
+      "agent": "claude",
+      "role": "pm",
+      "seat": "release-room-pm",
+      "session_policy": "project_scoped",
+      "risk_policy": "approval_required",
+      "permissions": ["docs", "audit"],
+      "workspace": "examples/release-room/notes-cli"
+    },
+    {
+      "project": "release-room",
+      "agent": "claude",
+      "role": "implementer",
+      "seat": "release-room-implementer",
+      "session_policy": "project_scoped",
+      "risk_policy": "approval_required",
+      "permissions": ["code", "tests", "docs"],
+      "workspace": "examples/release-room/notes-cli"
+    },
+    {
+      "project": "release-room",
+      "agent": "codex",
+      "role": "tester",
+      "seat": "release-room-tester",
+      "session_policy": "bind_or_resume",
+      "risk_policy": "read_only",
+      "permissions": ["code", "tests", "audit"],
+      "workspace": "examples/release-room/notes-cli"
+    },
+    {
+      "project": "release-room",
+      "agent": "codex",
+      "role": "reviewer",
+      "seat": "release-room-reviewer",
+      "session_policy": "bind_or_resume",
+      "risk_policy": "read_only",
+      "permissions": ["code", "docs", "audit"],
+      "workspace": "examples/release-room/notes-cli"
+    },
+    {
+      "project": "release-room",
+      "agent": "claude",
+      "role": "release-manager",
+      "seat": "release-room-release-manager",
+      "session_policy": "project_scoped",
+      "risk_policy": "approval_required",
+      "permissions": ["docs", "audit"],
+      "workspace": "examples/release-room/notes-cli"
+    }
+  ]
+}
+

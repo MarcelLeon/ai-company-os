@@ -5,6 +5,13 @@
 **面向开发者**:Claude Code、Codex、OpenClaw、公司内部 AI CLI...这些工具现在各管各的,你也只能在电脑前用。
 **这个项目要做的**:把它们收编到一个统一的"AI 公司"里,通过 Telegram/飞书/QQ 等 IM 远程指挥,人格化身份,异步协作,审批审计齐全。
 
+## Release Room Demo
+
+![Release Room demo](docs/assets/release-room-demo.gif)
+
+在 Telegram 里开一个 release room,任命 PM / tester / reviewer,写入项目记忆,查看日报和审计轨迹。
+完整示例见 [`docs/examples/release-room.md`](docs/examples/release-room.md)。
+
 ---
 
 ## 30 秒理解
@@ -32,6 +39,12 @@
 ## 项目当前状态
 
 参见 [`STATUS.md`](STATUS.md) — 这个文件每次有进展都会更新。
+
+## Examples
+
+- [`docs/examples/release-room.md`](docs/examples/release-room.md) — 主 demo:在 IM 中开一个
+  AI release room,用 project/team/role/memory/approval/audit/overnight handoff 完成小型开源
+  CLI 的 v0.2 发布。
 
 ---
 

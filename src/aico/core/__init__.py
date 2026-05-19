@@ -90,6 +90,12 @@ from aico.core.models import (
     TaskSnapshot,
     TaskStatus,
 )
+from aico.core.offline_delegation import (
+    OFFLINE_DELEGATION_INTENT,
+    OFFLINE_DELEGATION_INTENT_KEY,
+    OfflineDelegationCommandHandler,
+    OfflineDelegationRecord,
+)
 from aico.core.orchestrator import Orchestrator
 from aico.core.persona_registry import PersonaRegistry
 from aico.core.project_assignment import (
@@ -175,6 +181,10 @@ __all__ = [
     "MemoryStore",
     "MemoryCaptureService",
     "Orchestrator",
+    "OFFLINE_DELEGATION_INTENT",
+    "OFFLINE_DELEGATION_INTENT_KEY",
+    "OfflineDelegationCommandHandler",
+    "OfflineDelegationRecord",
     "OutputType",
     "PersonaProfile",
     "PersonaRegistry",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from aico.adapter.claude_code import ClaudeCodeAdapter, ProcessFactory
@@ -53,11 +54,26 @@ class CodexAdapter(ClaudeCodeAdapter):
 
     def _command_for_task(self, task: Task) -> tuple[str, ...]:
         provider_session = provider_session_from_task(task)
-        if provider_session is None or provider_session.mode is ProviderSessionMode.NEW:
+        if (
+            provider_session is None
+            or provider_session.provider_name != self.name
+            or provider_session.mode is ProviderSessionMode.NEW
+        ):
             return (*self._command, task.payload)
 
         command = _codex_exec_resume_command(self._command)
         return (*command, provider_session.session_id, task.payload)
+
+    def _process_stdout_line(self, content: str) -> str | None:
+        return None if _is_codex_noise(content) else content
+
+    def _process_error_content(self, stderr_text: str, return_code: int) -> str:
+        cleaned = "\n".join(
+            line for line in stderr_text.splitlines() if not _is_codex_noise(f"{line}\n")
+        ).strip()
+        if cleaned:
+            return cleaned
+        return f"Codex exited with code {return_code}"
 
 
 def _codex_exec_resume_command(command: tuple[str, ...]) -> tuple[str, ...]:
@@ -118,3 +134,26 @@ _RESUME_FLAG_OPTIONS = {
     "--ignore-rules",
     "--json",
 }
+
+_CODEX_TIMESTAMPED_NOISE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s+(?:WARN|INFO|DEBUG|ERROR)\s+"
+)
+
+
+def _is_codex_noise(content: str) -> bool:
+    stripped = content.strip()
+    if not stripped:
+        return False
+    if _CODEX_TIMESTAMPED_NOISE.match(stripped):
+        return True
+    if stripped.startswith("<") and stripped.endswith(">"):
+        return True
+    if stripped.lower() in {"<html>", "</html>", "<body>", "</body>", "<head>", "</head>"}:
+        return True
+    if "codex_core_plugins::manifest:" in stripped:
+        return True
+    if "sqlx::query:" in stripped:
+        return True
+    if "thread/resume failed:" in stripped:
+        return True
+    return False

@@ -162,6 +162,32 @@ async def test_claude_code_adapter_resumes_initialized_provider_session() -> Non
     ]
 
 
+async def test_claude_code_adapter_ignores_other_provider_session_ref() -> None:
+    calls: list[tuple[str, ...]] = []
+
+    async def factory(command: tuple[str, ...], cwd: Path | None) -> FakeProcess:
+        _ = cwd
+        calls.append(command)
+        return FakeProcess(stdout=[b"ok\n"])
+
+    adapter = ClaudeCodeAdapter(command=("claude", "-p"), process_factory=factory)
+    task = task_with_provider_session(
+        _task("task-1", "inspect"),
+        ProviderSessionRef(
+            provider_name="codex",
+            session_id="provider-session-1",
+            initialized=True,
+        ),
+        ProviderSessionMode.RESUME,
+    )
+
+    ack = await adapter.receive_task(task)
+    _ = [output async for output in adapter.stream_output(task.task_id)]
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert calls == [("claude", "-p", "inspect")]
+
+
 async def test_claude_code_adapter_keeps_explicit_session_command_unchanged() -> None:
     calls: list[tuple[str, ...]] = []
 

@@ -18,7 +18,40 @@
 
 ## 当前活跃卡点
 
-(暂无)
+### [B-003] Release Room Stage 3 真实 provider 输出不适合作为 public GIF
+
+**状态**:🟡 DEFERRED
+**提出于**:Round 91
+**最后更新**:2026-05-18(Round 92)
+**影响**:不再阻塞 Codex 短输出镜头;仍不建议把 Claude/Codex 长输出直接录成 README GIF。
+
+**问题描述**
+真实 Telegram dogfooding 已跑通 project office、team、project memory、interrupt 等管理链路。第一轮发现底层 provider 输出不适合入镜:
+- Claude CLI 在当前无 Pro / 输出不稳定环境下长时间不回包。
+- Codex CLI 输出包含大量 plugin warning、HTML 片段和 thread resume 错误,会污染 Telegram 画面。
+
+Round 92 已修复 Codex 侧主要问题:
+- Codex Adapter 不再 resume 非 Codex provider session。
+- 同一 role 重新任命给不同 agent 时,assignment session 会重建,避免沿用旧 provider session。
+- Codex stdout 会过滤典型 CLI warning、HTML 片段、`sqlx::query` 噪音和 thread resume error。
+- 真实 Telegram dry run 已验证 Codex PM 3-bullet 输出干净可入镜。
+
+**已尝试的方向**
+- 方向 A:直接用 Claude 做 PM 拆工。结果任务 accepted 后长时间无输出,需要 `/interrupt`。
+- 方向 B:临时把 PM 任给 Codex。结果 Telegram 收到大量 CLI warning / HTML / resume error,无法作为 public GIF。
+- 方向 C:修 Codex provider session 和 stdout 过滤后重测。结果 Codex PM 短输出可用。
+
+**需要什么才能解开**
+- 如要拍 Claude 实现长输出,仍需确认 Claude 当前登录/额度稳定,或只拍 approval gate 不拍长输出。
+- 真实录屏前继续跑 `/ask pm ...` dry run,确保首屏是 role handoff 摘要。
+
+**当前 workaround**
+- README public GIF 可以使用真实 Telegram + Codex 短输出镜头。
+- Claude 只用于 approval gate / implementer 任务 accepted 画面,不要把长输出作为主镜头。
+
+**相关链接**
+- ROUNDS Round 91
+- PITFALL P-017
 
 ---
 

@@ -14,6 +14,7 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     blockers = parse_command("blockers")
     daily = parse_command("daily")
     weekly = parse_command("weekly")
+    overnight = parse_command("overnight")
     roles = parse_command("roles")
     assignments = parse_command("assignments")
     sessions = parse_command("sessions")
@@ -30,6 +31,7 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     assert blockers is not None
     assert daily is not None
     assert weekly is not None
+    assert overnight is not None
     assert roles is not None
     assert assignments is not None
     assert sessions is not None
@@ -45,6 +47,7 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     assert blockers.name is CommandName.BLOCKERS
     assert daily.name is CommandName.DAILY
     assert weekly.name is CommandName.WEEKLY
+    assert overnight.name is CommandName.OVERNIGHT
     assert roles.name is CommandName.ROLES
     assert assignments.name is CommandName.ASSIGNMENTS
     assert sessions.name is CommandName.SESSIONS
@@ -158,6 +161,7 @@ def test_parse_command_accepts_project_assignment_commands() -> None:
     next_command = parse_command("/next aico")
     daily_command = parse_command("/daily aico")
     weekly_command = parse_command("/weekly aico")
+    overnight_command = parse_command("/overnight finish the phase 8 plan")
     roles_command = parse_command("/roles aico")
     role_command = parse_command("/role propose 需要一个增长分析岗位")
     who_command = parse_command("/who implementer")
@@ -178,6 +182,7 @@ def test_parse_command_accepts_project_assignment_commands() -> None:
     assert next_command is not None
     assert daily_command is not None
     assert weekly_command is not None
+    assert overnight_command is not None
     assert roles_command is not None
     assert role_command is not None
     assert who_command is not None
@@ -208,6 +213,8 @@ def test_parse_command_accepts_project_assignment_commands() -> None:
     assert daily_command.payload == "aico"
     assert weekly_command.name is CommandName.WEEKLY
     assert weekly_command.payload == "aico"
+    assert overnight_command.name is CommandName.OVERNIGHT
+    assert overnight_command.payload == "finish the phase 8 plan"
     assert roles_command.name is CommandName.ROLES
     assert roles_command.payload == "aico"
     assert role_command.name is CommandName.ROLE

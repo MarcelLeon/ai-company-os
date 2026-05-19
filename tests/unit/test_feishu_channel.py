@@ -101,6 +101,80 @@ async def test_feishu_handle_text_message_dispatches_incoming() -> None:
     assert received[0].raw_ref == "om_1"
 
 
+async def test_feishu_deduplicates_retried_v2_events_by_event_id() -> None:
+    channel = FeishuChannel(
+        app_id="app",
+        app_secret="secret",
+        verification_token="verify-token",
+        client=cast(httpx.AsyncClient, FakeFeishuClient()),
+    )
+    received: list[IncomingMessage] = []
+
+    async def handle(message: IncomingMessage) -> None:
+        received.append(message)
+
+    payload = _message_event_payload(event_id="evt-1", message_id="om_1")
+
+    channel.on_incoming(handle)
+    await channel.handle_event(payload)
+    await channel.handle_event(payload)
+    await asyncio.sleep(0)
+
+    assert [message.raw_ref for message in received] == ["om_1"]
+
+
+async def test_feishu_deduplicates_legacy_v1_events_by_uuid() -> None:
+    channel = FeishuChannel(
+        app_id="app",
+        app_secret="secret",
+        verification_token="verify-token",
+        client=cast(httpx.AsyncClient, FakeFeishuClient()),
+    )
+    received: list[IncomingMessage] = []
+
+    async def handle(message: IncomingMessage) -> None:
+        received.append(message)
+
+    payload = _message_event_payload(event_id=None, uuid="uuid-1", message_id="om_1")
+
+    channel.on_incoming(handle)
+    await channel.handle_event(payload)
+    await channel.handle_event(payload)
+    await asyncio.sleep(0)
+
+    assert len(received) == 1
+
+
+async def test_feishu_allows_same_event_id_after_dedupe_ttl() -> None:
+    now = 1000.0
+
+    def clock() -> float:
+        return now
+
+    channel = FeishuChannel(
+        app_id="app",
+        app_secret="secret",
+        verification_token="verify-token",
+        event_dedupe_ttl_seconds=10,
+        client=cast(httpx.AsyncClient, FakeFeishuClient()),
+        clock=clock,
+    )
+    received: list[IncomingMessage] = []
+
+    async def handle(message: IncomingMessage) -> None:
+        received.append(message)
+
+    payload = _message_event_payload(event_id="evt-1", message_id="om_1")
+
+    channel.on_incoming(handle)
+    await channel.handle_event(payload)
+    now = 1011.0
+    await channel.handle_event(payload)
+    await asyncio.sleep(0)
+
+    assert len(received) == 2
+
+
 async def test_feishu_rejects_invalid_verification_token() -> None:
     channel = FeishuChannel(
         app_id="app",
@@ -115,6 +189,34 @@ async def test_feishu_rejects_invalid_verification_token() -> None:
         assert "invalid Feishu verification token" in str(exc)
     else:
         raise AssertionError("expected invalid token to fail")
+
+
+def _message_event_payload(
+    *,
+    event_id: str | None,
+    message_id: str,
+    uuid: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "header": {
+            "token": "verify-token",
+            "event_type": "im.message.receive_v1",
+        },
+        "event": {
+            "sender": {"sender_id": {"open_id": "ou_user"}},
+            "message": {
+                "message_id": message_id,
+                "chat_id": "oc_1",
+                "message_type": "text",
+                "content": json.dumps({"text": "/status"}),
+            },
+        },
+    }
+    if event_id is not None:
+        payload["header"]["event_id"] = event_id
+    if uuid is not None:
+        payload["uuid"] = uuid
+    return payload
 
 
 class FakeFeishuClient:

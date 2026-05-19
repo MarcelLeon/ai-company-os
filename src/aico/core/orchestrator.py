@@ -37,6 +37,7 @@ from aico.core.models import (
     SentMessage,
     Task,
 )
+from aico.core.offline_delegation import OfflineDelegationCommandHandler
 from aico.core.orchestrator_commands import DirectoryCommandHandler
 from aico.core.project_assignment import (
     AssignmentProfile,
@@ -120,6 +121,12 @@ class Orchestrator:
             channel=self._channel,
             project_directory=self._project_directory,
             memory_store=self._memory_store,
+        )
+        self._offline_delegations = OfflineDelegationCommandHandler(
+            channel=self._channel,
+            project_directory=self._project_directory,
+            task_for_assignment=self._internal_task_for_assignment,
+            run_delegated_task=self._run_delegated_task,
         )
         self._memory_capture = (
             MemoryCaptureService(self._memory_store) if self._memory_store is not None else None
@@ -311,6 +318,19 @@ class Orchestrator:
     async def _run_target_task(self, message: IncomingMessage, task: Task) -> None:
         await self._run_task(message, task, include_target=True)
 
+    async def _run_delegated_task(
+        self,
+        message: IncomingMessage,
+        task: Task,
+        session: AgentSession | None,
+    ) -> None:
+        await self._run_task(
+            message,
+            task,
+            include_target=True,
+            session_id=None if session is None else session.session_id,
+        )
+
     async def _run_project_role_task(
         self,
         message: IncomingMessage,
@@ -460,11 +480,17 @@ class Orchestrator:
     ) -> AgentSession:
         session_id = self._assignment_sessions.get(assignment.seat)
         session = None if session_id is None else self._session_store.get(session_id)
-        if session is not None:
-            return session
-
         card = self._agent_directory.resolve(target_agent)
         adapter_name = assignment.agent if card is None else card.adapter_name
+        if (
+            session is not None
+            and session.agent_name == target_agent
+            and session.adapter_name == adapter_name
+        ):
+            return session
+
+        if session is not None:
+            self._session_store.close(session.session_id)
         session = self._session_store.create(
             agent_name=target_agent,
             adapter_name=adapter_name,
@@ -621,6 +647,8 @@ async def _handle_command(
         await orchestrator._project_commands.handle_daily(message, command.payload or None)
     elif command.name is CommandName.WEEKLY:
         await orchestrator._project_commands.handle_weekly(message, command.payload or None)
+    elif command.name is CommandName.OVERNIGHT:
+        await orchestrator._offline_delegations.handle_overnight(message, command.payload)
     elif command.name is CommandName.ROLES:
         await orchestrator._project_commands.handle_roles(message, command.payload or None)
     elif command.name is CommandName.ROLE:

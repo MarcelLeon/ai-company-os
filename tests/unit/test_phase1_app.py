@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from aico.adapter.claude_code import ClaudeCodeAdapter
@@ -7,6 +8,7 @@ from aico.adapter.cursor import CursorAdapter
 from aico.adapter.gemini import GeminiAdapter
 from aico.adapter.trae import TraeAdapter
 from aico.app.phase1 import Phase1Settings, build_phase1_runtime, configure_logging
+from aico.channel.feishu import FeishuChannel
 from aico.channel.telegram import TelegramChannel
 from aico.core import (
     AuditEventType,
@@ -122,6 +124,19 @@ def test_phase1_runtime_configures_file_logging(tmp_path: Path) -> None:
     assert log_path.read_text(encoding="utf-8")
 
 
+def test_phase1_logging_suppresses_http_client_info_logs(tmp_path: Path) -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        log_level="INFO",
+        log_path=tmp_path / "aico.log",
+    )
+
+    configure_logging(settings)
+
+    assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING
+    assert logging.getLogger("httpcore").getEffectiveLevel() == logging.WARNING
+
+
 def test_phase1_empty_log_path_disables_file_logging() -> None:
     settings = Phase1Settings.model_validate({"telegram_bot_token": "token", "log_path": ""})
 
@@ -205,6 +220,35 @@ def test_build_phase1_runtime_wires_telegram_channel_and_claude_adapter() -> Non
     assert runtime.channel.name == "telegram"
     assert runtime.adapter.name == "claude-code"
     assert runtime.session_store.list() == ()
+
+
+def test_build_phase1_runtime_wires_feishu_channel() -> None:
+    settings = Phase1Settings(
+        channel="feishu",
+        feishu_app_id="app-id",
+        feishu_app_secret="app-secret",
+        feishu_verification_token="verify-token",
+        claude_command="claude -p",
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    assert isinstance(runtime.channel, FeishuChannel)
+    assert runtime.channel.name == "feishu"
+
+
+def test_build_phase1_runtime_requires_feishu_credentials() -> None:
+    settings = Phase1Settings(
+        channel="feishu",
+        claude_command="claude -p",
+    )
+
+    try:
+        build_phase1_runtime(settings)
+    except ValueError as exc:
+        assert "AICO_FEISHU_APP_ID is required" in str(exc)
+    else:
+        raise AssertionError("expected missing Feishu settings to fail")
 
 
 def test_build_phase1_runtime_can_enable_codex_adapter_for_status() -> None:

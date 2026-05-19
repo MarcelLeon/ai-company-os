@@ -11,7 +11,9 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
+import httpx
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -22,6 +24,8 @@ from aico.adapter.codex import CodexAdapter
 from aico.adapter.cursor import CursorAdapter
 from aico.adapter.gemini import GeminiAdapter
 from aico.adapter.trae import TraeAdapter
+from aico.channel import IMChannel
+from aico.channel.feishu import FeishuChannel
 from aico.channel.telegram import TelegramChannel
 from aico.core import (
     AdapterRegistry,
@@ -56,9 +60,17 @@ class Phase1Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="AICO_", env_file=".env", extra="ignore")
 
-    telegram_bot_token: str = Field(min_length=1)
+    channel: Literal["telegram", "feishu"] = "telegram"
+    telegram_bot_token: str | None = Field(default=None, min_length=1)
     default_persona: str = Field(default="claude-code", min_length=1)
     telegram_poll_timeout_seconds: int = Field(default=30, gt=0)
+    feishu_app_id: str | None = Field(default=None, min_length=1)
+    feishu_app_secret: str | None = Field(default=None, min_length=1)
+    feishu_verification_token: str | None = Field(default=None, min_length=1)
+    feishu_api_base_url: str = Field(default="https://open.feishu.cn", min_length=1)
+    feishu_webhook_host: str = Field(default="0.0.0.0", min_length=1)
+    feishu_webhook_port: int = Field(default=8080, gt=0)
+    feishu_event_path: str = Field(default="/feishu/events", min_length=1)
     claude_command: str = Field(
         default="claude -p --output-format text --permission-mode bypassPermissions",
         min_length=1,
@@ -139,7 +151,7 @@ def _split_command(command_text: str) -> tuple[str, ...]:
 
 @dataclass
 class Phase1Runtime:
-    channel: TelegramChannel
+    channel: IMChannel
     adapter: ClaudeCodeAdapter
     registry: AdapterRegistry
     persona_registry: PersonaRegistry
@@ -155,11 +167,12 @@ class Phase1Runtime:
         await self.channel.stop()
 
 
-def build_phase1_runtime(settings: Phase1Settings) -> Phase1Runtime:
-    channel = TelegramChannel(
-        settings.telegram_bot_token,
-        poll_timeout_seconds=settings.telegram_poll_timeout_seconds,
-    )
+def build_phase1_runtime(
+    settings: Phase1Settings,
+    *,
+    feishu_client: httpx.AsyncClient | None = None,
+) -> Phase1Runtime:
+    channel = _build_channel(settings, feishu_client=feishu_client)
     adapter = ClaudeCodeAdapter(
         command=settings.claude_command_tuple(),
         cwd=settings.claude_working_directory,
@@ -242,6 +255,33 @@ def build_phase1_runtime(settings: Phase1Settings) -> Phase1Runtime:
     )
 
 
+def _build_channel(
+    settings: Phase1Settings,
+    *,
+    feishu_client: httpx.AsyncClient | None = None,
+) -> IMChannel:
+    match settings.channel:
+        case "telegram":
+            if settings.telegram_bot_token is None:
+                raise ValueError("AICO_TELEGRAM_BOT_TOKEN is required when AICO_CHANNEL=telegram")
+            return TelegramChannel(
+                settings.telegram_bot_token,
+                poll_timeout_seconds=settings.telegram_poll_timeout_seconds,
+            )
+        case "feishu":
+            if settings.feishu_app_id is None:
+                raise ValueError("AICO_FEISHU_APP_ID is required when AICO_CHANNEL=feishu")
+            if settings.feishu_app_secret is None:
+                raise ValueError("AICO_FEISHU_APP_SECRET is required when AICO_CHANNEL=feishu")
+            return FeishuChannel(
+                app_id=settings.feishu_app_id,
+                app_secret=settings.feishu_app_secret,
+                verification_token=settings.feishu_verification_token,
+                api_base_url=settings.feishu_api_base_url,
+                client=feishu_client,
+            )
+
+
 async def run_phase1(settings: Phase1Settings) -> None:
     configure_logging(settings)
     runtime = build_phase1_runtime(settings)
@@ -255,7 +295,7 @@ async def run_phase1(settings: Phase1Settings) -> None:
 def main() -> None:
     _parse_args()
     try:
-        asyncio.run(run_phase1(Phase1Settings()))  # type: ignore[call-arg]
+        asyncio.run(run_phase1(Phase1Settings()))
     except KeyboardInterrupt:
         return
 
@@ -279,6 +319,8 @@ def configure_logging(settings: Phase1Settings) -> None:
         handlers=handlers,
         force=True,
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger(__name__).info(
         "AICO runtime logging configured: level=%s path=%s",
         settings.log_level.upper(),

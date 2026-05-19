@@ -76,18 +76,40 @@ Cursor 需要本机安装并登录 `cursor-agent`;CodeFlicker 需要本机 `flic
 
 写文件、shell 或 destructive 任务发给这些 Adapter 时,应先进入 `waiting_approval`。确认任务无误后再 `/approve <short_task_id>`;如果只是分析/总结,请在 prompt 里明确 `do not edit files`。
 
-### Feishu Channel 第一切片
+### Feishu Channel
 
 Round 67 选择飞书作为第一个非 Telegram Channel,原因是官方 Server API 和事件订阅文档较完整,企业自建应用 + bot 的文本收发路径清晰。
 
-当前已实现 `FeishuChannel` 插件,覆盖:
+当前已实现 `FeishuChannel` 插件和 webhook runtime,覆盖:
 - `tenant_access_token` 获取。
 - 通过 chat id 发送文本消息。
 - 文本消息编辑 / 删除。
 - URL verification challenge。
 - `im.message.receive_v1` 文本事件转 `IncomingMessage`。
+- `aico-feishu-webhook` FastAPI 入口,提供 `/healthz` 和默认 `/feishu/events` 事件回调。
+- Feishu 事件幂等:2.0 事件按 `header.event_id` 去重,1.0 事件按 `uuid` 去重,默认本地保留 8 小时。
 
-真实端到端接入还需要后续部署层把飞书事件 callback 路由到 `FeishuChannel.handle_event(payload)`。本轮不要把 Feishu 直接塞进 `aico-phase1` long-polling 生命周期;Telegram 仍是当前主控入口。
+飞书启动示例:
+
+```bash
+export AICO_CHANNEL=feishu
+export AICO_FEISHU_APP_ID="你的 Feishu App ID"
+export AICO_FEISHU_APP_SECRET="你的 Feishu App Secret"
+export AICO_FEISHU_VERIFICATION_TOKEN="你的 Verification Token"
+export AICO_FEISHU_EVENT_PATH="/feishu/events"
+export AICO_FEISHU_WEBHOOK_HOST="0.0.0.0"
+export AICO_FEISHU_WEBHOOK_PORT=8080
+export AICO_CLAUDE_WORKING_DIRECTORY="/Users/wangzq/VsCodeProjects/ai-company-os"
+export AICO_PERSONA_CONFIG_PATH="config/personas.example.json"
+export AICO_PROJECT_CONFIG_PATH="config/projects.example.json"
+export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
+export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
+env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11 aico-feishu-webhook
+```
+
+Feishu 不是 long polling,需要把公网 HTTPS callback 转到本机或部署实例的 `http://<host>:8080/feishu/events`,然后在飞书开放平台事件订阅里配置这个 URL。URL verification 通过后,订阅 `im.message.receive_v1`,向机器人所在聊天发送文本,应能收到 AICO 的文本回复。Telegram 仍可继续用 `aico-phase1` 作为默认主控入口;飞书是独立 webhook 进程。
+
+如果飞书事件日志显示重试,同一个 `header.event_id` 或 `uuid` 不应在 AICO 侧触发两次任务。该幂等缓存是进程内缓存,覆盖飞书常见重试窗口;进程重启后的极端重复投递仍可能重新进入 Orchestrator,后续如需要可升级为 audit / JSONL backed 去重。
 
 本地排查同一份审计指标时可直接跑:
 
@@ -128,6 +150,7 @@ tail -f logs/aico.log
 /next
 /daily
 /weekly
+/overnight 梳理当前项目下一步,早上给我 done/blocked/risks/next actions
 /roles
 /roles all
 /role implementer
@@ -214,6 +237,8 @@ Project Team / Appointment 命令用于项目办公室语义:
 - `/next [project]` 查看下一步建议动作,优先提示待审批、失败任务、路由/配置问题;没有卡点时建议把任务交给当前 lead role。顶部会尝试生成 `Boss summary`,下方 `Facts` 保留原始事实并渲染小节标题 / slash command 样式。
 - `/daily [project]` 查看日报式项目报告,聚合最近 24 小时本地 AICO 状态里的团队、完成项、未完成项、风险和项目文档短片段。顶部会尝试生成 `Boss summary`,下方 `Facts` 保留原始事实并渲染小节标题 / slash command 样式。
 - `/weekly [project]` 查看周报式项目报告,聚合最近 7 天本地 AICO 状态里的团队、完成项、未完成项、风险和项目文档短片段。顶部会尝试生成 `Boss summary`,下方 `Facts` 保留原始事实并渲染小节标题 / slash command 样式。
+- `/overnight <goal>` 创建 Phase 8 离线托管工单,把目标派给当前项目 lead/default role。它不是自动越权执行器;写文件、执行命令或破坏性动作仍会进入 `/approve`。早上用 `/daily <project>`、`/tasks`、`/task <id>` 验收。
+- `/overnight` 不带目标时,展示当前 active project 在本进程内最近的托管工单和早报入口。
 - `/project`、`/team`、`/roles`、`/role <id>` 这类查看命令末尾会给出简短 `Next` 指导命令,帮助顺手进入 brief/team/next/daily/weekly、appoint、ask、lead 等下一步。
 - `/roles [project]` 查看紧凑项目岗位板,默认只展示核心/专家岗位;`/roles all` 展示支持岗位和全部 role。
 - `/role <id>` 查看单个岗位详情,包括 owner、scope、approval 和 risk ladder;若该 role 已任命,可按 Next 提示用 `/appoint <agent> as <role> <scope>` 覆盖 scope。
@@ -381,6 +406,34 @@ tail -n 20 /tmp/aico-audit.jsonl
 # 自检命令
 # 验证所有 Adapter 可达
 # 验证所有 Channel 可达
+```
+
+---
+
+## 开源主 Demo:Release Room
+
+主 demo 位于 `examples/release-room`,用于展示在 IM 中远程管理 AI team 完成小型
+开源 CLI 的 v0.2 release。
+
+```bash
+export AICO_PROJECT_CONFIG_PATH="examples/release-room/aico-project.json"
+export AICO_MEMORY_PATH="/tmp/aico-release-room-memory.jsonl"
+export AICO_AUDIT_LOG_PATH="/tmp/aico-release-room-audit.jsonl"
+```
+
+按 [`docs/playbooks/release-room-demo.md`](../playbooks/release-room-demo.md) 执行。核心验收路径:
+
+```text
+/use project release-room
+/team
+/remember v0.2 不接受没有测试的功能。
+/ask pm 阅读 STATUS.md 和 issues/003-v02-release.md，把 v0.2 拆成角色任务、验收标准和风险清单。
+/ask implementer 实现 v0.2 的 tags/search/export JSON，修复 unknown id done 的退出码问题，并补测试。
+/ask tester 根据 tests/test_v02_contract.py 设计回归验证，运行必要测试并报告失败项。
+/ask reviewer review v0.2 release 风险，重点检查行为回归、测试缺口和 README/CHANGELOG 一致性。
+/overnight 推进 v0.2 release room，早上给我 done/blocked/risks/next actions。
+/daily release-room
+/audit
 ```
 
 ---

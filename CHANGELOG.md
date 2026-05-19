@@ -108,6 +108,14 @@
 - Phase 7 共享记忆验收流:新增企业/团队管理 acceptance test,覆盖跨项目隔离、老板偏好、candidate 不注入、team broadcast、JSONL 重启恢复和 A2A memory refs 回退
 - `/remember` 未启用 `AICO_MEMORY_PATH` 时返回可执行的重启配置提示,Quickstart 也默认展示 memory path 配置
 - Phase 7 记忆召回升级为可插拔 `MemorySemanticScorer`,默认支持中文长句复述和常见中英项目管理术语别名
+- Feishu webhook runtime:新增 `AICO_CHANNEL=feishu`、`aico-feishu-webhook`、`/healthz` 和默认 `/feishu/events` 事件回调入口,飞书文本事件可进入现有 Orchestrator。
+- Feishu webhook 事件幂等:按 v2 `header.event_id` 或 v1 `uuid` 做本地 TTL 去重,避免平台重试重复触发 AICO 任务。
+- Phase 8 离线托管第一切片:新增 `/overnight <goal>` project-scoped 托管工单,派给当前 lead/default role,并固定早报验收入口 `/daily`、`/tasks`、`/task`。
+- Release Room 主 demo 第一阶段:新增 `examples/release-room` 示例项目、AICO project/team 配置、demo script、录屏 storyboard、`docs/examples/release-room.md` 和 release-room playbook,用于展示 project/team/role/memory/approval/audit/overnight handoff 的完整协作路径。
+- Release Room 主 demo 第二阶段:新增本地 acceptance test 和 `examples/release-room/transcript.md`,用 fake adapters 验证 `/team`、`/remember`、`/ask`、`/approve`、`/overnight`、`/daily`、`/tasks`、`/metrics`、`/audit` 管理链路。
+- Release Room Stage 3 录屏准备:新增 `shot-rhythm.md` 和 `make-gif.sh`,把 Stage 2 transcript 压成 30-60 秒 README GIF 镜头节奏,并用本机 `ffmpeg` 完成 GIF 转换。
+- Release Room Stage 3 真实 Telegram dogfooding 记录:project office、team、project memory 和 `/interrupt` 跑通;真实 provider 输出阻塞 public GIF 已记录为 B-003 / P-017。
+- Release Room Stage 3 Codex 输出清理:避免 Codex resume 非 Codex provider session,过滤 CLI warning / HTML / resume error 噪音,并在同一 role 改任命到不同 agent 后重建 assignment session。
 
 ### Changed
 - 将扁平化文档归位到 `docs/agent` / `docs/journal` / `docs/architecture` / `docs/human`
@@ -116,6 +124,7 @@
 - 将 `/brief` / `/risks` / `/blockers` / `/next` / `/daily` / `/weekly` 命令处理从 `ProjectCommandHandler` 拆到 `ProjectStatusCommandHandler`,集中项目状态与报告逻辑
 - `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 可配置 Codex accepted 后无 stdout 的空闲超时秒数
 - Cursor / CodeFlicker Adapter 从只读 MVP 升级为完整 `code_edit` / `shell_exec` 能力,危险任务仍先走 AICO `/approve`
+- `configure_logging()` 现在将 `httpx` / `httpcore` logger 降到 WARNING,避免 INFO 日志把 Telegram Bot API token URL 写入文件日志。
 - 项目办公室关键消息现在使用 render hints 标记首行标题,`/role propose` 消息带 Confirm / Discard actions
 - 项目状态 LLM summary 会保留完整 `Facts` 原文;summary 失败时降级为原事实消息,不阻塞状态查询
 - Boss summary 中的轻量 Markdown 会转换为 render spans,避免 `**bold**`、反引号和列表标记在 Telegram 中裸露

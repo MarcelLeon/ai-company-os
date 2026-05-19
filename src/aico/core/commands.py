@@ -21,6 +21,7 @@ class CommandName(StrEnum):
     NEXT = "next"
     DAILY = "daily"
     WEEKLY = "weekly"
+    OVERNIGHT = "overnight"
     ASSIGNMENTS = "assignments"
     ASSIGNMENT = "assignment"
     ROLES = "roles"
@@ -70,6 +71,7 @@ def parse_command(text: str) -> Command | None:
         CommandName.BLOCKERS,
         CommandName.DAILY,
         CommandName.WEEKLY,
+        CommandName.OVERNIGHT,
         CommandName.ASSIGNMENTS,
         CommandName.ROLES,
         CommandName.TEAM,
@@ -113,6 +115,7 @@ def help_text() -> str:
         "/next [project] - suggest next project actions from local state\n"
         "/daily [project] - show a daily local project report\n"
         "/weekly [project] - show a weekly local project report\n"
+        "/overnight <goal> - delegate an offline project goal to the current lead\n"
         "/roles [project|all] - show compact role board; add all for hidden roles\n"
         "/role <id> - show one role's scope and approval policy\n"
         "/role propose <need> - draft a new project role for confirmation\n"

@@ -1263,6 +1263,91 @@ async def test_orchestrator_reports_daily_and_weekly_project_state() -> None:
     assert "context:" in weekly
 
 
+async def test_orchestrator_queues_overnight_delegation_to_project_lead() -> None:
+    adapter = ScriptedAdapter(name="claude-code", output_texts=("overnight done",))
+    channel = RecordingChannel()
+    store = InMemoryAgentSessionStore(session_id_factory=lambda: "overnight-session-1")
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-night-1"),
+        task_bus=TaskBus(adapter),
+        session_store=store,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        provider_session_factory=lambda session: ProviderSessionRef(
+            provider_name="claude-code",
+            session_id=session.session_id,
+        ),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/overnight finish the phase 8 plan", mentions=())
+    )
+    await orchestrator.handle_incoming(_incoming_message(text="/overnight", mentions=()))
+
+    queued = channel.sent_messages[1].text
+    task = adapter.received_tasks[0]
+    provider = provider_session_from_task(task)
+
+    assert queued.startswith("Overnight delegation queued: night-task-nig\n")
+    assert "project: aico [AI Company OS]\n" in queued
+    assert "lead: implementer -> claude\n" in queued
+    assert "tracking: /task task-nig\n" in queued
+    assert "Morning:\n- /daily aico\n- /tasks" in queued
+    assert "Offline delegation request for the project lead." in task.payload
+    assert "Boss goal: finish the phase 8 plan" in task.payload
+    assert "Leave a morning handoff with: done, blocked, risks, and next 3 actions." in task.payload
+    assert _metadata_value(task, "aico.intent") == "offline_delegation"
+    assert _metadata_value(task, "aico.offline_delegation_id") == "night-task-nig"
+    assert provider is not None
+    assert provider.mode is ProviderSessionMode.NEW
+    assert channel.sent_messages[-1].text.startswith("Overnight delegations for aico:\n")
+    assert "• night-task-nig: implementer -> claude (task-nig)" in channel.sent_messages[-1].text
+
+
+async def test_orchestrator_overnight_requires_active_project() -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-night"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/overnight finish the phase 8 plan", mentions=())
+    )
+
+    assert channel.sent_messages == [
+        MessageContent(text="No active project. Use /project <project> first.")
+    ]
+    assert adapter.received_tasks == []
+
+
+async def test_orchestrator_overnight_keeps_risky_goal_waiting_for_approval() -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-night-risk"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/overnight update docs", mentions=())
+    )
+
+    assert channel.sent_messages[1].text.startswith("Overnight delegation queued: night-task-nig\n")
+    assert channel.sent_messages[2].text.startswith("Approval required: task-nig\n")
+    assert adapter.received_tasks == []
+
+
 async def test_orchestrator_routes_plain_message_to_active_project_default_assignment() -> None:
     adapter = ScriptedAdapter(name="claude-code")
     channel = RecordingChannel()
@@ -1304,6 +1389,107 @@ async def test_orchestrator_routes_plain_message_to_active_project_default_assig
     assert second_provider is not None
     assert second_provider.session_id == first_provider.session_id
     assert second_provider.mode is ProviderSessionMode.RESUME
+
+
+async def test_orchestrator_rebuilds_assignment_session_after_reappointing_role() -> None:
+    claude = ScriptedAdapter(name="claude-code", output_texts=("claude done",))
+    codex = ScriptedAdapter(name="codex", output_texts=("codex done",))
+    channel = RecordingChannel()
+    store = InMemoryAgentSessionStore(
+        session_id_factory=iter(("claude-session-1", "codex-session-1")).__next__
+    )
+    directory = AgentDirectory(
+        (
+            AgentCard(
+                name="claude",
+                adapter_name="claude-code",
+                provider_name="claude-code",
+                role_description="Role: implementer.",
+                aliases=("implementer",),
+            ),
+            AgentCard(
+                name="codex",
+                adapter_name="codex",
+                provider_name="codex",
+                role_description="Role: reviewer.",
+            ),
+        )
+    )
+    projects = ProjectAssignmentDirectory(
+        ProjectAssignmentConfig(
+            agents={
+                "claude": CompanyAgentProfile(
+                    id="claude",
+                    provider="claude-code",
+                    title="Claude",
+                ),
+                "codex": CompanyAgentProfile(id="codex", provider="codex", title="Codex"),
+            },
+            roles={"pm": RoleProfile(id="pm", title="Release PM")},
+            projects={
+                "release-room": ProjectProfile(
+                    id="release-room",
+                    name="Release Room",
+                    repo="/repo/release-room",
+                    default_role="pm",
+                    default_assignment="release-room-pm",
+                    roles={"pm": ProjectRoleProfile(role="pm")},
+                )
+            },
+            assignments=(
+                AssignmentProfile(
+                    project="release-room",
+                    agent="claude",
+                    role="pm",
+                    seat="release-room-pm",
+                ),
+            ),
+        )
+    )
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-pm"),
+        task_bus=TaskBus(
+            AdapterRegistry([claude, codex]),
+            persona_registry=PersonaRegistry(
+                (
+                    PersonaProfile(
+                        name="claude",
+                        adapter_name="claude-code",
+                        role_instruction="Role: implementer.",
+                    ),
+                    PersonaProfile(
+                        name="codex",
+                        adapter_name="codex",
+                        role_instruction="Role: reviewer.",
+                    ),
+                )
+            ),
+        ),
+        session_store=store,
+        agent_directory=directory,
+        project_directory=projects,
+        provider_session_factory=lambda session: ProviderSessionRef(
+            provider_name=session.adapter_name,
+            session_id=session.session_id,
+        ),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/use project release-room"))
+    await orchestrator.handle_incoming(_incoming_message(text="/ask pm first plan"))
+    await orchestrator.handle_incoming(_incoming_message(text="/appoint codex as pm docs audit"))
+    await orchestrator.handle_incoming(_incoming_message(text="/ask pm second plan"))
+
+    claude_provider = provider_session_from_task(claude.received_tasks[0])
+    codex_provider = provider_session_from_task(codex.received_tasks[0])
+
+    assert claude_provider is not None
+    assert claude_provider.provider_name == "claude-code"
+    assert claude_provider.mode is ProviderSessionMode.NEW
+    assert codex_provider is not None
+    assert codex_provider.provider_name == "codex"
+    assert codex_provider.session_id == "codex-session-1"
+    assert codex_provider.mode is ProviderSessionMode.NEW
 
 
 async def test_orchestrator_injects_project_memory_for_active_project_task(
