@@ -1,0 +1,76 @@
+name: Bug report
+description: Report a reproducible AICO behavior bug.
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please focus on the smallest reproducible flow.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+      placeholder: "Telegram /ask reviewer ... returned ..."
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Adapter
+        - Channel
+        - Project office
+        - Approval / audit
+        - Memory
+        - Offline delegation
+        - Metrics / observability
+        - Docs / setup
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include IM commands, adapter flags, and a minimal config if relevant.
+      placeholder: |
+        1. Start with AICO_ENABLE_CODEX_ADAPTER=true
+        2. Send /project aico
+        3. Send /ask ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Redact tokens and secrets.
+      placeholder: |
+        OS:
+        Python:
+        AICO commit:
+        Channel:
+        Enabled adapters:
+        Claude Code / Codex / other CLI version:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or audit events
+      description: Paste only redacted logs, task ids, or audit snippets.
+      render: text

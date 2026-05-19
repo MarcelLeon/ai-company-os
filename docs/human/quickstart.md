@@ -1,64 +1,99 @@
-# Quickstart — 5 分钟跑起来
+# Quickstart - 5 分钟跑起来
 
-> 给人类看的快速上手文档。当前最小链路是 Telegram → 编排核心 → Claude Code / Codex。
+> 给人类看的快速上手文档。当前最小公开路径是 Telegram -> AICO 编排核心 -> Claude Code / Codex。
 
 ---
 
 ## 当前阶段说明
 
-项目当前处于 Phase 3 早期:Phase 1 单链路和 Phase 2 双 Adapter 已通过真实 Telegram 验收,Phase 3 已有 Persona 与 `/broadcast` 的本地实现,等待真实 Telegram smoke test。
+项目当前处于 Phase 8:离线托管 + 开源主 Demo。Telegram 主控、Claude Code / Codex
+Adapter、项目办公室、审批审计、共享记忆、任务观测和 Release Room Demo 都已经落地。
+Cursor / CodeFlicker / Trae / Gemini Adapter 已完成真实 smoke test,可作为已登录本机
+CLI 后的可选成员启用。Feishu Channel 已有实现切片,但仍需要真实生产 smoke test 后再作为
+稳定公开路径推荐。
 
 ---
 
 ## 5 步快速上手
 
 ### 前置依赖
+
 - macOS / Linux
-- Python 3.11+(见 ADR-0001)
+- Python 3.11+
+- `uv`
 - Telegram Bot Token([如何创建](https://core.telegram.org/bots/tutorial))
 - Claude Code 已安装并能在命令行使用
-- Codex CLI 已安装并能在命令行使用(启用双 Adapter / broadcast 时需要)
+- Codex CLI 已安装并能在命令行使用(启用 Codex Adapter 时需要)
 
 ```bash
 # 1. clone 仓库
-git clone <repo-url>
+git clone https://github.com/MarcelLeon/ai-company-os.git
 cd ai-company-os
 
 # 2. 配置环境变量
 export AICO_TELEGRAM_BOT_TOKEN="你的 Telegram Bot Token"
+export AICO_CLAUDE_WORKING_DIRECTORY="$PWD"
 export AICO_ENABLE_CODEX_ADAPTER=true
-export AICO_CLAUDE_WORKING_DIRECTORY="/Users/wangzq/VsCodeProjects/ai-company-os"
 export AICO_PERSONA_CONFIG_PATH="config/personas.example.json"
 export AICO_PROJECT_CONFIG_PATH="config/projects.example.json"
+export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
 export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
 
 # 3. 安装依赖
-env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python /opt/homebrew/bin/python3.11
+env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
 
-# 4. 启动服务
-env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11 aico-phase1
+# 4. 启动 Telegram runtime
+env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
 
 # 5. 在 Telegram 找你的 Bot,发送命令
 # /help
 ```
 
-常用命令:
+### 常用命令
 
 ```text
+/help
 /status
-/use project aico
-/remember Phase 7 memory is enabled.
-/recall phase 7
-/claude summarize this repo in one sentence
-/codex summarize this repo in one sentence
-/broadcast summarize this repo in one sentence
+/project aico
+/team
+/roles
+/ask pm summarize the next release plan in 3 bullets
+/remember This project prefers small, reviewable changes.
+/recall project preferences
+/tasks
+/metrics
+/audit
+/overnight 梳理当前项目下一步,早上给我 done/blocked/risks/next actions
 ```
 
-预期效果:Bot 把请求派发给对应 persona / Adapter,执行结果回到 Telegram。`/status` 会显示 Adapter 状态和最近任务状态。
-指定 `AICO_MEMORY_PATH` 后,`/remember` / `/recall` / `/forget` 会使用本地 JSONL 共享记忆;如果启动时没带这个环境变量,运行中的 Bot 需要重启后才会启用记忆。
+预期效果:
+
+- Bot 把请求派发给对应 persona / Adapter,执行结果回到 Telegram。
+- `/status` 展示 Adapter 状态和最近任务状态。
+- `/project` / `/team` 展示当前项目办公室和团队任命。
+- 写文件、shell 或 destructive 任务会先进入 `/approve` / `/reject` 审批流。
+- 指定 `AICO_MEMORY_PATH` 后,`/remember` / `/recall` / `/forget` 使用本地 JSONL
+  共享记忆;如果启动时没带这个环境变量,运行中的 Bot 需要重启后才会启用记忆。
+
+---
+
+## 启用更多 Adapter
+
+这些 Adapter 默认关闭,适合在本机 CLI 已安装并登录后再开启:
+
+```bash
+export AICO_ENABLE_CURSOR_ADAPTER=true
+export AICO_ENABLE_CODEFLICKER_ADAPTER=true
+export AICO_ENABLE_TRAE_ADAPTER=true
+export AICO_ENABLE_GEMINI_ADAPTER=true
+```
+
+公开 README 当前仍把 Claude Code / Codex 作为最低门槛快速路径。Cursor / CodeFlicker /
+Trae / Gemini 已完成真实 smoke test,但使用前仍需要确认本机 CLI 已安装并登录;详见
+[`STATUS.md`](../../STATUS.md)。
 
 ---
 
 ## 跑不起来怎么办
 
-参见 [`troubleshooting.md`](troubleshooting.md)。
+参见 [`troubleshooting.md`](troubleshooting.md) 和 [`daily-ops.md`](daily-ops.md)。

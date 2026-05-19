@@ -1,0 +1,54 @@
+name: Feature request
+description: Propose an AICO capability or workflow.
+title: "[feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        AICO is intentionally narrow: remote IM control for local AI agent teams. Please anchor requests in that product frame.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What real developer workflow pain does this solve?
+      placeholder: "When I leave my laptop, I cannot ..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful version.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Capability type
+      options:
+        - New AI adapter
+        - New IM channel
+        - Project office workflow
+        - Approval / audit / safety
+        - Memory
+        - Offline delegation
+        - Observability
+        - Docs / onboarding
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: User-facing flow
+      description: What commands, messages, or UI should a developer use?
+      placeholder: |
+        /project my-repo
+        /appoint ...
+        /ask ...
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Tradeoffs and risks
+      description: Mention security, permissions, scope creep, or setup cost if relevant.

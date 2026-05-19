@@ -69,9 +69,14 @@ Release Room 更像真实工作:
 
 ### Stage 3: Public Showcase
 
-下一阶段应补:
+当前阶段已落地:
 
-- 按 `shot-rhythm.md` 录制 30-60 秒动态图:组队、记忆、派工、审批、早报。
-- README 首页嵌入 release-room 截图或 GIF。
+- 按 `shot-rhythm.md` 录制真实 Telegram dogfooding GIF:组队、记忆、派工、日报、审计。
+- README 首页已嵌入 `docs/assets/release-room-demo.gif`。
 - 没有 `gifski` 时可用 `examples/release-room/make-gif.sh` 调 `ffmpeg` 转 GIF。
+
+后续可继续优化:
+
+- 复剪更干净的 public GIF,减少旧聊天记录露出。
+- 补更清晰的 approval gate 镜头。
 - 可选:脚本化生成 demo audit JSONL,用于 `/metrics` / `aico-glance` 展示。

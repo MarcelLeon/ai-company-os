@@ -4635,3 +4635,86 @@
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 93。
 - Release Room Stage 3 GIF 从待办改为已完成。
+
+## Round 94 — 2026-05-19 — Codex
+
+### 输入
+- 人类要求按开源转化建议改一版,并继续从“AI agent 开发者 / 个人开发者”视角复盘问题。
+- 观察到当前 README 仍偏内部项目说明,外部开发者第一眼还不容易理解“为什么要 star / 为什么要试用”。
+
+### 思考与讨论
+- 候选 A:只在中文 README 里补几段痛点 → ❌ **否决**:项目刚公开到 GitHub,全球 agent 开发者第一眼通常先看英文首屏;只补中文会限制传播和 star 转化。
+- 候选 B:把 README 写成完整产品官网式长文 → ❌ **否决**:仓库入口应让开发者快速判断价值、状态和怎么跑,过重营销会削弱工程可信度。
+- 候选 C:英文主 README + 中文镜像 + Quickstart 状态修正 + License → ✅ **选定**:最小范围内补齐外部开源信任和第一眼转化。
+
+### 产出
+- 重写 `README.md` 为英文主入口,突出 remote control room、真实本机 Adapter、审批审计、项目办公室、共享记忆和离线托管。
+- 新增 `README.zh-CN.md`,保留中文叙事并同步痛点、差异化、当前能力、Quickstart 和路线图。
+- 新增 `LICENSE`,采用 MIT License。
+- 新增 `SECURITY.md`,说明审批绕过、命令执行、token 泄露等问题的私下报告路径和安全边界。
+- 新增 GitHub issue templates:`bug_report.yml`、`feature_request.yml` 和 `config.yml`。
+- 更新 `docs/human/quickstart.md`,移除 Phase 3 旧状态和本机绝对路径,改为当前 Phase 8 公开快速路径。
+- 更新 `docs/examples/release-room.md`,将 Stage 3 public showcase 状态同步为已落地,后续改为复剪和增强项。
+- 更新 `STATUS.md`,记录开源首屏第一版并把下一轮建议调整为外部视角二次验收。
+
+### 验证结果
+- 本轮是文档与开源入口改造,未改核心代码。
+- `git diff --check`:passed。
+- `uv run pytest tests/unit/test_release_room_example.py tests/unit/test_release_room_acceptance.py`:4 passed。
+- `uv run ruff check .`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:GitHub 主 README 使用英文,中文入口放 `README.zh-CN.md`。
+- 🔒 **决策 2**:公开叙事先占住“远程指挥本机真实 AI 工具团队”,不泛化成大而全 Agent OS。
+- 🔒 **决策 3**:`/overnight` 等能力在 README 中明确标注仍有持久化 / 重启恢复缺口,避免过度承诺。
+
+### 留给下一轮
+- 从全新 clone 跑一次 Quickstart,记录外部开发者真实卡点。
+- 补 GitHub metadata、PR template、good first issue 列表和更短的 public roadmap 摘要。
+- 复剪 Release Room GIF,减少旧聊天记录露出并补更清晰的 approval gate 镜头。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 94。
+- Open-source Showcase 增加开源首屏第一版完成项,包含 License / Security / issue templates。
+
+## Round 95 — 2026-05-19 — Codex
+
+### 输入
+- 人类确认 Cursor / CodeFlicker / Trae / Gemini 真实 smoke test 已完成,要求把公开状态从 pending 改掉。
+- 人类要求补安全模型图、3 个“今天能干什么”的具体场景,并说明 GitHub description / topics / social preview 怎么手动配置。
+- 人类要求完成后 push 到 GitHub。
+
+### 思考与讨论
+- 候选 A:只改 README 中的 pending 文案 → ❌ **否决**:Quickstart 和 STATUS 也有同一状态,只改 README 会导致公开入口和交接状态不一致。
+- 候选 B:把 GitHub metadata 写进 README 顶部 → ❌ **否决**:description / topics / social preview 是仓库外部 metadata,放在 README 顶部会干扰读者主线。
+- 候选 C:README 补核心内容,另建 GitHub publication checklist → ✅ **选定**:README 保持产品入口,具体可复制配置和官方约束放到 human 文档。
+
+### 产出
+- 更新 `README.md` / `README.zh-CN.md`:
+  - Cursor / CodeFlicker / Trae / Gemini Adapter 状态改为真实 smoke test 已完成。
+  - 新增 `Use It Today` / `今天能拿它做什么`,覆盖维护开源项目、睡前托管 bugfix、通勤路上审批 release。
+  - 新增 Mermaid 安全模型图:IM sender -> IMChannel -> approval policy -> adapter capability -> local CLI -> audit log。
+  - Roadmap 移除 Cursor / CodeFlicker / Trae / Gemini smoke test,改为 public setup / PR template / good first issue / adapter authoring / no-token demo。
+- 更新 `docs/human/quickstart.md`,把 Cursor / CodeFlicker / Trae / Gemini 从待 smoke 改为已完成真实 smoke,但仍要求本机 CLI 已安装并登录。
+- 新增 `docs/human/github-publication.md`,提供 GitHub description、website、topics、social preview 文案和手动操作路径。
+- 更新 `STATUS.md`,把 Adapter smoke test 勾选完成,并从下一轮高优队列移除。
+
+### 验证结果
+- `rg -n "Cursor.*pending|smoke tests still|真实 smoke test 仍|完成 Cursor|待 smoke|roadmap" ...`:只剩正常 roadmap 文案,无 Adapter pending 残留。
+- `git diff --check`:passed。
+- `uv run pytest tests/unit/test_release_room_example.py tests/unit/test_release_room_acceptance.py`:4 passed。
+- `uv run ruff check .`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:已由人类确认的真实 smoke test 状态同步到 README / Quickstart / STATUS,不再作为下一轮待办。
+- 🔒 **决策 2**:GitHub metadata 配置不写成自动化承诺;当前用文档给管理员可复制步骤。
+- 🔒 **决策 3**:安全模型在 README 首屏之后展示,强调 AICO 是本机工具控制层而不是沙箱。
+
+### 留给下一轮
+- 生成或设计小于 1 MB 的 `1280 x 640` social preview 静态图。
+- 补 adapter authoring guide 和 no-token local demo。
+- 补 PR template 和 good first issue 列表。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 95。
+- Adapter 扩展中 Cursor / CodeFlicker / Trae / Gemini 真实 smoke test 从未完成改为完成。

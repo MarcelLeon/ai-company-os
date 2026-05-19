@@ -3,8 +3,8 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-05-18
-**当前轮次**:Round 93(Release Room Stage 3 real GIF)
+**最后更新**:2026-05-19
+**当前轮次**:Round 95(Open-source polish and adapter verification status)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 开源主 Demo
 
 ---
@@ -48,7 +48,7 @@
 - [x] 保持可扩展可插拔:新增 Adapter 只能通过 `AIAdapter`、`AdapterRegistry`、persona/project 配置接入,不能在核心编排里写某个工具专属分支。
 - [x] 为后续 OpenClaw 等 Adapter 留同样接入路径;先复制既有 Claude/Codex Adapter 模式,不要为了未来工具过早重构协议。
 - [x] 进入实现前先做 CLI / API 形态核验,并补 Adapter mock 单测。
-- [ ] Cursor / CodeFlicker / Trae / Gemini 真实 smoke test。
+- [x] Cursor / CodeFlicker / Trae / Gemini 真实 smoke test。
 
 ### B. Channel 扩展:降低 Telegram 单入口依赖
 
@@ -74,6 +74,8 @@
 - [x] Stage 3 真实 Telegram dogfooding 第一段:project office、team、project memory、interrupt 跑通;provider 输出问题已记录为 B-003。
 - [x] Stage 3 Codex 输出清理:修复跨 provider session resume、role 改任命 session 复用和 CLI warning/HTML 噪音入镜问题;真实 Telegram dry run 可用。
 - [x] Stage 3:真实 IM + Claude/Codex dogfooding 录屏,生成 README 首页可嵌入 GIF。
+- [x] 开源首屏第一版:英文主 README、中文 README、痛点/差异化/当前可用能力、Quickstart 状态修正、MIT License、SECURITY 和 issue templates。
+- [x] 开源首屏第二版:同步 Cursor / CodeFlicker / Trae / Gemini smoke test 已完成状态,补安全模型图、今日使用场景和 GitHub publication 手动配置指南。
 
 ---
 
@@ -968,20 +970,19 @@
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【高】Release Room Stage 3 GIF 复剪 / README 体验复核**:
+1. **【高】开源首屏二次验收:AI agent 开发者 / 个人开发者视角**:
+   - 检查 README 首屏是否在 30 秒内说清“远程指挥本机真实 AI 工具”。
+   - 按 `docs/human/github-publication.md` 手动补 GitHub metadata:description、topics、social preview、about link。
+   - 补外部贡献者基础设施:公开 roadmap 摘要、PR template、贡献者 first issue 列表。
+   - 用全新 clone + Telegram token 跑一次 Quickstart,记录外部开发者真实卡点。
+2. **【高】Release Room Stage 3 GIF 复剪 / README 体验复核**:
    - 已生成真实 Telegram dogfooding GIF: `docs/assets/release-room-demo.gif`,并嵌入 README。
    - 当前 GIF 是 35 秒实录剪辑,覆盖 `/use`、`/team`、project memory、Codex PM/tester 输出、`/daily` 和 `/audit`。
    - 下一轮可做一次更精剪版本:减少旧消息露出,补更清晰的 approval gate 镜头,并避免 read-only pytest 临时目录失败入镜。
    - 若继续录真实 CLI,优先让 Codex tester 使用可写临时目录或只做静态检查,不要在 read-only sandbox 里直接跑 pytest。
-2. **【高】Phase 8 `/overnight` 持久化与重启恢复**:
+3. **【高】Phase 8 `/overnight` 持久化与重启恢复**:
    - 让托管工单列表可从 audit JSONL 恢复,避免重启后 `/overnight` 看不到昨晚托管记录。
    - 继续保持危险动作必须 `/approve`,不因为离线托管放大权限。
-3. **【高】Cursor / CodeFlicker / Trae / Gemini 真实 smoke test**:
-   - 安装并登录 `cursor-agent`,启动 `AICO_ENABLE_CURSOR_ADAPTER=true`,在 Telegram 发送 `/agents`、`/cursor summarize this repo in one sentence, do not edit files` 和一个写文件审批任务。
-   - 确认 `flickcli` 已登录,启动 `AICO_ENABLE_CODEFLICKER_ADAPTER=true`,在 Telegram 发送 `/agents`、`/codeflicker summarize this repo in one sentence, do not edit files` 和一个写文件审批任务。
-   - 确认 `trae-cli` 已登录 / token 可用,启动 `AICO_ENABLE_TRAE_ADAPTER=true`,跑只读和写能力审批 smoke test。
-   - 确认 `gemini` 已登录 / API key 可用,启动 `AICO_ENABLE_GEMINI_ADAPTER=true`,跑只读和写能力审批 smoke test。
-   - 观察 `/status`、`/tasks`、idle timeout 和日志,确认失败时能释放 busy。
 4. **【高】Feishu Channel 部署层与真实 smoke test**:
    - 用 FastAPI route 或现有部署入口把飞书事件 callback 接到 `FeishuChannel.handle_event(payload)`。
    - 在飞书开放平台完成 URL verification,订阅 `im.message.receive_v1`。
@@ -994,7 +995,7 @@
 
 ## 当前卡点
 
-参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。B-001、B-002 均已解决;当前没有阻塞 Phase 7 的活跃卡点。
+参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。B-001、B-002 均已解决;B-003 已降为 deferred,当前没有阻塞 Phase 8 / 开源首屏继续推进的活跃卡点。
 
 ---
 
