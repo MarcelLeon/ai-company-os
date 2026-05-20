@@ -12,7 +12,7 @@ def test_cursor_adapter_uses_non_interactive_print_defaults() -> None:
     adapter = CursorAdapter()
 
     assert adapter.name == "cursor"
-    assert adapter._output_idle_timeout_seconds == 90.0  # noqa: SLF001
+    assert adapter._output_idle_timeout_seconds == 300.0  # noqa: SLF001
     assert DEFAULT_CURSOR_COMMAND == (
         "cursor-agent",
         "-p",

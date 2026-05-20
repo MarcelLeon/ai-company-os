@@ -24,6 +24,8 @@ class CompanyAgentProfile(FrozenModel):
     title: str = Field(min_length=1)
     base_prompt: str | None = None
     capabilities: tuple[Capability, ...] = ()
+    max_concurrent_tasks: int = Field(default=1, ge=1)
+    recommended_max_appointments: int = Field(default=1, ge=1)
 
 
 class RoleProfile(FrozenModel):
@@ -159,8 +161,24 @@ class ProjectAssignmentDirectory:
         return self._config.projects.get(project_key)
 
     def agent(self, agent_id: str) -> CompanyAgentProfile | None:
-        agent_key = self._agents_by_ref.get(_normalize(agent_id), agent_id)
+        agent_key = self.resolve_agent_id(agent_id)
+        if agent_key is None:
+            return None
         return self._config.agents.get(agent_key)
+
+    def resolve_agent_id(self, agent_ref: str) -> str | None:
+        normalized = _normalize(agent_ref)
+        agent_key = self._agents_by_ref.get(normalized)
+        if agent_key is not None:
+            return agent_key
+        provider_matches = tuple(
+            agent_id
+            for agent_id, profile in self._config.agents.items()
+            if _normalize(profile.provider) == normalized or _normalize(profile.id) == normalized
+        )
+        if len(provider_matches) == 1:
+            return provider_matches[0]
+        return None
 
     def assignment(self, seat: str) -> AssignmentProfile | None:
         return self._appointments_by_seat.get(seat)
@@ -211,7 +229,7 @@ class ProjectAssignmentDirectory:
         project = self.project(project_id)
         if project is None:
             return None
-        canonical_agent_id = self._agents_by_ref.get(_normalize(agent_id))
+        canonical_agent_id = self.resolve_agent_id(agent_id)
         if canonical_agent_id is None:
             return None
         canonical_role_id = self._roles_by_ref.get(_normalize(role_id), _normalize(role_id))

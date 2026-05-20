@@ -47,7 +47,7 @@ def test_codex_adapter_uses_safe_non_interactive_defaults() -> None:
     adapter = CodexAdapter()
 
     assert adapter.name == "codex"
-    assert adapter._output_idle_timeout_seconds == 90.0  # noqa: SLF001
+    assert adapter._output_idle_timeout_seconds == 300.0  # noqa: SLF001
     assert DEFAULT_CODEX_COMMAND == (
         "codex",
         "--ask-for-approval",

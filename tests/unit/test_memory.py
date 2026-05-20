@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -5,6 +6,9 @@ import pytest
 from pydantic import ValidationError
 
 from aico.core import (
+    AuditEventType,
+    InMemoryAuditLog,
+    JsonlAuditSink,
     JsonlMemoryStore,
     MemoryAtom,
     MemoryBroadcastReceipt,
@@ -16,6 +20,7 @@ from aico.core import (
     MemoryGovernor,
     MemoryPacket,
     MemoryPacketItem,
+    MemoryRetrievalQuery,
     MemoryRetriever,
     MemoryScope,
     MemoryScopeType,
@@ -187,10 +192,185 @@ def test_memory_retriever_builds_governed_packet_without_cross_project_leakage(
         ),
     )
     assert packet.citations == (
-        MemoryCitation(memory_id="mem-aico-team", reason="scope=query match"),
-        MemoryCitation(memory_id="mem-aico-project", reason="scope=query match"),
+        MemoryCitation(
+            memory_id="mem-aico-team",
+            reason=("semantic match; scope=team:aico/core; sensitivity=internal; confidence=0.90"),
+        ),
+        MemoryCitation(
+            memory_id="mem-aico-project",
+            reason=("semantic match; scope=project:aico; sensitivity=internal; confidence=0.90"),
+        ),
     )
     assert packet.policy_summary == "max_sensitivity=internal; min_confidence=0.0"
+
+
+def test_memory_retriever_exposes_ranked_hits_with_reasons(tmp_path: Path) -> None:
+    store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    project_atom = store.append_atom(
+        _memory_atom(
+            memory_id="mem-project",
+            claim="Release notes must mention approval and audit controls.",
+            scope=MemoryScope.project("aico"),
+            tags=("release",),
+        )
+    )
+    role_atom = store.append_atom(
+        _memory_atom(
+            memory_id="mem-role",
+            claim="Reviewer must verify approval and audit controls before release.",
+            scope=MemoryScope.role("aico", "default", "reviewer"),
+            tags=("release",),
+        )
+    )
+
+    hits = MemoryRetriever(store).retrieve(
+        MemoryRetrievalQuery(
+            scopes=(
+                MemoryScope.project("aico"),
+                MemoryScope.role("aico", "default", "reviewer"),
+            ),
+            query="approval audit release",
+            role_id="reviewer",
+            top_k=5,
+        )
+    )
+
+    assert [hit.atom for hit in hits] == [role_atom, project_atom]
+    assert hits[0].scope_score > hits[1].scope_score
+    assert hits[0].final_score > hits[1].final_score
+    assert hits[0].reason == (
+        "semantic match; scope=role:aico/default/reviewer; sensitivity=internal; confidence=0.90"
+    )
+
+
+def test_memory_retriever_respects_token_budget(tmp_path: Path) -> None:
+    store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    store.append_atom(
+        _memory_atom(
+            memory_id="mem-long",
+            claim=" ".join(["long-memory"] * 80),
+            tags=("budget",),
+        )
+    )
+    short = store.append_atom(
+        _memory_atom(
+            memory_id="mem-short",
+            claim="Budget recall should keep compact memory.",
+            tags=("budget",),
+        )
+    )
+
+    packet = MemoryRetriever(store).retrieve_packet(
+        scopes=(MemoryScope.project("aico"),),
+        query="budget memory",
+        top_k=5,
+        max_tokens=32,
+    )
+
+    assert packet.items == (
+        MemoryPacketItem(
+            memory_id=short.memory_id,
+            claim=short.claim,
+            confidence=short.confidence,
+            scope=short.scope,
+            tags=short.tags,
+        ),
+    )
+
+
+def test_memory_retriever_expands_allowed_graph_neighbors(tmp_path: Path) -> None:
+    store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    source = store.append_atom(
+        _memory_atom(
+            memory_id="mem-release-policy",
+            claim="Release notes must mention approval controls.",
+            tags=("release",),
+        )
+    )
+    neighbor = store.append_atom(
+        _memory_atom(
+            memory_id="mem-audit-proof",
+            claim="Audit evidence is required before shipping.",
+            tags=("audit",),
+        )
+    )
+    other_project = store.append_atom(
+        _memory_atom(
+            memory_id="mem-other-proof",
+            claim="Other project audit evidence must not leak.",
+            scope=MemoryScope.project("other"),
+            tags=("audit",),
+        )
+    )
+    store.append_edge(
+        MemoryEdge(
+            edge_id="edge-supports-audit",
+            source_memory_id=source.memory_id,
+            target_memory_id=neighbor.memory_id,
+            edge_type=MemoryEdgeType.SUPPORTS,
+        )
+    )
+    store.append_edge(
+        MemoryEdge(
+            edge_id="edge-cross-project",
+            source_memory_id=source.memory_id,
+            target_memory_id=other_project.memory_id,
+            edge_type=MemoryEdgeType.SUPPORTS,
+        )
+    )
+
+    hits = MemoryRetriever(store).retrieve(
+        MemoryRetrievalQuery(
+            scopes=(MemoryScope.project("aico"),),
+            query="release notes",
+            top_k=5,
+        )
+    )
+
+    assert [hit.atom for hit in hits] == [source, neighbor]
+    assert hits[0].semantic_score > 0
+    assert hits[1].semantic_score == 0
+    assert hits[1].graph_score > 0
+    assert hits[1].reason == (
+        "graph match; scope=project:aico; sensitivity=internal; confidence=0.90; graph=supports"
+    )
+
+
+def test_memory_retriever_uses_role_and_task_kind_query_hints(tmp_path: Path) -> None:
+    store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    tester_memory = store.append_atom(
+        _memory_atom(
+            memory_id="mem-tester-checklist",
+            claim="Regression checklist must cover CLI tests before release.",
+            scope=MemoryScope.role("aico", "default", "tester"),
+            tags=("quality",),
+        )
+    )
+    project_memory = store.append_atom(
+        _memory_atom(
+            memory_id="mem-project-release",
+            claim="Release notes should mention user-visible changes.",
+            scope=MemoryScope.project("aico"),
+            tags=("release",),
+        )
+    )
+
+    hits = MemoryRetriever(store).retrieve(
+        MemoryRetrievalQuery(
+            scopes=(
+                MemoryScope.project("aico"),
+                MemoryScope.role("aico", "default", "tester"),
+            ),
+            query="prepare handoff",
+            role_id="tester",
+            task_kind="release",
+            top_k=5,
+        )
+    )
+
+    assert [hit.atom for hit in hits] == [tester_memory, project_memory]
+    assert hits[0].semantic_score > 0
+    assert hits[0].scope_score > hits[1].scope_score
 
 
 def test_memory_retriever_uses_semantic_scoring_for_chinese_long_query(
@@ -318,6 +498,51 @@ def test_memory_broadcast_rejects_cross_project_team_scope(tmp_path: Path) -> No
             recipients=("claude",),
             created_by="lead-agent",
         )
+
+
+def test_memory_broadcast_records_traceable_audit_event(tmp_path: Path) -> None:
+    store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    audit_path = tmp_path / "audit.jsonl"
+    audit_log = InMemoryAuditLog(
+        event_id_factory=lambda: "audit-memory-broadcast-1",
+        sinks=(JsonlAuditSink(audit_path),),
+    )
+    source = store.append_atom(
+        _memory_atom(
+            memory_id="mem-source",
+            claim="Project onboarding context must be broadcast to the team.",
+            tags=("onboarding",),
+        )
+    )
+    service = MemoryBroadcastService(store, audit_log=audit_log)
+
+    receipt = service.broadcast_to_team(
+        source_memory_id=source.memory_id,
+        team_scope=MemoryScope.team("aico", "default"),
+        recipients=("pm", "implementer", "tester"),
+        created_by="lead-agent",
+        reason="project onboarding",
+    )
+
+    events = audit_log.events()
+    assert len(events) == 1
+    assert events[0].event_type is AuditEventType.MEMORY_BROADCASTED
+    assert events[0].task_id == f"memory:{receipt.broadcast_memory_id}"
+    assert events[0].actor_id == "lead-agent"
+    assert events[0].target_persona == "team:aico/default"
+    detail = json.loads(events[0].detail or "{}")
+    assert detail == {
+        "broadcast_memory_id": receipt.broadcast_memory_id,
+        "reason": "project onboarding",
+        "receipt_id": receipt.receipt_id,
+        "recipients": ["pm", "implementer", "tester"],
+        "source_memory_id": source.memory_id,
+        "team_scope": "team:aico/default",
+    }
+
+    persisted = audit_path.read_text(encoding="utf-8")
+    assert '"event_type": "memory_broadcasted"' in persisted
+    assert receipt.receipt_id in persisted
 
 
 def _memory_atom(

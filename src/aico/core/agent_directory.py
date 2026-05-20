@@ -44,6 +44,7 @@ def agent_cards_from_personas(
                 aliases=persona.aliases,
                 capabilities=capabilities,
                 session_features=_session_features(persona.adapter_name),
+                max_concurrent_tasks=_adapter_max_concurrent_tasks(adapter),
             )
         )
     return tuple(cards)
@@ -67,6 +68,15 @@ def _session_features(adapter_name: str) -> tuple[str, ...]:
     if adapter_name in {"cursor", "gemini"}:
         return ("resume(bind)",)
     return ()
+
+
+def _adapter_max_concurrent_tasks(adapter: object) -> int:
+    max_tasks = getattr(adapter, "max_concurrent_tasks", None)
+    if callable(max_tasks):
+        value = max_tasks()
+        if isinstance(value, int) and value > 0:
+            return value
+    return 1
 
 
 def _normalize(value: str) -> str:

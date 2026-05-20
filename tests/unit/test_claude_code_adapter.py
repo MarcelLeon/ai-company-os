@@ -220,7 +220,7 @@ async def test_claude_code_adapter_rejects_second_task_while_busy() -> None:
         _ = (command, cwd)
         return FakeProcess(stdout=[], wait_event=wait_event)
 
-    adapter = ClaudeCodeAdapter(process_factory=factory)
+    adapter = ClaudeCodeAdapter(process_factory=factory, max_concurrent_tasks=1)
 
     first_ack = await adapter.receive_task(_task("task-1", "first"))
     second_ack = await adapter.receive_task(_task("task-2", "second"))
@@ -229,7 +229,29 @@ async def test_claude_code_adapter_rejects_second_task_while_busy() -> None:
 
     assert first_ack.status is AckStatus.ACCEPTED
     assert second_ack.status is AckStatus.BUSY
-    assert second_ack.reason == "adapter is busy"
+    assert second_ack.reason == "adapter is at max concurrency (1/1)"
+
+
+async def test_claude_code_adapter_accepts_tasks_until_concurrency_limit() -> None:
+    wait_event = asyncio.Event()
+
+    async def factory(command: tuple[str, ...], cwd: Path | None) -> FakeProcess:
+        _ = (command, cwd)
+        return FakeProcess(stdout=[], wait_event=wait_event)
+
+    adapter = ClaudeCodeAdapter(process_factory=factory, max_concurrent_tasks=2)
+
+    first_ack = await adapter.receive_task(_task("task-1", "first"))
+    second_ack = await adapter.receive_task(_task("task-2", "second"))
+    third_ack = await adapter.receive_task(_task("task-3", "third"))
+    wait_event.set()
+    _ = [output async for output in adapter.stream_output("task-1")]
+    _ = [output async for output in adapter.stream_output("task-2")]
+
+    assert first_ack.status is AckStatus.ACCEPTED
+    assert second_ack.status is AckStatus.ACCEPTED
+    assert third_ack.status is AckStatus.BUSY
+    assert third_ack.reason == "adapter is at max concurrency (2/2)"
 
 
 async def test_claude_code_adapter_emits_stderr_when_process_fails() -> None:

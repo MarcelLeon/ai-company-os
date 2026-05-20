@@ -90,6 +90,7 @@ class ClaudeCodeAdapter:
         process_factory: ProcessFactory | None = None,
         interrupt_timeout_seconds: float = 5.0,
         output_idle_timeout_seconds: float | None = None,
+        max_concurrent_tasks: int = 5,
     ) -> None:
         if not adapter_name:
             raise ValueError("adapter_name must not be empty")
@@ -99,6 +100,8 @@ class ClaudeCodeAdapter:
             raise ValueError("interrupt_timeout_seconds must be positive")
         if output_idle_timeout_seconds is not None and output_idle_timeout_seconds <= 0:
             raise ValueError("output_idle_timeout_seconds must be positive")
+        if max_concurrent_tasks <= 0:
+            raise ValueError("max_concurrent_tasks must be positive")
 
         self._name = adapter_name
         self._command = command
@@ -106,6 +109,7 @@ class ClaudeCodeAdapter:
         self._process_factory = process_factory or _create_process
         self._interrupt_timeout_seconds = interrupt_timeout_seconds
         self._output_idle_timeout_seconds = output_idle_timeout_seconds
+        self._max_concurrent_tasks = max_concurrent_tasks
         self._tasks: dict[str, _TaskHandle] = {}
 
     @property
@@ -124,10 +128,23 @@ class ClaudeCodeAdapter:
             }
         )
 
+    def max_concurrent_tasks(self) -> int:
+        return self._max_concurrent_tasks
+
+    def running_task_count(self) -> int:
+        return sum(1 for handle in self._tasks.values() if not handle.done)
+
     async def receive_task(self, task: Task) -> TaskAck:
-        if self.status() is AdapterStatus.BUSY:
+        running_tasks = self.running_task_count()
+        if running_tasks >= self._max_concurrent_tasks:
             log.info("Adapter busy: adapter=%s rejected_task=%s", self._name, task.task_id)
-            return TaskAck(task_id=task.task_id, status=AckStatus.BUSY, reason="adapter is busy")
+            return TaskAck(
+                task_id=task.task_id,
+                status=AckStatus.BUSY,
+                reason=(
+                    f"adapter is at max concurrency ({running_tasks}/{self._max_concurrent_tasks})"
+                ),
+            )
         if task.task_id in self._tasks:
             return TaskAck(
                 task_id=task.task_id,
@@ -165,7 +182,7 @@ class ClaudeCodeAdapter:
                 yield item
 
     def status(self) -> AdapterStatus:
-        if any(not handle.done for handle in self._tasks.values()):
+        if self.running_task_count() >= self._max_concurrent_tasks:
             return AdapterStatus.BUSY
         return AdapterStatus.IDLE
 

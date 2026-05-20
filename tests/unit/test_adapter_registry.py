@@ -78,6 +78,8 @@ def test_adapter_registry_builds_status_snapshots() -> None:
     assert [snapshot.name for snapshot in snapshots] == ["claude-code", "codex"]
     assert snapshots[0].status is AdapterStatus.BUSY
     assert snapshots[0].capabilities == (Capability.STREAM_OUTPUT,)
+    assert snapshots[0].running_tasks == 1
+    assert snapshots[0].max_concurrent_tasks == 1
 
 
 def test_adapter_registry_supports_explicit_aliases() -> None:

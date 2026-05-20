@@ -81,7 +81,7 @@
 - `/brief`、`/risks`、`/blockers`、`/next` 顶部老板摘要 MVP,由当前项目 lead 基于本地事实包生成只读 summary
 - `/daily`、`/weekly` 顶部老板摘要 MVP,复用项目状态 summary 的事实保留和失败降级策略
 - `/interrupt <task_id>` 远程中断命令,支持用 task id 前缀停止 running 任务
-- Codex output idle timeout MVP,默认 90 秒无 stdout 自动终止底层 CLI 并释放 `codex: busy`
+- Codex output idle timeout MVP,默认无 stdout 自动终止底层 CLI 并释放 `codex: busy`;Round 98 默认阈值调整为 300 秒
 - `/tasks [limit]` 和 `/task <task_id>` 任务追踪命令,用于在 IM 中查看最近任务、单任务详情和可用动作
 - `/task <task_id>` 详情现在展示协作 parent / child trace,可从父任务跳到 reviewer 子任务,也可从子任务回看发起它的 persona 和父任务
 - ADR-0014 Phase 6 可观测范围决策,确定先做 IM-first `/metrics` MVP,再评估 Mac / Web 可视入口
@@ -108,6 +108,9 @@
 - Phase 7 共享记忆验收流:新增企业/团队管理 acceptance test,覆盖跨项目隔离、老板偏好、candidate 不注入、team broadcast、JSONL 重启恢复和 A2A memory refs 回退
 - `/remember` 未启用 `AICO_MEMORY_PATH` 时返回可执行的重启配置提示,Quickstart 也默认展示 memory path 配置
 - Phase 7 记忆召回升级为可插拔 `MemorySemanticScorer`,默认支持中文长句复述和常见中英项目管理术语别名
+- Phase 7 记忆检索升级为可解释 retrieval contract:新增 `MemoryRetrievalQuery` / `MemoryRetrievalHit`,保留 semantic、scope、recency、confidence、evidence、graph 和 final score。
+- Phase 7 记忆检索支持保守 graph expansion 和 role/task-aware query hints,`/recall` 会展示 final / semantic / scope / graph score 分项。
+- Claude/Codex/Cursor/CodeFlicker/Trae/Gemini CLI adapter 支持可配置并发,默认最多 5 个运行中任务;`/agents` 和 `/appoint` 会展示并发与建议任命上限。
 - Feishu webhook runtime:新增 `AICO_CHANNEL=feishu`、`aico-feishu-webhook`、`/healthz` 和默认 `/feishu/events` 事件回调入口,飞书文本事件可进入现有 Orchestrator。
 - Feishu webhook 事件幂等:按 v2 `header.event_id` 或 v1 `uuid` 做本地 TTL 去重,避免平台重试重复触发 AICO 任务。
 - Phase 8 离线托管第一切片:新增 `/overnight <goal>` project-scoped 托管工单,派给当前 lead/default role,并固定早报验收入口 `/daily`、`/tasks`、`/task`。
@@ -122,7 +125,7 @@
 - 将 role proposal 内部任务提交和输出收集从 `Orchestrator` 拆到 `RoleProposalCoordinator`,保持 `/role propose` / `/role confirm` 用户语义不变
 - 将 `/role propose` / `/role confirm` / `/role discard` 命令处理从 `ProjectCommandHandler` 拆到 `ProjectRoleCommandHandler`,降低项目命令类体积
 - 将 `/brief` / `/risks` / `/blockers` / `/next` / `/daily` / `/weekly` 命令处理从 `ProjectCommandHandler` 拆到 `ProjectStatusCommandHandler`,集中项目状态与报告逻辑
-- `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 可配置 Codex accepted 后无 stdout 的空闲超时秒数
+- `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 可配置 Codex accepted 后无 stdout 的空闲超时秒数;默认从 90 秒放宽到 300 秒。
 - Cursor / CodeFlicker Adapter 从只读 MVP 升级为完整 `code_edit` / `shell_exec` 能力,危险任务仍先走 AICO `/approve`
 - `configure_logging()` 现在将 `httpx` / `httpcore` logger 降到 WARNING,避免 INFO 日志把 Telegram Bot API token URL 写入文件日志。
 - 项目办公室关键消息现在使用 render hints 标记首行标题,`/role propose` 消息带 Confirm / Discard actions
@@ -151,6 +154,11 @@
 - 配置 `AICO_AUDIT_LOG_PATH` 后,启动时会回读旧 audit JSONL;`/metrics` 会从审计事件重建历史 task 指标,再与当前进程内 task 状态合并
 - `/metrics` 现在包含 `glance` 小节,快速展示当前 24h 的 open / running / waiting approval / failed 状态
 - `MetricsReport` 现在包含 recent tasks 和真实 usage audit events 汇总出的 token/cost 字段;无真实 usage 时仍显示 unavailable
+- `MemoryRetriever` 现在先生成可解释 hits,再投影为 `MemoryPacket`;排序综合 semantic match、scope closeness、confidence、recency、evidence 和预留 graph signal。
+- `/recall` 现在复用 `MemoryRetriever`,并展示每条记忆的召回 reason,方便纠错和排障。
+- `MemoryRetriever` 现在会沿 `supports` / `derived_from` / `broadcast_to` 扩展一跳同 scope graph 邻居,并把 `role_id` / `agent_id` / `task_kind` 作为检索提示参与排序。
+- `MemoryBroadcastService` 现在可接入 audit log,每次 team broadcast 会记录 `memory_broadcasted` 审计事件和 receipt 详情。
+- 默认 project agent id 现在优先使用 persona 名;同时 project appointment 可在唯一匹配时按 provider 名解析 agent,避免 `codeflicker` / `flicker` 这类 alias 漂移。
 
 ### Deprecated
 - (无)
@@ -169,6 +177,8 @@
 - 修复 `/blockers` 和项目状态 Facts 区域缺少小节 / 命令样式的问题
 - 修复 reviewer/Codex 子任务卡住时没有 IM 侧中断入口的问题
 - 修复 reviewer/Codex 子任务 accepted 后无 stdout 导致 `codex: busy` 无限占用的问题
+- 修复 `/appoint codeflicker as tester` 因默认 agent alias 与 provider/persona 名不一致而返回 `Cannot appoint` 的问题
+- 修复同一 CLI adapter 只能同时执行 1 个任务,导致同一 agent 被任命为 reviewer / tester 后第二个 `/ask` 立即 `Task busy` 的问题
 
 ### Security
 - 默认只有任务发起人或配置的额外审批人可以批准 / 拒绝危险任务,未授权尝试会记录 `approval_denied` 审计事件

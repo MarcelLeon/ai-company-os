@@ -16,7 +16,7 @@ export AICO_ENABLE_CODEX_ADAPTER=true
 export AICO_CLAUDE_WORKING_DIRECTORY="/Users/wangzq/VsCodeProjects/ai-company-os"
 export AICO_PERSONA_CONFIG_PATH="config/personas.example.json"
 export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
-# 可选:默认 90 秒。Codex CLI accepted 后无 stdout 会自动失败并释放 busy。
+# 可选:默认 300 秒。Codex CLI accepted 后无 stdout 会自动失败并释放 busy。
 export AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS=90
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11 aico-phase1
 ```
@@ -116,7 +116,7 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 - 如果没有触发协作,检查 Adapter 输出是否真的以 `@reviewer ` 或 `@reviewer:` 开头;普通文本中的 `@reviewer` 不会触发。
 - 如果 reviewer 未启用,检查 `AICO_ENABLE_CODEX_ADAPTER=true` 和 `AICO_PERSONA_CONFIG_PATH`。
 - 如果 reviewer 子任务被拒绝,检查协作 payload 是否被风险识别为写文件 / shell / destructive。
-- 如果停在 `Task accepted: <task_id> [reviewer]`,先查 `/status`。若 reviewer/Codex 长时间 running 且无输出,发送 `/interrupt <short_task_id>` 中断,再检查 `logs/aico.log` 中该 task 是否停在 `Stream start` 且没有 stdout chunk。Round 57 起,Codex 默认 90 秒无 stdout 会返回 `adapter output idle timeout after 90s` 并恢复 idle;可用 `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 调整。
+- 如果停在 `Task accepted: <task_id> [reviewer]`,先查 `/status`。若 reviewer/Codex 长时间 running 且无输出,发送 `/interrupt <short_task_id>` 中断,再检查 `logs/aico.log` 中该 task 是否停在 `Stream start` 且没有 stdout chunk。Round 98 起,Codex 默认 300 秒无 stdout 会返回 `adapter output idle timeout after 300s` 并释放并发槽位;可用 `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 调整。
 - 如果长文本仍然只收到一部分,确认进程已包含 Round 21 的 `StreamedMessageWriter` 修复。
 - 如果 `/bind codex ...` 后普通消息没有进入 Codex,先确认当前聊天是否收到 `Provider session bound`,再用 `/sessions` 看 active session。
 

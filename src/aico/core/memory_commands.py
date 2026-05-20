@@ -8,8 +8,9 @@ from aico.channel import IMChannel
 from aico.core.memory import (
     MemoryAtom,
     MemoryEvidence,
+    MemoryRetrievalQuery,
+    MemoryRetriever,
     MemoryScope,
-    MemoryStatus,
     MemoryStore,
 )
 from aico.core.models import IncomingMessage, MessageContent
@@ -88,14 +89,15 @@ class MemoryCommandHandler:
             await self._send_memory_not_configured(message)
             return
 
-        scope = MemoryScope.project(project.id)
-        atoms = (
-            self._memory_store.search(scope, query)
-            if query.strip()
-            else self._memory_store.list_atoms(scope)
+        hits = MemoryRetriever(self._memory_store).retrieve(
+            MemoryRetrievalQuery(
+                scopes=(MemoryScope.project(project.id),),
+                query=query.strip(),
+                top_k=20,
+                max_tokens=2_000,
+            )
         )
-        active_atoms = tuple(atom for atom in atoms if atom.status is MemoryStatus.ACTIVE)
-        if not active_atoms:
+        if not hits:
             await self._channel.send_message(
                 message.source,
                 MessageContent(
@@ -107,13 +109,20 @@ class MemoryCommandHandler:
         lines = [f"Memories: {project.id}"]
         if query.strip():
             lines.append(f"query: {query.strip()}")
-        for atom in active_atoms:
+        for hit in hits:
+            atom = hit.atom
             evidence = atom.evidence[0]
             lines.extend(
                 (
                     f"- {atom.memory_id} | confidence: {atom.confidence:.2f} "
                     f"| scope: {_scope_label(atom.scope)}",
                     f"  {atom.claim}",
+                    f"  reason: {hit.reason}",
+                    "  score: "
+                    f"final={hit.final_score:.2f} "
+                    f"semantic={hit.semantic_score:.2f} "
+                    f"scope={hit.scope_score:.2f} "
+                    f"graph={hit.graph_score:.2f}",
                     f"  source: {atom.source} | evidence: {evidence.source}:{evidence.ref}",
                 )
             )

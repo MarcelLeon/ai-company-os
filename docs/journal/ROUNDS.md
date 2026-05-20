@@ -4718,3 +4718,212 @@
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 95。
 - Adapter 扩展中 Cursor / CodeFlicker / Trae / Gemini 真实 smoke test 从未完成改为完成。
+
+## Round 96 — 2026-05-20 — Codex
+
+### 输入
+- 人类认可“按部就班落地记忆能力升级”,要求开始实现记忆检索升级。
+- 上一轮规划建议先做 Stage 1+2:固化 retrieval query / hit 契约,增强本地排序和 reason/citation,暂不引入 embedding 或向量库。
+
+### 思考与讨论
+- 候选 A:直接接 embedding / 向量数据库 → ❌ **否决**:当前 JSONL + scope/governor 仍是权威源,直接引入新依赖会扩大部署和失败面,也容易绕开现有治理。
+- 候选 B:只改 `LocalSemanticMemoryScorer` 别名表 → ❌ **不足**:能改善命中,但 `/recall` 和 prompt 注入仍缺“为什么召回”的解释,后续也难平滑接 reranker。
+- 候选 C:新增 `MemoryRetrievalQuery` / `MemoryRetrievalHit`,让 `MemoryRetriever` 先产出可解释 hits,再投影 `MemoryPacket` → ✅ **选定**:能统一 `/recall`、Prompt Stack 和 A2A memory refs 的检索契约,且保持无新依赖。
+
+### 产出
+- `src/aico/core/memory.py`:
+  - 新增 `MemoryRetrievalQuery`,承载 query、scopes、role、agent、task kind、top_k 和 max_tokens。
+  - 新增 `MemoryRetrievalHit`,保留 atom、semantic/scope/recency/confidence/evidence/graph/final score 和 reason。
+  - `MemoryRetriever.retrieve()` 返回 ranked hits;`retrieve_packet()` 复用 hits 并按 token budget 投影为 `MemoryPacket`。
+  - 排序权重为 semantic 0.45、scope 0.20、confidence 0.15、recency 0.10、evidence 0.05、graph 0.05。
+  - scope closeness 先按 agent > role > team > project > boss global;graph score 本轮预留为 0.0。
+- `src/aico/core/memory_commands.py`:
+  - `/recall` 改为复用 `MemoryRetriever`,输出每条记忆的 reason。
+- `src/aico/core/__init__.py`:
+  - 导出 `MemoryRetrievalQuery` 和 `MemoryRetrievalHit`。
+- `tests/unit/test_memory.py`:
+  - 新增 ranked hits / reason 测试。
+  - 新增 role scope 优先于 project scope 测试。
+  - 新增 token budget 测试。
+  - 更新 citation reason 断言。
+- 文档:
+  - 更新 ADR-0023 的 2026-05-20 落地说明。
+  - 更新 Phase 7 playbook Iteration 6。
+  - 更新 CHANGELOG 和 STATUS。
+
+### 验证结果
+- `uv run pytest tests/unit/test_memory.py tests/unit/test_orchestrator.py::test_orchestrator_remember_recall_and_forget_project_memory tests/unit/test_phase7_memory_acceptance.py`:14 passed。
+- `uv run ruff check src/aico/core/memory.py src/aico/core/memory_commands.py src/aico/core/__init__.py tests/unit/test_memory.py`:passed。
+- `uv run mypy src/aico/core/memory.py src/aico/core/memory_commands.py src/aico/core/__init__.py tests/unit/test_memory.py`:passed。
+- `uv run pytest`:266 passed,1 skipped。
+- `uv run ruff check .`:passed。
+- `uv run ruff format --check .`:passed。
+- `uv run mypy src tests`:passed。
+- `git diff --check`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:记忆检索的权威流程仍是 scope collect -> governor filter -> semantic/ranking -> token budget -> MemoryPacket,不允许 scorer 绕过治理。
+- 🔒 **决策 2**:embedding / LLM rerank 后续只能替换 `MemorySemanticScorer` 或补 `graph_score`,不能改变 `MemoryAtom` / `MemoryPacket` / Orchestrator 契约。
+- 🔒 **决策 3**:`/recall` 是纠错和排障入口,因此要展示 reason;老板不需要日常手动调参或维护检索权重。
+
+### 留给下一轮
+- 增加 graph expansion:沿 `supports` / `derived_from` / `broadcast_to` 给邻居少量 graph score,但仍必须先过 scope/governor。
+- 给 `MemoryRetrievalQuery` 接入 task_kind / role_id / agent_id 的更细粒度业务权重。
+- 视真实使用情况再评估 embedding cache,但 JSONL 仍保持权威源。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 96。
+- Phase 7 增加“可解释记忆检索契约”完成项。
+
+## Round 97 — 2026-05-20 — Codex
+
+### 输入
+- 人类要求继续开发直到记忆能力可以验收。
+- Round 96 已完成可解释 retrieval contract,留给下一轮的是 graph expansion 和 task-aware scoring。
+
+### 思考与讨论
+- 候选 A:做多跳 graph traversal → ❌ **否决**:多跳容易带入远关系和噪音,也更容易出现跨 scope 泄漏风险;第一版真实验收只需要一跳。
+- 候选 B:给 graph edge 直接绕过 semantic 和 governor → ❌ **否决**:这会破坏 Phase 7 的核心治理边界,尤其是 candidate/restricted/cross-project 记忆。
+- 候选 C:只对直接命中的同 scope 记忆扩展一跳 `supports` / `derived_from` / `broadcast_to`,并让 role/task 作为 query hints → ✅ **选定**:最小可验收,也便于后续调权。
+
+### 产出
+- `MemoryStore` Protocol 增加 `list_edges()`。
+- 新增内部 `MemoryGraphMatch`,用于给 graph neighbor 记录 edge type 和 graph score。
+- `MemoryRetriever`:
+  - 对直接 semantic 命中的记忆扩展一跳 graph neighbor。
+  - 只接受已在本次 allowed scopes 中、且已通过 `MemoryGovernor` 的 graph neighbor。
+  - graph edge 支持 `supports` / `derived_from` / `broadcast_to`。
+  - `role_id` / `agent_id` / `task_kind` 会扩展为本地 query hints。
+  - `/recall` 输出增加 final / semantic / scope / graph score 分项。
+- `tests/unit/test_memory.py`:
+  - 新增 graph neighbor 可召回且不跨项目测试。
+  - 新增 tester / release task hints 影响排序测试。
+- 文档:
+  - 更新 ADR-0023 Round 97 落地说明。
+  - 更新 Phase 7 playbook Iteration 7。
+  - 更新 CHANGELOG 和 STATUS。
+
+### 验证结果
+- `uv run pytest tests/unit/test_memory.py`:14 passed。
+- `uv run pytest tests/unit/test_memory.py tests/unit/test_orchestrator.py::test_orchestrator_remember_recall_and_forget_project_memory tests/unit/test_phase7_memory_acceptance.py`:16 passed。
+- `uv run ruff check src/aico/core/memory.py src/aico/core/memory_commands.py tests/unit/test_memory.py`:passed。
+- `uv run mypy src/aico/core/memory.py src/aico/core/memory_commands.py tests/unit/test_memory.py`:passed。
+- `uv run pytest`:268 passed,1 skipped。
+- `uv run ruff check .`:passed。
+- `uv run ruff format --check .`:passed。
+- `uv run mypy src tests`:passed。
+- `git diff --check`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:graph expansion 第一版只做一跳,且只扩 `supports` / `derived_from` / `broadcast_to`。
+- 🔒 **决策 2**:graph neighbor 不能绕过 scope 和 MemoryGovernor;跨 project edge 存在也不能让目标 atom 进入 packet。
+- 🔒 **决策 3**:role/task-aware scoring 先用本地 query hints,不把岗位逻辑写死成独立策略层;真实 dogfooding 后再决定是否拆权重配置。
+
+### 留给下一轮
+- 做真实 IM 验收:用 `/remember`、`/recall`、`/ask tester`、`/ask reviewer` 验证 reason/score 和 prompt 注入体感。
+- 若验收发现 score 不直观,再考虑 `/recall --debug` 与普通 `/recall` 分层。
+- 后续再评估 embedding cache,但不改变 JSONL 权威源和 governor 边界。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 97。
+- Phase 7 增加“记忆检索 graph / task-aware 升级”完成项。
+
+## Round 98 — 2026-05-20 — Codex
+
+### 输入
+- 人类真实 IM 验收发现 `/appoint codeflicker as tester` 返回 `Cannot appoint codeflicker as tester`。
+- 人类将 Codex 同时任命为 reviewer / tester 后连续 `/ask`,遇到 `Task busy: adapter is busy`。
+- 人类执行 `/ask tester prepare release verification handoff` 后遇到 `ERROR: adapter output idle timeout after 90s`,要求排查原因。
+
+### 思考与讨论
+- 候选 A:要求用户改用 `/appoint flicker as tester` → ❌ **否决**:`/agents` 展示的是 `codeflicker`,老板自然会输入看到的名字;让用户记 alias 是产品退化。
+- 候选 B:继续保持单 adapter 单任务,让用户不要给同一 agent 任命多个 role → ❌ **否决**:虚拟公司里一个真实 agent 可以承担多个岗位,底层 CLI/API 也可以用多个进程或 session 并行。
+- 候选 C:默认并发从 1 提到 5,并在 `/agents` / `/appoint` 展示容量约束 → ✅ **选定**:改动小、可观测、符合远程异步派工,同时保留达到上限后的 busy 保护。
+- 候选 D:完全移除 output idle timeout → ❌ **否决**:历史上 Codex 无 stdout 会无限占用;更稳妥的是放宽默认阈值并继续可配置。
+
+### 产出
+- `ProjectAssignmentDirectory`:
+  - 新增 `resolve_agent_id()`,先按 configured agent id 匹配,再在唯一匹配时按 provider 名匹配。
+  - `/appoint codeflicker as tester` 可落到默认 CodeFlicker agent。
+- `build_phase1_runtime()`:
+  - 默认 project config 对 Cursor / CodeFlicker / Trae / Gemini 使用 persona 名作为 agent id。
+  - `CompanyAgentProfile` 写入 `max_concurrent_tasks` 和 `recommended_max_appointments`。
+- `ClaudeCodeAdapter` 家族:
+  - 新增 `max_concurrent_tasks` / `running_task_count()`。
+  - 默认并发上限为 5,达到上限时返回 `adapter is at max concurrency (n/limit)`。
+  - Codex / Cursor / CodeFlicker / Trae / Gemini 默认 output idle timeout 从 90 秒放宽到 300 秒。
+- `AdapterSnapshot` / `/agents` / `/agent` / `/status`:
+  - 展示 `running/max` 与 max concurrency。
+  - 未满上限的运行中 adapter 会显示为 `available n/max running`。
+- `/appoint` 成功回执:
+  - 展示 `agent_max_concurrent` 和 `recommended_appointments`。
+- 文档:
+  - 更新 `STATUS.md`、`CHANGELOG.md`、`docs/human/daily-ops.md`、adapter/collaboration playbooks。
+  - 新增 PITFALL P-021 / P-022。
+
+### 验证结果
+- `uv run pytest tests/unit/test_claude_code_adapter.py tests/unit/test_codex_adapter.py tests/unit/test_codeflicker_adapter.py tests/unit/test_cursor_adapter.py tests/unit/test_adapter_registry.py tests/unit/test_project_assignment.py tests/unit/test_phase1_app.py tests/unit/test_orchestrator.py::test_orchestrator_reports_adapter_status_without_submitting_task tests/unit/test_orchestrator.py::test_orchestrator_status_includes_recent_tasks tests/unit/test_orchestrator.py::test_orchestrator_reports_agents_and_agent_card tests/unit/test_orchestrator.py::test_orchestrator_handles_team_who_appoint_default_and_ask_commands`:71 passed。
+- `uv run pytest`:270 passed,1 skipped。
+- `uv run ruff check .`:passed。
+- `uv run ruff format --check .`:passed。
+- `uv run mypy src tests`:passed。
+- `git diff --check`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:AICO 的 busy 语义应表示“adapter 达到可接任务上限”,不是“有任意任务在跑”。
+- 🔒 **决策 2**:默认并发先定为 5,并通过 IM 文案暴露给用户;后续真实 provider 有更严格限制时再做 per-adapter 调整。
+- 🔒 **决策 3**:idle timeout 继续保留,但 90 秒对 Codex 这类可能长时间无中间 stdout 的 CLI 太激进,默认放宽到 300 秒。
+
+### 留给下一轮
+- 真实 IM 回归 `/appoint codeflicker as tester`、`/agents` 容量展示、同一 Codex reviewer/tester 连续派工。
+- 如果真实 Codex 仍在 300 秒内无输出,再决定是 per-task timeout、heartbeat 还是 provider-specific streaming 修复。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 98。
+- 新增 P-021 / P-022,记录 adapter appointment alias 和单槽位并发坑。
+
+## Round 99 — 2026-05-21 — Codex
+
+### 输入
+- 人类确认项目初期和 milestone 阶段的 memory broadcast 有必要,但强调“这个广播要可追踪可审计”。
+
+### 思考与讨论
+- 候选 A:只依赖 memory JSONL 中的 team atom / `broadcast_to` edge 推断广播历史 → ❌ **不足**:能恢复记忆关系,但 `/audit` 和 `AICO_AUDIT_LOG_PATH` 看不到一次明确的广播行为。
+- 候选 B:把 broadcast 包成普通 `TaskBus` 任务 → ❌ **否决**:memory broadcast 是 Memory Fabric 基础设施动作,不是要派给某个 adapter 执行的 AI 任务;包装成任务会污染 metrics/task 语义。
+- 候选 C:保留现有 atom + edge + receipt,并在可选 audit log 中记录结构化 `memory_broadcasted` 事件 → ✅ **选定**:最小改动满足可追踪、可审计,且不改变未配置 audit log 时的原行为。
+
+### 产出
+- `AuditEventType` 新增 `memory_broadcasted`。
+- `InMemoryAuditLog` 新增 `record_event()`,支持非 `Task` 形态的基础设施事件,原 `record(task=...)` 路径保持兼容。
+- `MemoryBroadcastService` 可选接入 `InMemoryAuditLog`;每次 `broadcast_to_team()` 成功后写入 audit event:
+  - `task_id`: `memory:<broadcast_memory_id>`
+  - `actor`: `created_by`
+  - `target`: `team:<project>/<team>`
+  - `detail`: JSON,包含 receipt、source memory、broadcast memory、team scope、recipients 和 reason。
+- 扩展 `tests/unit/test_memory.py`,验证 broadcast 生成 audit event 并持久化到 `JsonlAuditSink`。
+- 更新 Phase 7 playbook、daily ops、CHANGELOG 和 STATUS,明确 team broadcast 的审计验收点。
+
+### 验证结果
+- `uv run pytest tests/unit/test_memory.py::test_memory_broadcast_creates_team_memory_edge_and_receipt tests/unit/test_memory.py::test_memory_broadcast_rejects_cross_project_team_scope tests/unit/test_memory.py::test_memory_broadcast_records_traceable_audit_event tests/unit/test_audit.py`:5 passed。
+- `uv run pytest tests/unit/test_memory.py tests/unit/test_audit.py tests/unit/test_phase7_memory_acceptance.py`:18 passed。
+- `uv run ruff check src/aico/core/audit.py src/aico/core/memory_broadcast.py src/aico/core/models.py tests/unit/test_memory.py tests/unit/test_audit.py`:passed。
+- `uv run ruff format --check src/aico/core/audit.py src/aico/core/memory_broadcast.py src/aico/core/models.py tests/unit/test_memory.py tests/unit/test_audit.py`:passed。
+- `uv run mypy src/aico/core/audit.py src/aico/core/memory_broadcast.py src/aico/core/models.py tests/unit/test_memory.py tests/unit/test_audit.py`:passed。
+- `git diff --check`:passed。
+- `uv run pytest`:271 passed,1 skipped。
+- `uv run ruff check .`:passed。
+- `uv run ruff format --check .`:passed。
+- `uv run mypy src tests`:passed。
+
+### 关键决策
+- 🔒 **决策 1**:Memory broadcast 的权威关系仍是 MemoryStore 中的 team atom + `broadcast_to` edge;审计事件记录“这次广播行为和 receipt”,不取代 memory store。
+- 🔒 **决策 2**:`memory_broadcasted` 不进入 metrics task snapshot,避免把基础设施记忆同步误算成 AI 执行任务。
+- 🔒 **决策 3**:未配置 audit log 时 broadcast 行为保持原样;配置 `AICO_AUDIT_LOG_PATH` 后可从 `/audit` 和 JSONL 追踪。
+
+### 留给下一轮
+- 如果后续要把“项目初期 / milestone 自动广播”产品化,优先增加 lead-agent 触发策略和 acceptance,而不是新增老板手动 `/memory broadcast` 主命令。
+- 真实 IM 验收时,用一次 team broadcast 后查看 `/audit`,确认 `memory_broadcasted` 的 receipt 和 recipients 可读。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 99。
+- Phase 7 增加“Team Broadcast 可追踪审计”完成项。

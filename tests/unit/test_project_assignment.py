@@ -57,6 +57,34 @@ def test_project_assignment_directory_inherits_role_permissions_when_appointing(
     assert appointment.permissions == ("code", "tests")
 
 
+def test_project_assignment_directory_resolves_agent_by_provider_name() -> None:
+    config = _config().model_copy(
+        update={
+            "agents": {
+                **_config().agents,
+                "flicker": CompanyAgentProfile(
+                    id="flicker",
+                    provider="codeflicker",
+                    title="CodeFlicker",
+                    max_concurrent_tasks=5,
+                    recommended_max_appointments=5,
+                ),
+            }
+        }
+    )
+    directory = ProjectAssignmentDirectory(config)
+
+    appointment = directory.upsert_appointment(
+        project_id="aico",
+        agent_id="codeflicker",
+        role_id="tester",
+    )
+
+    assert appointment is not None
+    assert appointment.agent == "flicker"
+    assert directory.agent("codeflicker") == config.agents["flicker"]
+
+
 def test_project_assignment_directory_keeps_one_appointment_per_project_role() -> None:
     directory = ProjectAssignmentDirectory(
         _config().model_copy(

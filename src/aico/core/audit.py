@@ -66,12 +66,33 @@ class InMemoryAuditLog:
         risk_level: RiskLevel = RiskLevel.READ_ONLY,
         detail: str | None = None,
     ) -> AuditEvent:
-        event = AuditEvent(
-            event_id=self._event_id_factory(),
-            event_type=event_type,
+        return self.record_event(
+            event_type,
             task_id=task.task_id,
             actor_id=actor_id or task.requester_id,
             target_persona=task.target_persona,
+            adapter_name=adapter_name,
+            risk_level=risk_level,
+            detail=detail,
+        )
+
+    def record_event(
+        self,
+        event_type: AuditEventType,
+        *,
+        task_id: str,
+        actor_id: str,
+        target_persona: str,
+        adapter_name: str | None = None,
+        risk_level: RiskLevel = RiskLevel.READ_ONLY,
+        detail: str | None = None,
+    ) -> AuditEvent:
+        event = AuditEvent(
+            event_id=self._event_id_factory(),
+            event_type=event_type,
+            task_id=task_id,
+            actor_id=actor_id,
+            target_persona=target_persona,
             adapter_name=adapter_name,
             risk_level=risk_level,
             detail=detail,

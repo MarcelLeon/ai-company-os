@@ -28,7 +28,7 @@ export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
 export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
 export AICO_LOG_LEVEL="INFO"
 export AICO_LOG_PATH="logs/aico.log"
-# 可选:默认 90 秒。Codex accepted 后无 stdout 会自动失败并释放 busy。
+# 可选:默认 300 秒。Codex accepted 后无 stdout 会自动失败并释放 busy。
 export AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS=90
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11 aico-phase1
 ```
@@ -41,7 +41,7 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 
 默认 `AICO_CLAUDE_COMMAND` 使用 `claude -p --output-format text --permission-mode bypassPermissions`。远程场景由 AICO 的 `/approve` 负责审批,避免 Claude Code 在本机再弹出无法通过 Telegram 处理的授权提示。
 
-`AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 默认 90 秒;Codex CLI 进程已 accepted 但一直没有 stdout 时,AICO 会终止该进程并返回 `adapter output idle timeout after 90s`,避免 `/status` 长时间停在 `codex: busy`。
+`AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 默认 300 秒;Codex CLI 进程已 accepted 但一直没有 stdout 时,AICO 会终止该进程并返回 `adapter output idle timeout after 300s`,避免任务长期占用并发槽位。
 
 `AICO_AUDIT_LOG_PATH` 可省略;指定后,每条审计事件会追加写入 JSONL 文件,同时 `/audit` 仍展示进程内最近事件。
 Round 62 起,启动时也会读取这个 JSONL 文件里的历史审计事件;`/metrics` 会用这些事件重建历史任务指标,因此重启后 24h / 7d 的 done / failed / interrupted 等统计不会直接清空。`/tasks` 仍只展示当前进程内任务。
@@ -225,7 +225,7 @@ Shared Memory 命令用于 Phase 7 记忆纠错和排障:
 - `/forget <memory_id>` 归档一条记忆,不物理删除 JSONL 历史;归档后普通项目任务不会再自动注入这条记忆。
 - 老板自然消息里的明确偏好也会被自动抽取:带当前项目上下文时写入 project memory,无项目或全局表达时写入 boss global memory;语气不确定时先进入 `candidate`,不会注入后续 prompt。
 - 日常主路径仍是 agent 在项目任务、交接、报告和后续抽取流程中主动维护记忆,老板只在需要纠偏、补充或验收时使用这些命令。
-- 企业/团队管理验收重点:同一 project/team 能共享合同、法务、交付检查点等共识;其它 project 的敏感事实不会串入;lead agent 可把重要共识 broadcast 成 team memory;A2A `memory_refs + delta` 只是省 token 优化,必要时回退完整消息。
+- 企业/团队管理验收重点:同一 project/team 能共享合同、法务、交付检查点等共识;其它 project 的敏感事实不会串入;lead agent 可把重要共识 broadcast 成 team memory,并在 `/audit` / `AICO_AUDIT_LOG_PATH` 中留下 `memory_broadcasted` receipt;A2A `memory_refs + delta` 只是省 token 优化,必要时回退完整消息。
 - `/recall` 和 Prompt Stack 召回使用可插拔语义 scorer。默认本地实现支持中文长句和常见中英项目术语,例如“法务检查”可召回 `legal review`;后续可替换为 embedding / LLM rerank。
 
 Project Team / Appointment 命令用于项目办公室语义:

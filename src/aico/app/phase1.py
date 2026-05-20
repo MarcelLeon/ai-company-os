@@ -29,6 +29,7 @@ from aico.channel.feishu import FeishuChannel
 from aico.channel.telegram import TelegramChannel
 from aico.core import (
     AdapterRegistry,
+    AgentCard,
     AgentDirectory,
     AgentSession,
     AssignmentProfile,
@@ -76,33 +77,39 @@ class Phase1Settings(BaseSettings):
         min_length=1,
     )
     claude_working_directory: Path | None = None
+    claude_max_concurrent_tasks: int = Field(default=5, gt=0)
     enable_codex_adapter: bool = False
     codex_command: str = Field(
         default="codex --ask-for-approval never exec --sandbox read-only --color never",
         min_length=1,
     )
-    codex_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
+    codex_output_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    codex_max_concurrent_tasks: int = Field(default=5, gt=0)
     enable_cursor_adapter: bool = False
     cursor_command: str = Field(
         default="cursor-agent -p --force --output-format text",
         min_length=1,
     )
-    cursor_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
+    cursor_output_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    cursor_max_concurrent_tasks: int = Field(default=5, gt=0)
     enable_codeflicker_adapter: bool = False
     codeflicker_command: str = Field(
         default="flickcli -q --approval-mode yolo --output-format text",
         min_length=1,
     )
-    codeflicker_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
+    codeflicker_output_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    codeflicker_max_concurrent_tasks: int = Field(default=5, gt=0)
     enable_trae_adapter: bool = False
     trae_command: str = Field(default="trae-cli --print --yolo", min_length=1)
-    trae_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
+    trae_output_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    trae_max_concurrent_tasks: int = Field(default=5, gt=0)
     enable_gemini_adapter: bool = False
     gemini_command: str = Field(
         default="gemini --approval-mode yolo --output-format text",
         min_length=1,
     )
-    gemini_output_idle_timeout_seconds: float = Field(default=90.0, gt=0)
+    gemini_output_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    gemini_max_concurrent_tasks: int = Field(default=5, gt=0)
     persona_config_path: Path | None = None
     project_config_path: Path | None = None
     approval_reviewer_ids: str = ""
@@ -176,6 +183,7 @@ def build_phase1_runtime(
     adapter = ClaudeCodeAdapter(
         command=settings.claude_command_tuple(),
         cwd=settings.claude_working_directory,
+        max_concurrent_tasks=settings.claude_max_concurrent_tasks,
     )
     adapters: list[AIAdapter] = [adapter]
     if settings.enable_codex_adapter:
@@ -184,6 +192,7 @@ def build_phase1_runtime(
                 command=settings.codex_command_tuple(),
                 cwd=settings.claude_working_directory,
                 output_idle_timeout_seconds=settings.codex_output_idle_timeout_seconds,
+                max_concurrent_tasks=settings.codex_max_concurrent_tasks,
             )
         )
     if settings.enable_cursor_adapter:
@@ -192,6 +201,7 @@ def build_phase1_runtime(
                 command=settings.cursor_command_tuple(),
                 cwd=settings.claude_working_directory,
                 output_idle_timeout_seconds=settings.cursor_output_idle_timeout_seconds,
+                max_concurrent_tasks=settings.cursor_max_concurrent_tasks,
             )
         )
     if settings.enable_codeflicker_adapter:
@@ -200,6 +210,7 @@ def build_phase1_runtime(
                 command=settings.codeflicker_command_tuple(),
                 cwd=settings.claude_working_directory,
                 output_idle_timeout_seconds=settings.codeflicker_output_idle_timeout_seconds,
+                max_concurrent_tasks=settings.codeflicker_max_concurrent_tasks,
             )
         )
     if settings.enable_trae_adapter:
@@ -208,6 +219,7 @@ def build_phase1_runtime(
                 command=settings.trae_command_tuple(),
                 cwd=settings.claude_working_directory,
                 output_idle_timeout_seconds=settings.trae_output_idle_timeout_seconds,
+                max_concurrent_tasks=settings.trae_max_concurrent_tasks,
             )
         )
     if settings.enable_gemini_adapter:
@@ -216,6 +228,7 @@ def build_phase1_runtime(
                 command=settings.gemini_command_tuple(),
                 cwd=settings.claude_working_directory,
                 output_idle_timeout_seconds=settings.gemini_output_idle_timeout_seconds,
+                max_concurrent_tasks=settings.gemini_max_concurrent_tasks,
             )
         )
     registry = AdapterRegistry(
@@ -445,12 +458,14 @@ def _default_project_assignment_config(
     assignments: list[AssignmentProfile] = []
     roles = _default_roles()
     for card in agent_directory.list():
-        agent_id = card.aliases[0] if card.aliases else card.name
+        agent_id = _default_agent_id(card)
         agents[agent_id] = CompanyAgentProfile(
             id=agent_id,
             provider=card.adapter_name,
             title=card.role_description,
             capabilities=card.capabilities,
+            max_concurrent_tasks=card.max_concurrent_tasks,
+            recommended_max_appointments=card.max_concurrent_tasks,
         )
         assignments.append(
             AssignmentProfile(
@@ -496,6 +511,12 @@ def _default_roles() -> dict[str, RoleProfile]:
         **_governance_roles(),
         **_support_roles(),
     }
+
+
+def _default_agent_id(card: AgentCard) -> str:
+    if card.name in {"implementer", "reviewer"} and card.aliases:
+        return card.aliases[0]
+    return card.name
 
 
 def _delivery_roles() -> dict[str, RoleProfile]:

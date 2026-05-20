@@ -48,7 +48,7 @@ def status_message(
     adapter_snapshots: tuple[AdapterSnapshot, ...],
     task_snapshots: tuple[TaskSnapshot, ...],
 ) -> MessageContent:
-    lines = [f"{snapshot.name}: {snapshot.status.value}" for snapshot in adapter_snapshots]
+    lines = [f"{snapshot.name}: {_adapter_status_text(snapshot)}" for snapshot in adapter_snapshots]
     if task_snapshots:
         lines.append("")
         lines.append("Recent tasks:")
@@ -155,6 +155,8 @@ def agent_card_message(
             f"adapter: {card.adapter_name}\n"
             f"provider: {card.provider_name}\n"
             f"status: {status}\n"
+            f"max_concurrent: {card.max_concurrent_tasks}\n"
+            f"recommended_appointments: <= {card.max_concurrent_tasks}\n"
             f"role: {role}\n"
             f"aliases: {aliases}\n"
             f"capabilities: {capabilities}\n"
@@ -169,7 +171,8 @@ def agent_card_message(
 def _agent_list_line(card: AgentCard, status: str) -> str:
     display_name = _agent_display_name(card)
     role = f" [role: {card.name}]" if display_name != card.name else ""
-    return f"- {display_name} -> {card.adapter_name} ({status}){role}"
+    capacity = f", max {card.max_concurrent_tasks} concurrent"
+    return f"- {display_name} -> {card.adapter_name} ({status}{capacity}){role}"
 
 
 def _agent_display_name(card: AgentCard) -> str:
@@ -179,7 +182,7 @@ def _agent_display_name(card: AgentCard) -> str:
 
 
 def _agent_next_lines(agent_name: str, status: str) -> str:
-    if status == "idle":
+    if status.startswith(("idle", "available")):
         commands = ("/roles", f"/appoint {agent_name} as <role>", f"/new {agent_name}")
     else:
         commands = ("/tasks", "/status", f"/agent {agent_name}")
@@ -342,4 +345,11 @@ def _audit_event_block(event: AuditEvent) -> str:
 
 
 def _adapter_statuses(adapter_snapshots: tuple[AdapterSnapshot, ...]) -> dict[str, str]:
-    return {snapshot.name: snapshot.status.value for snapshot in adapter_snapshots}
+    return {snapshot.name: _adapter_status_text(snapshot) for snapshot in adapter_snapshots}
+
+
+def _adapter_status_text(snapshot: AdapterSnapshot) -> str:
+    label = snapshot.status.value
+    if snapshot.running_tasks and snapshot.running_tasks < snapshot.max_concurrent_tasks:
+        label = "available"
+    return f"{label} {snapshot.running_tasks}/{snapshot.max_concurrent_tasks} running"

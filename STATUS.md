@@ -3,8 +3,8 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-05-19
-**当前轮次**:Round 95(Open-source polish and adapter verification status)
+**最后更新**:2026-05-21
+**当前轮次**:Round 99(Traceable memory broadcast audit)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 开源主 Demo
 
 ---
@@ -239,6 +239,9 @@
 - [x] Prompt Stack 读取当前项目少量高置信记忆
 - [x] Boss feedback 自动抽取与 candidate 记忆 MVP
 - [x] Team Broadcast 与 A2A memory refs 实验 MVP
+- [x] Team Broadcast 可追踪审计:广播 receipt、source/broadcast memory、team scope、recipients 和 reason 写入 `memory_broadcasted` audit event。
+- [x] 可解释记忆检索契约:MemoryRetrievalQuery / MemoryRetrievalHit、综合排序、token budget 和 `/recall` reason。
+- [x] 记忆检索 graph / task-aware 升级:一跳 graph expansion、role/task query hints 和 `/recall` score 分项。
 - [x] Phase 7 共享记忆本地验收流
 
 ### Phase 8 进度
@@ -260,11 +263,34 @@
 - [x] Release Room Stage 3 recording rhythm and GIF conversion path。
 - [x] Release Room Stage 3 real Telegram dogfooding first pass, with provider-output blocker recorded。
 - [x] Release Room Stage 3 Codex provider-output cleanup and real Telegram dry run。
-- [ ] Release Room Stage 3 public GIF / README showcase。
+- [x] Release Room Stage 3 public GIF / README showcase。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 96**(2026-05-20,Codex):
+- 落地记忆检索 Stage 1+2:新增 `MemoryRetrievalQuery` / `MemoryRetrievalHit`,让检索 query、scope、top_k、token budget 和可解释 hit 成为稳定契约。
+- `MemoryRetriever` 现在先生成 ranked hits,再投影为 `MemoryPacket`;排序综合 semantic、scope closeness、confidence、recency、evidence 和预留 graph score。
+- `/recall` 改为复用 `MemoryRetriever`,并展示 reason,让记忆召回能被老板和下一轮 agent 排障。
+- 新增测试覆盖 role scope 优先于 project scope、retrieval reason、token budget、candidate/restricted/cross-project 不进入 prompt 的既有治理。
+- 更新 ADR-0023、Phase 7 playbook、CHANGELOG、ROUNDS 和 STATUS。
+- 验证通过:266 passed / 1 skipped,`ruff check .`, `ruff format --check .`, `mypy src tests`, `git diff --check`。
+
+**Round 97**(2026-05-20,Codex):
+- 继续推进记忆检索到可验收态:新增保守 graph expansion,仅沿 `supports` / `derived_from` / `broadcast_to` 扩展一跳同 scope 邻居。
+- `MemoryRetrievalQuery.role_id` / `agent_id` / `task_kind` 现在会作为 query hints 参与 semantic scoring,让 tester / reviewer / release-manager 更容易召回各自相关记忆。
+- `/recall` 输出增加 final / semantic / scope / graph score 分项,便于 Telegram 真实验收和后续调权。
+- 新增测试覆盖 graph 邻居召回不跨项目、role/task hints 排序、score/reason 展示路径。
+- 验证通过:目标 memory/orchestrator/Phase7 tests、全量 `pytest`、`ruff check`、`ruff format --check`、`mypy` 和 `git diff --check`。
+
+**Round 98**(2026-05-20,Codex):
+- 排查人类真实 IM 反馈:`/appoint codeflicker as tester` 返回 `Cannot appoint`,根因是默认 project config 早先把 CodeFlicker agent id 落成 `flicker` alias,而用户输入的是 provider/persona 名 `codeflicker`。
+- 修复 Project Assignment agent 解析:先按 configured agent id 匹配,再在唯一匹配时按 `CompanyAgentProfile.provider` 匹配;默认项目配置中 CodeFlicker / Cursor / Trae / Gemini 也使用 persona 名作为 agent id。
+- 将 Claude/Codex/Cursor/CodeFlicker/Trae/Gemini CLI adapter 从单槽位改为可配置并发,默认 `max_concurrent_tasks=5`;达到上限才返回 busy。
+- `/agents` / `/agent` 现在展示 `running/max` 与 `max_concurrent`,`/appoint` 成功回执展示 `agent_max_concurrent` 和建议任命上限。
+- 将 Codex / optional CLI adapter 默认 output idle timeout 从 90 秒放宽到 300 秒,避免长思考或无中间 stdout 的正常任务过早失败。
+- 验证通过:目标 adapter/project/orchestrator 测试 71 passed;全量 `pytest` 270 passed / 1 skipped;`ruff check`、`ruff format --check`、`mypy src tests`、`git diff --check` 全部通过。
 
 **Round 92**(2026-05-18,Codex):
 - 对齐 Release Room GIF 卡点:确认 AICO 默认 Claude Adapter 已使用 Claude Code CLI (`claude -p`,本机版本 `2.1.143`);本机 `cc` 是 `/usr/bin/cc`,不是 Claude Code CLI。
@@ -612,7 +638,7 @@
   - 结论:协作解析和 child task 创建成功,卡点仍是 Codex CLI accepted 后长期无 stdout。
 - 修复 Codex busy 自动释放:
   - `ClaudeCodeAdapter` 增加可选 `output_idle_timeout_seconds`。
-  - `CodexAdapter` 默认 90 秒无 stdout 自动终止底层 CLI,输出 `adapter output idle timeout after 90s`,并释放 busy。
+  - `CodexAdapter` 最初默认 90 秒无 stdout 自动终止底层 CLI;Round 98 已将默认阈值放宽到 300 秒,并按并发槽位释放。
   - `Phase1Settings` 新增 `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS`。
 - 修复 Project Facts 无序列表 / inline Markdown 渲染:
   - `_heading_message()` 现在会规范化 facts 中的 `- ` / `* ` 为 `• `。
@@ -970,26 +996,35 @@
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【高】开源首屏二次验收:AI agent 开发者 / 个人开发者视角**:
+1. **【高】Adapter appointment / concurrency 真实 IM 回归**:
+   - 重启 AICO 后跑 `/agents` / `/agent codex`,确认显示 `0/5 running`、`max_concurrent: 5` 和建议任命上限。
+   - 跑 `/appoint codeflicker as tester`,确认不再返回 `Cannot appoint`;再用 `/who tester` / `/team` 确认 owner。
+   - 将 `codex` 同时任命为 reviewer / tester,连续 `/ask reviewer ...` 和 `/ask tester ...`,确认未到 5 个并发前不会返回 `Task busy`。
+   - 对 Codex 长任务确认 idle timeout 文案变为 300s 阈值;若真实任务仍超时,再按 provider 输出特性设计 heartbeat 或更长 per-adapter 配置。
+2. **【高】Memory Retrieval 真实 IM 验收**:
+   - 用 `/remember` 写入 release / audit / tester 相关记忆,再用 `/recall <query>` 检查 reason 和 score 分项。
+   - 用 `/ask tester ...` / `/ask reviewer ...` 验证 role/task hints 能把测试/审计/风险记忆注入对应角色 prompt。
+   - 用 team broadcast 或测试脚本确认 graph neighbor 能进 packet,同时跨 project 记忆不泄漏。
+3. **【高】开源首屏二次验收:AI agent 开发者 / 个人开发者视角**:
    - 检查 README 首屏是否在 30 秒内说清“远程指挥本机真实 AI 工具”。
    - 按 `docs/human/github-publication.md` 手动补 GitHub metadata:description、topics、social preview、about link。
    - 补外部贡献者基础设施:公开 roadmap 摘要、PR template、贡献者 first issue 列表。
    - 用全新 clone + Telegram token 跑一次 Quickstart,记录外部开发者真实卡点。
-2. **【高】Release Room Stage 3 GIF 复剪 / README 体验复核**:
+4. **【高】Release Room Stage 3 GIF 复剪 / README 体验复核**:
    - 已生成真实 Telegram dogfooding GIF: `docs/assets/release-room-demo.gif`,并嵌入 README。
    - 当前 GIF 是 35 秒实录剪辑,覆盖 `/use`、`/team`、project memory、Codex PM/tester 输出、`/daily` 和 `/audit`。
    - 下一轮可做一次更精剪版本:减少旧消息露出,补更清晰的 approval gate 镜头,并避免 read-only pytest 临时目录失败入镜。
    - 若继续录真实 CLI,优先让 Codex tester 使用可写临时目录或只做静态检查,不要在 read-only sandbox 里直接跑 pytest。
-3. **【高】Phase 8 `/overnight` 持久化与重启恢复**:
+5. **【高】Phase 8 `/overnight` 持久化与重启恢复**:
    - 让托管工单列表可从 audit JSONL 恢复,避免重启后 `/overnight` 看不到昨晚托管记录。
    - 继续保持危险动作必须 `/approve`,不因为离线托管放大权限。
-4. **【高】Feishu Channel 部署层与真实 smoke test**:
+6. **【高】Feishu Channel 部署层与真实 smoke test**:
    - 用 FastAPI route 或现有部署入口把飞书事件 callback 接到 `FeishuChannel.handle_event(payload)`。
    - 在飞书开放平台完成 URL verification,订阅 `im.message.receive_v1`。
    - 配置 App ID / App Secret / Verification Token,跑文本入站、回复、编辑/删除降级 smoke test。
-5. **【高】Phase 5 真实协作 smoke test 作为后续回归项**:重新跑 `@reviewer ...`,确认 child task accepted 后要么有 reviewer 输出,要么 90 秒 idle timeout 后恢复 `codex: idle`。
-6. **【中】Codex bind / Claude resume / 长文本复测**:继续确认 session 和长文本分片不被 Phase 6 命令影响。
-7. **【低】Adapter usage 上报**:等 Claude/Codex Adapter 能稳定提供 usage 后,记录 `task_usage_recorded` 审计事件;当前只保留接入边界,不伪造数据。
+7. **【高】Phase 5 真实协作 smoke test 作为后续回归项**:重新跑 `@reviewer ...`,确认 child task accepted 后要么有 reviewer 输出,要么 300 秒 idle timeout 后恢复为可接新任务状态。
+8. **【中】Codex bind / Claude resume / 长文本复测**:继续确认 session 和长文本分片不被 Phase 6 命令影响。
+9. **【低】Adapter usage 上报**:等 Claude/Codex Adapter 能稳定提供 usage 后,记录 `task_usage_recorded` 审计事件;当前只保留接入边界,不伪造数据。
 
 ---
 

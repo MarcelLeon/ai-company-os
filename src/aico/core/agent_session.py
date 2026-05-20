@@ -52,6 +52,7 @@ class AgentCard(FrozenModel):
     tools_source: ProviderCapabilitySource = ProviderCapabilitySource.PROVIDER_CLI
     skills_source: ProviderCapabilitySource = ProviderCapabilitySource.PROVIDER_CLI
     session_features: tuple[str, ...] = ()
+    max_concurrent_tasks: int = Field(default=1, ge=1)
 
 
 class AgentSession(FrozenModel):

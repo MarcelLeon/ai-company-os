@@ -422,6 +422,8 @@ def appointment_created_message(
     role: RoleProfile | None,
 ) -> MessageContent:
     agent_title = "-" if agent is None else agent.title
+    max_concurrent = 1 if agent is None else agent.max_concurrent_tasks
+    recommended_appointments = 1 if agent is None else agent.recommended_max_appointments
     role_title = appointment.role if role is None else role.title
     scope = ", ".join(appointment.permissions) or appointment.risk_policy
     return _heading_message(
@@ -433,6 +435,8 @@ def appointment_created_message(
             f"role: {role_title}",
             f"workspace: {appointment.workspace or project.repo}",
             f"scope: {scope}",
+            f"agent_max_concurrent: {max_concurrent}",
+            f"recommended_appointments: <= {recommended_appointments}",
             f"seat: {appointment.seat}",
         )
     )

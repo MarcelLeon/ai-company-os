@@ -179,6 +179,33 @@ class MemoryCitation(FrozenModel):
     reason: str = Field(min_length=1)
 
 
+class MemoryRetrievalQuery(FrozenModel):
+    scopes: tuple[MemoryScope, ...] = Field(min_length=1)
+    query: str = ""
+    role_id: str | None = None
+    agent_id: str | None = None
+    task_kind: str | None = None
+    top_k: int = Field(default=5, ge=1, le=20)
+    max_tokens: int = Field(default=480, ge=32)
+
+
+class MemoryRetrievalHit(FrozenModel):
+    atom: MemoryAtom
+    semantic_score: float = Field(ge=0.0, le=1.0)
+    scope_score: float = Field(ge=0.0, le=1.0)
+    recency_score: float = Field(ge=0.0, le=1.0)
+    confidence_score: float = Field(ge=0.0, le=1.0)
+    evidence_score: float = Field(ge=0.0, le=1.0)
+    graph_score: float = Field(ge=0.0, le=1.0)
+    final_score: float = Field(ge=0.0, le=1.0)
+    reason: str = Field(min_length=1)
+
+
+class MemoryGraphMatch(FrozenModel):
+    edge_type: MemoryEdgeType
+    score: float = Field(ge=0.0, le=1.0)
+
+
 class MemoryPacket(FrozenModel):
     items: tuple[MemoryPacketItem, ...] = ()
     citations: tuple[MemoryCitation, ...] = ()
@@ -207,6 +234,8 @@ class MemoryStore(Protocol):
     def append_atom(self, atom: MemoryAtom) -> MemoryAtom: ...
 
     def append_edge(self, edge: MemoryEdge) -> MemoryEdge: ...
+
+    def list_edges(self, source_memory_id: str | None = None) -> tuple[MemoryEdge, ...]: ...
 
     def list_atoms(
         self,
@@ -379,6 +408,35 @@ class MemoryRetriever:
         self._store = store
         self._semantic_scorer = semantic_scorer or LocalSemanticMemoryScorer()
 
+    def retrieve(
+        self,
+        retrieval_query: MemoryRetrievalQuery,
+        *,
+        governor: MemoryGovernor | None = None,
+    ) -> tuple[MemoryRetrievalHit, ...]:
+        active_governor = governor or MemoryGovernor()
+        candidates = self._candidate_atoms(retrieval_query, active_governor)
+        expanded_query = _expanded_query(retrieval_query)
+        hits = tuple(
+            hit
+            for atom, graph_match in candidates
+            if (
+                hit := self._score_atom(
+                    atom,
+                    query=expanded_query,
+                    scopes=retrieval_query.scopes,
+                    graph_match=graph_match,
+                )
+            )
+            is not None
+        )
+        ranked = sorted(
+            hits,
+            key=lambda hit: (hit.final_score, hit.atom.confidence, hit.atom.created_at),
+            reverse=True,
+        )
+        return tuple(ranked[: retrieval_query.top_k])
+
     def retrieve_packet(
         self,
         *,
@@ -386,30 +444,99 @@ class MemoryRetriever:
         query: str = "",
         governor: MemoryGovernor | None = None,
         top_k: int = 5,
+        max_tokens: int = 480,
     ) -> MemoryPacket:
         active_governor = governor or MemoryGovernor()
-        atoms: list[MemoryAtom] = []
+        hits = self.retrieve(
+            MemoryRetrievalQuery(
+                scopes=scopes,
+                query=query,
+                top_k=top_k,
+                max_tokens=max_tokens,
+            ),
+            governor=active_governor,
+        )
+        return _packet_from_hits(
+            _trim_hits_to_budget(hits, max_tokens=max_tokens),
+            policy_summary=active_governor.policy_summary,
+        )
+
+    def _candidate_atoms(
+        self,
+        retrieval_query: MemoryRetrievalQuery,
+        governor: MemoryGovernor,
+    ) -> tuple[tuple[MemoryAtom, MemoryGraphMatch | None], ...]:
+        scoped_atoms: dict[str, MemoryAtom] = {}
+        direct_ids: list[str] = []
+        graph_matches: dict[str, MemoryGraphMatch] = {}
+        expanded_query = _expanded_query(retrieval_query)
         seen: set[str] = set()
-        for scope in scopes:
-            scoped_atoms = self._store.list_atoms(scope)
-            for atom in scoped_atoms:
+        for scope in retrieval_query.scopes:
+            for atom in self._store.list_atoms(scope):
                 if atom.memory_id in seen:
                     continue
                 seen.add(atom.memory_id)
-                if active_governor.allows(atom) and (
-                    not query.strip() or self._semantic_scorer.score(query, atom) > 0
+                if not governor.allows(atom):
+                    continue
+                scoped_atoms[atom.memory_id] = atom
+                if (
+                    expanded_query.strip()
+                    and self._semantic_scorer.score(
+                        expanded_query,
+                        atom,
+                    )
+                    <= 0
                 ):
-                    atoms.append(atom)
-        ranked = sorted(
-            atoms,
-            key=lambda atom: (
-                self._semantic_scorer.score(query, atom),
-                atom.confidence,
-                atom.created_at,
-            ),
-            reverse=True,
+                    continue
+                direct_ids.append(atom.memory_id)
+        for memory_id in direct_ids:
+            graph_matches.update(_graph_neighbors(self._store, memory_id, scoped_atoms))
+        ordered_ids = [*direct_ids, *graph_matches.keys()]
+        return tuple(
+            (scoped_atoms[memory_id], graph_matches.get(memory_id))
+            for memory_id in ordered_ids
+            if memory_id in scoped_atoms
         )
-        return active_governor.project(tuple(ranked[:top_k]))
+
+    def _score_atom(
+        self,
+        atom: MemoryAtom,
+        *,
+        query: str,
+        scopes: tuple[MemoryScope, ...],
+        graph_match: MemoryGraphMatch | None = None,
+    ) -> MemoryRetrievalHit | None:
+        semantic_score = self._semantic_scorer.score(query, atom) if query.strip() else 0.0
+        graph_score = 0.0 if graph_match is None else graph_match.score
+        if query.strip() and semantic_score <= 0 and graph_score <= 0:
+            return None
+        scope_score = _scope_score(atom.scope, scopes)
+        recency_score = _recency_score(atom)
+        confidence_score = atom.confidence
+        evidence_score = _evidence_score(atom)
+        final_score = _weighted_score(
+            semantic_score=semantic_score,
+            scope_score=scope_score,
+            recency_score=recency_score,
+            confidence_score=confidence_score,
+            evidence_score=evidence_score,
+            graph_score=graph_score,
+        )
+        return MemoryRetrievalHit(
+            atom=atom,
+            semantic_score=semantic_score,
+            scope_score=scope_score,
+            recency_score=recency_score,
+            confidence_score=confidence_score,
+            evidence_score=evidence_score,
+            graph_score=graph_score,
+            final_score=final_score,
+            reason=_retrieval_reason(
+                atom,
+                semantic_score=semantic_score,
+                graph_match=graph_match,
+            ),
+        )
 
 
 class LocalSemanticMemoryScorer:
@@ -428,6 +555,154 @@ class LocalSemanticMemoryScorer:
         query_coverage = len(overlap) / len(query_units)
         memory_coverage = len(overlap) / len(memory_units)
         return (query_coverage * 0.75) + (memory_coverage * 0.25)
+
+
+def _packet_from_hits(
+    hits: tuple[MemoryRetrievalHit, ...],
+    *,
+    policy_summary: str,
+) -> MemoryPacket:
+    return MemoryPacket(
+        items=tuple(
+            MemoryPacketItem(
+                memory_id=hit.atom.memory_id,
+                claim=hit.atom.claim,
+                confidence=hit.atom.confidence,
+                scope=hit.atom.scope,
+                tags=hit.atom.tags,
+            )
+            for hit in hits
+        ),
+        citations=tuple(
+            MemoryCitation(memory_id=hit.atom.memory_id, reason=hit.reason) for hit in hits
+        ),
+        policy_summary=policy_summary,
+    )
+
+
+def _trim_hits_to_budget(
+    hits: tuple[MemoryRetrievalHit, ...],
+    *,
+    max_tokens: int,
+) -> tuple[MemoryRetrievalHit, ...]:
+    selected: list[MemoryRetrievalHit] = []
+    used_tokens = 0
+    for hit in hits:
+        estimated_tokens = _estimated_tokens(hit.atom.claim)
+        if used_tokens + estimated_tokens > max_tokens:
+            continue
+        selected.append(hit)
+        used_tokens += estimated_tokens
+    return tuple(selected)
+
+
+def _graph_neighbors(
+    store: MemoryStore,
+    source_memory_id: str,
+    scoped_atoms: dict[str, MemoryAtom],
+) -> dict[str, MemoryGraphMatch]:
+    matches: dict[str, MemoryGraphMatch] = {}
+    for edge in store.list_edges(source_memory_id):
+        if edge.edge_type not in _RETRIEVAL_EDGE_TYPES:
+            continue
+        if edge.target_memory_id not in scoped_atoms:
+            continue
+        matches[edge.target_memory_id] = MemoryGraphMatch(
+            edge_type=edge.edge_type,
+            score=_graph_edge_score(edge.edge_type),
+        )
+    return matches
+
+
+def _graph_edge_score(edge_type: MemoryEdgeType) -> float:
+    return {
+        MemoryEdgeType.SUPPORTS: 0.80,
+        MemoryEdgeType.DERIVED_FROM: 0.72,
+        MemoryEdgeType.BROADCAST_TO: 0.68,
+    }[edge_type]
+
+
+def _expanded_query(retrieval_query: MemoryRetrievalQuery) -> str:
+    parts = [retrieval_query.query]
+    if retrieval_query.role_id:
+        parts.extend(_ROLE_QUERY_HINTS.get(retrieval_query.role_id, (retrieval_query.role_id,)))
+    if retrieval_query.agent_id:
+        parts.append(retrieval_query.agent_id)
+    if retrieval_query.task_kind:
+        parts.extend(
+            _TASK_KIND_QUERY_HINTS.get(retrieval_query.task_kind, (retrieval_query.task_kind,))
+        )
+    return " ".join(part for part in parts if part.strip())
+
+
+def _weighted_score(
+    *,
+    semantic_score: float,
+    scope_score: float,
+    recency_score: float,
+    confidence_score: float,
+    evidence_score: float,
+    graph_score: float,
+) -> float:
+    return min(
+        1.0,
+        (semantic_score * 0.45)
+        + (scope_score * 0.20)
+        + (confidence_score * 0.15)
+        + (recency_score * 0.10)
+        + (evidence_score * 0.05)
+        + (graph_score * 0.05),
+    )
+
+
+def _scope_score(scope: MemoryScope, scopes: tuple[MemoryScope, ...]) -> float:
+    if not any(scope.matches(candidate) for candidate in scopes):
+        return 0.0
+    return {
+        MemoryScopeType.AGENT: 1.0,
+        MemoryScopeType.ROLE: 0.92,
+        MemoryScopeType.TEAM: 0.82,
+        MemoryScopeType.PROJECT: 0.70,
+        MemoryScopeType.BOSS: 0.55,
+    }[scope.owner_type]
+
+
+def _recency_score(atom: MemoryAtom) -> float:
+    age_seconds = max(0.0, (utc_now() - atom.created_at).total_seconds())
+    return max(0.0, 1.0 - min(age_seconds / atom.ttl_seconds, 1.0))
+
+
+def _evidence_score(atom: MemoryAtom) -> float:
+    return min(1.0, len(atom.evidence) / 2) if atom.evidence else 0.0
+
+
+def _retrieval_reason(
+    atom: MemoryAtom,
+    *,
+    semantic_score: float,
+    graph_match: MemoryGraphMatch | None,
+) -> str:
+    if semantic_score > 0:
+        prefix = "semantic match"
+    elif graph_match is not None:
+        prefix = "graph match"
+    else:
+        prefix = "scope match"
+    reason = (
+        f"{prefix}; scope={_scope_label(atom.scope)}; "
+        f"sensitivity={atom.sensitivity.value}; confidence={atom.confidence:.2f}"
+    )
+    if graph_match is not None:
+        reason += f"; graph={graph_match.edge_type.value}"
+    return reason
+
+
+def _estimated_tokens(text: str) -> int:
+    ascii_words = len([part for part in text.split() if part.strip()])
+    cjk_chars = sum(1 for char in text if _is_cjk(char))
+    if ascii_words:
+        return max(1, ascii_words)
+    return max(1, cjk_chars // 2)
 
 
 def _require_fields(*field_pairs: object) -> None:
@@ -536,6 +811,31 @@ _STOP_WORDS = frozenset(
         "with",
     }
 )
+
+_RETRIEVAL_EDGE_TYPES = frozenset(
+    {
+        MemoryEdgeType.SUPPORTS,
+        MemoryEdgeType.DERIVED_FROM,
+        MemoryEdgeType.BROADCAST_TO,
+    }
+)
+
+_ROLE_QUERY_HINTS: dict[str, tuple[str, ...]] = {
+    "docs": ("docs", "documentation", "release notes", "changelog"),
+    "implementer": ("implementation", "code", "change", "bugfix"),
+    "pm": ("plan", "scope", "milestone", "risk", "status"),
+    "release-manager": ("release", "changelog", "release notes", "handoff"),
+    "reviewer": ("review", "risk", "audit", "approval"),
+    "tester": ("test", "qa", "regression", "checklist", "quality"),
+}
+
+_TASK_KIND_QUERY_HINTS: dict[str, tuple[str, ...]] = {
+    "daily": ("report", "status", "progress", "blocked", "next"),
+    "overnight": ("handoff", "blocked", "risk", "next actions"),
+    "release": ("release", "changelog", "release notes", "shipping"),
+    "review": ("review", "risk", "audit", "approval"),
+    "test": ("test", "qa", "regression", "checklist"),
+}
 
 _SEMANTIC_ALIASES: dict[str, tuple[str, ...]] = {
     "approval": ("审批", "批准", "review"),

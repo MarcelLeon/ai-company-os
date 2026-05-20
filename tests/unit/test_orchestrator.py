@@ -198,7 +198,7 @@ async def test_orchestrator_reports_adapter_status_without_submitting_task() -> 
     await orchestrator.handle_incoming(_incoming_message(text="/status"))
 
     assert adapter.received_tasks == []
-    assert channel.sent_messages == [MessageContent(text="scripted: idle")]
+    assert channel.sent_messages == [MessageContent(text="scripted: idle 0/1 running")]
     assert channel.edited_messages == []
 
 
@@ -215,7 +215,7 @@ async def test_orchestrator_status_includes_recent_tasks() -> None:
     await orchestrator.handle_incoming(_incoming_message(text="/status"))
 
     assert channel.sent_messages[-1] == MessageContent(
-        text="scripted: idle\n\nRecent tasks:\ntask-4 [scripted]: done"
+        text="scripted: idle 0/1 running\n\nRecent tasks:\ntask-4 [scripted]: done"
     )
 
 
@@ -746,7 +746,8 @@ async def test_orchestrator_reports_agents_and_agent_card() -> None:
     assert channel.sent_messages[0] == MessageContent(
         text=(
             "Agents:\n"
-            "- claude -> claude-code (idle) [role: implementer]\n\n"
+            "- claude -> claude-code (idle 0/1 running, max 1 concurrent) "
+            "[role: implementer]\n\n"
             "Next:\n"
             "- /agent <agent>\n"
             "- /roles\n"
@@ -756,6 +757,8 @@ async def test_orchestrator_reports_agents_and_agent_card() -> None:
     assert channel.sent_messages[1].text.startswith("Agent: claude\n")
     assert "role: implementer" in channel.sent_messages[1].text
     assert "provider: claude-code\n" in channel.sent_messages[1].text
+    assert "max_concurrent: 1\n" in channel.sent_messages[1].text
+    assert "recommended_appointments: <= 1\n" in channel.sent_messages[1].text
     assert "skills: provider_cli via /skills claude" in channel.sent_messages[1].text
     assert (
         "Next:\n- /roles\n- /appoint claude as <role>\n- /new claude"

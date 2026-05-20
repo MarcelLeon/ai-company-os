@@ -27,7 +27,8 @@ class CursorAdapter(ClaudeCodeAdapter):
         cwd: Path | None = None,
         process_factory: ProcessFactory | None = None,
         interrupt_timeout_seconds: float = 5.0,
-        output_idle_timeout_seconds: float | None = 90.0,
+        output_idle_timeout_seconds: float | None = 300.0,
+        max_concurrent_tasks: int = 5,
     ) -> None:
         super().__init__(
             adapter_name="cursor",
@@ -36,6 +37,7 @@ class CursorAdapter(ClaudeCodeAdapter):
             process_factory=process_factory,
             interrupt_timeout_seconds=interrupt_timeout_seconds,
             output_idle_timeout_seconds=output_idle_timeout_seconds,
+            max_concurrent_tasks=max_concurrent_tasks,
         )
 
     def capabilities(self) -> frozenset[Capability]:

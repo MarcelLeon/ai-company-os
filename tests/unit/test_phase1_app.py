@@ -269,7 +269,8 @@ def test_build_phase1_runtime_can_enable_codex_adapter_for_status() -> None:
     assert [snapshot.name for snapshot in snapshots] == ["claude-code", "codex"]
     codex = runtime.registry.get("codex")
     assert isinstance(codex, CodexAdapter)
-    assert codex._output_idle_timeout_seconds == 90.0  # noqa: SLF001
+    assert codex._output_idle_timeout_seconds == 300.0  # noqa: SLF001
+    assert codex.max_concurrent_tasks() == 5
 
 
 def test_build_phase1_runtime_can_enable_cursor_adapter_for_agents() -> None:
@@ -356,6 +357,14 @@ def test_build_phase1_runtime_can_enable_all_optional_adapters() -> None:
         "trae",
         "gemini",
     ]
+    assert runtime.project_directory.agent("codeflicker") is not None
+    codeflicker_tester = runtime.project_directory.upsert_appointment(
+        project_id="aico",
+        agent_id="codeflicker",
+        role_id="tester",
+    )
+    assert codeflicker_tester is not None
+    assert codeflicker_tester.agent == "codeflicker"
 
 
 def test_build_phase1_runtime_registers_claude_alias() -> None:

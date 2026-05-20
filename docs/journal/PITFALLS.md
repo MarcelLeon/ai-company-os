@@ -529,7 +529,7 @@ Project appointment 的底层存储按 `seat` 唯一,但产品语义真正需要
 
 **状态**:🟢 RESOLVED
 **首次踩中**:Round 53
-**最后更新**:2026-05-06
+**最后更新**:2026-05-20
 **影响范围**:`src/aico/core/commands.py`, `src/aico/core/orchestrator.py`, `src/aico/core/task_bus.py`, `src/aico/adapter/claude_code.py`, `src/aico/adapter/codex.py`, `src/aico/app/phase1.py`
 
 **症状**
@@ -556,18 +556,19 @@ Round 57 真实复测再次卡在 `Task accepted ... [reviewer]`,此时 `/interr
 - `TaskBus.interrupt()` 支持 task id 前缀匹配,和 `/approve <short_id>` 一样适配 IM 输入。
 - 中断 running 任务后任务状态更新为 `interrupted`,并记录 `task_interrupted` 审计事件。
 - Phase 5 collaboration playbook 增加卡在 `Task accepted ... [reviewer]` 时的排查和中断步骤。
-- Codex Adapter 默认启用输出空闲超时,90 秒没有 stdout 时会终止底层 CLI,
-  返回 `adapter output idle timeout after 90s`,并释放 `codex: busy`。
+- Codex Adapter 默认启用输出空闲超时。Round 57 首版阈值为 90 秒;Round 98 已放宽到 300 秒,
+  返回 `adapter output idle timeout after 300s`,并释放并发槽位。
 - 可通过 `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 调整 Codex 空闲超时阈值。
 
 **如何避免再次踩中**
 - 真实 smoke test 如果停在 `Task accepted` 后无输出,先查 `/status`,再用 `/interrupt <short_task_id>`。
-- 重启到 Round 57 之后,如果忘记手动 interrupt,Codex 也应在空闲超时后自动失败并恢复 idle。
+- 重启到 Round 98 之后,如果忘记手动 interrupt,Codex 也应在 300 秒空闲超时后自动失败并释放并发槽位。
 - 新增任何长任务入口时,必须确认 IM 侧有中断路径,不能只在 Adapter 接口里有 interrupt。
 - 排查 Codex 卡住时,优先 grep task id,看是否有 `Stream output` 或 `Adapter process exited`。
 
 **相关链接**
 - ROUNDS Round 53
+- ROUNDS Round 98
 - ROUNDS Round 57
 
 ### [P-016] Appointment prompt 脚手架导致普通项目咨询误触发审批
@@ -768,3 +769,63 @@ Codex read-only sandbox 适合静态分析和文件读取,但不保证 Python / 
 
 **相关链接**
 - ROUNDS Round 93
+
+### [P-021] Project agent alias 与 provider 名漂移导致 `/appoint` 被拒
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 98
+**最后更新**:2026-05-20
+**影响范围**:`src/aico/app/phase1.py`, `src/aico/core/project_assignment.py`
+
+**症状**
+真实 IM 中执行 `/appoint codeflicker as tester` 返回
+`Cannot appoint codeflicker as tester`。`/agents` 能看到 CodeFlicker,但项目办公室不能任命。
+
+**根因**
+默认 project config 过去对所有 persona 都优先取第一个 alias 作为 agent id。
+CodeFlicker 的第一个 alias 是 `flicker`,而用户自然输入的是 provider / persona 名 `codeflicker`。
+命令层 `AgentDirectory.resolve()` 能识别 `codeflicker`,但 `ProjectAssignmentDirectory`
+只按配置 agent id 精确匹配,因此任命失败。
+
+**解决方案 / 缓解措施**
+- 默认 project config 只对 `implementer` / `reviewer` 保留历史别名 `claude` / `codex`;
+  Cursor / CodeFlicker / Trae / Gemini 使用 persona 名作为 agent id。
+- `ProjectAssignmentDirectory.resolve_agent_id()` 支持先按 agent id 匹配,再在唯一匹配时按
+  `CompanyAgentProfile.provider` 匹配。
+- 新增单测覆盖 `codeflicker` provider 名任命路径。
+
+**如何避免再次踩中**
+- 新 adapter 进入 `/agents` 后,必须用 `/appoint <agent> as <role>` 的展示名做一次 project-office 验收。
+- agent id、persona name、adapter/provider name、alias 可以不同,但 project appointment 解析必须支持用户看到的名字。
+
+**相关链接**
+- ROUNDS Round 98
+
+### [P-022] 单 adapter 单槽位不适合一个 agent 担任多个 role
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 98
+**最后更新**:2026-05-20
+**影响范围**:`src/aico/adapter/claude_code.py`, `src/aico/core/command_messages.py`
+
+**症状**
+同一个 Codex 被任命为 reviewer 和 tester 后,连续 `/ask reviewer ...` 与
+`/ask tester ...` 时第二个任务返回 `Task busy: adapter is busy`。
+
+**根因**
+`ClaudeCodeAdapter` 家族原来只要有任意运行中 task 就把 adapter 标成 busy 并拒绝新任务。
+这在单 persona smoke test 中可用,但不符合“一个真实 agent 可同时承担多个岗位”的 project-office 语义。
+
+**解决方案 / 缓解措施**
+- CLI adapter 新增 `max_concurrent_tasks`,默认 5;只有运行中任务达到上限才返回 busy。
+- `AdapterSnapshot` 记录 `running_tasks` / `max_concurrent_tasks`。
+- `/agents` / `/agent` 展示当前运行数、最大并发和建议任命上限;`/appoint` 成功回执也展示同样约束。
+- Codex / optional CLI adapter 默认 output idle timeout 从 90 秒放宽到 300 秒,减少长思考任务被误杀。
+
+**如何避免再次踩中**
+- 不要把 `AdapterStatus.BUSY` 理解成“有任何任务在跑”;用户关心的是还能不能接新任务。
+- 任命同一 agent 到多个高频 role 时,先看 `/agent <agent>` 的最大并发;超过上限应新增 agent 或降低并行派工。
+- 如果真实 provider 长时间不吐 stdout,先用环境变量调大 timeout 或设计 heartbeat,不要回退到无限 busy。
+
+**相关链接**
+- ROUNDS Round 98

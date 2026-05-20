@@ -59,6 +59,36 @@ Phase 7 第一版共享记忆已经有 `MemoryAtom`、`JsonlMemoryStore`、`Memo
 - 当前默认实现不是外部模型调用;它是 model-ready 的本地 semantic scorer。真实 embedding / LLM rerank
   需要后续在成本、延迟、失败回退和可审计 citation 上再做一轮设计。
 
+## 落地更新:2026-05-20
+
+Round 96 将 ADR-0023 从“semantic scorer”推进到可解释检索契约:
+
+- 新增 `MemoryRetrievalQuery`:统一承载 query、scopes、role、agent、task kind、top_k 和 token budget。
+- 新增 `MemoryRetrievalHit`:保留 atom、semantic/scope/recency/confidence/evidence/graph/final score 和 reason。
+- `MemoryRetriever.retrieve()` 先产出可解释 hits,`retrieve_packet()` 再把 hits 投影为 `MemoryPacket`。
+- 排序使用本地加权模型:
+
+```text
+final_score =
+  semantic_score * 0.45
++ scope_score * 0.20
++ confidence_score * 0.15
++ recency_score * 0.10
++ evidence_score * 0.05
++ graph_score * 0.05
+```
+
+- scope closeness 按 agent > role > team > project > boss global 排序;boss global 仍只作为偏好/工作方式类记忆进入普通项目 prompt。
+- `/recall` 改为复用 `MemoryRetriever`,并展示 reason,让老板和下一轮 agent 能知道为什么召回某条记忆。
+- 第一版 `graph_score` 先保留为 0.0,后续可沿 `supports` / `derived_from` / `broadcast_to` 关系扩展邻居,但不能绕过 scope 和 governor。
+
+Round 97 继续落地 graph / task-aware 检索:
+
+- `MemoryRetriever` 会对直接命中的记忆沿 `supports` / `derived_from` / `broadcast_to` 扩展一跳 graph 邻居。
+- graph 邻居必须已经位于本次 retrieval query 允许的 scopes 中,并通过 `MemoryGovernor`;跨 project / team 记忆不会因为 edge 被带入。
+- `MemoryRetrievalQuery.role_id`、`agent_id`、`task_kind` 会扩展为本地 query hints,例如 `tester` 补充 `test / qa / regression / checklist`,`release` 补充 `release / changelog / release notes`。
+- `/recall` 输出增加 final / semantic / scope / graph score,便于真实 IM 验收和后续调权。
+
 ## 相关
 
 - ADR-0022:A2A Memory Fabric

@@ -49,6 +49,8 @@ class AdapterRegistry:
                 name=adapter.name,
                 status=adapter.status(),
                 capabilities=tuple(sorted(adapter.capabilities())),
+                running_tasks=_adapter_running_tasks(adapter),
+                max_concurrent_tasks=_adapter_max_concurrent_tasks(adapter),
             )
             for adapter in self._adapters.values()
         )
@@ -56,3 +58,21 @@ class AdapterRegistry:
 
 def _normalize(value: str) -> str:
     return value.strip().lower().replace("_", "-")
+
+
+def _adapter_running_tasks(adapter: AIAdapter) -> int:
+    count = getattr(adapter, "running_task_count", None)
+    if callable(count):
+        value = count()
+        if isinstance(value, int) and value >= 0:
+            return value
+    return 1 if adapter.status().value == "busy" else 0
+
+
+def _adapter_max_concurrent_tasks(adapter: AIAdapter) -> int:
+    max_tasks = getattr(adapter, "max_concurrent_tasks", None)
+    if callable(max_tasks):
+        value = max_tasks()
+        if isinstance(value, int) and value > 0:
+            return value
+    return 1

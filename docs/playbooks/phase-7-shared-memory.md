@@ -116,10 +116,35 @@ TDD 验收:
 
 TDD 验收:
 - `MemoryBroadcast` 写入 `broadcast_to` edge,并为 team appointment 生成 receipt。
+- `MemoryBroadcast` 同步写入 `memory_broadcasted` 审计事件,detail 中包含 receipt、source memory、broadcast memory、team scope、recipients 和 reason。
 - 同 team agent 后续任务自动召回广播共识。
 - A2A 子任务可传 `memory_refs + delta`,目标 agent 召回 governed `MemoryPacket`。
 - token-saving 模式必须可关闭;召回失败时回退显式消息传递。
 - 第一版先落内部 service 和 payload builder;不把 broadcast 做成老板必须手动操作的主命令。
+
+### Iteration 6 — 可解释记忆检索契约
+
+目标:让 `/recall`、Prompt Stack 和后续 A2A memory refs 使用同一套检索契约,并能解释“为什么召回”。
+
+TDD 验收:
+- `MemoryRetrievalQuery` 统一承载 query、scopes、role、agent、task kind、top_k 和 token budget。
+- `MemoryRetriever.retrieve()` 返回 `MemoryRetrievalHit`,包含 semantic/scope/recency/confidence/evidence/graph/final score。
+- `MemoryRetriever.retrieve_packet()` 只负责把 governed hits 投影为 `MemoryPacket`,不再单独维护另一套排序。
+- `/recall` 展示 reason,用于老板纠错和 agent 排障。
+- role / agent scope 记忆在同等语义匹配下优先于 project scope。
+- token budget 生效,过长记忆不会挤掉更紧凑的高相关记忆。
+- candidate、archived、restricted 和跨 project 记忆仍不能因为分数高进入普通 prompt。
+
+### Iteration 7 — Graph expansion 与 task-aware 召回
+
+目标:让检索能利用已沉淀的 memory graph 和 role/task 上下文,同时保持一跳、同 scope、可解释。
+
+TDD 验收:
+- `supports` / `derived_from` / `broadcast_to` graph 邻居可被一跳召回。
+- graph 邻居必须已经在本次 allowed scopes 中,不能跨 project / team 泄漏。
+- `role_id` / `agent_id` / `task_kind` 会作为 query hints 参与 semantic scoring。
+- tester / reviewer / release-manager 能更优先召回 test / review / release 相关记忆。
+- `/recall` 展示 final / semantic / scope / graph score 分项,方便真实 IM 验收。
 
 ## 验收
 
@@ -146,6 +171,7 @@ git diff --check
 - boss feedback 抽取时能区分 boss global 与 project/team memory;低置信结果进入 candidate。
 - candidate boss feedback 不进入 Prompt Stack,直到后续确认或升格。
 - team broadcast 后,同 team 下其它 agent 后续任务能自动召回该共识。
+- team broadcast 后,`/audit` 或 `AICO_AUDIT_LOG_PATH` JSONL 中能追踪 `memory_broadcasted` 事件和 receipt id。
 - A2A `memory_refs + delta` 只是可关闭优化;没有 refs 时仍发送完整显式 payload。
 
 ### 企业/团队管理验收场景
@@ -156,7 +182,7 @@ git diff --check
 2. 跨项目隔离:Payroll / HR 等其它项目记忆不会进入 AICO project prompt。
 3. 老板偏好:老板说“我更喜欢汇报进度时告诉我还有几阶段”后,后续项目任务可自动召回 boss global 偏好。
 4. 不确定反馈:老板说“可能/暂时/先看看”时写入 candidate,但不注入 Prompt Stack。
-5. 团队共识:lead agent 把重要项目记忆 broadcast 到 team 后,QA / implementation 等同 team 后续任务可自动看到共识。
+5. 团队共识:lead agent 把重要项目记忆 broadcast 到 team 后,QA / implementation 等同 team 后续任务可自动看到共识,且 audit 里能看到 `memory_broadcasted` 事件。
 6. 重启恢复:使用同一 `AICO_MEMORY_PATH` 重新创建 `JsonlMemoryStore` 后,project/team memory 和 edge receipt 仍可恢复。
 7. A2A token-saving:有 refs 时可发送 `memory_refs + delta`;无 refs 或关闭时回退完整显式 payload。
 
@@ -180,6 +206,8 @@ git diff --check
 - 用 `/ask <role> <task>` 等自然项目命令执行后,agent 能使用当前项目记忆,不要求老板手动维护记忆上下文。
 - 用会议/广播入口显式发布 team 共识后,后续 `/ask <role> ...` 能体现这条共识。
 - 语义检索仍先做 scope 过滤和 MemoryGovernor 投影;不要为了召回效果绕过 project/team 隔离、candidate 或 sensitivity 策略。
+- `/recall <query>` 输出应包含 reason,能解释 semantic match、scope、sensitivity 和 confidence。
+- `/recall <query>` 输出应包含 score 分项,能看到 final / semantic / scope / graph 对排序的贡献。
 
 ## 失败排查
 

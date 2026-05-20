@@ -89,6 +89,7 @@ class AuditEventType(StrEnum):
     TASK_INTERRUPTED = "task_interrupted"
     TASK_REJECTED = "task_rejected"
     TASK_USAGE_RECORDED = "task_usage_recorded"
+    MEMORY_BROADCASTED = "memory_broadcasted"
 
 
 class MessageKind(StrEnum):
@@ -145,6 +146,8 @@ class AdapterSnapshot(FrozenModel):
     name: str = Field(min_length=1)
     status: AdapterStatus
     capabilities: tuple[Capability, ...] = ()
+    running_tasks: int = Field(default=0, ge=0)
+    max_concurrent_tasks: int = Field(default=1, ge=1)
 
 
 class TaskSnapshot(FrozenModel):

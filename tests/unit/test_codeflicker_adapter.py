@@ -14,7 +14,7 @@ def test_codeflicker_adapter_uses_safe_quiet_defaults() -> None:
     adapter = CodeFlickerAdapter()
 
     assert adapter.name == "codeflicker"
-    assert adapter._output_idle_timeout_seconds == 90.0  # noqa: SLF001
+    assert adapter._output_idle_timeout_seconds == 300.0  # noqa: SLF001
     assert DEFAULT_CODEFLICKER_COMMAND == (
         "flickcli",
         "-q",
