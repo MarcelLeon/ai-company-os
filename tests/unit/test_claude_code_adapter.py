@@ -1,7 +1,11 @@
 import asyncio
 import sys
+from asyncio.subprocess import DEVNULL, PIPE
 from pathlib import Path
 
+import pytest
+
+import aico.adapter.claude_code as claude_code_module
 from aico.adapter import AIAdapter
 from aico.adapter.claude_code import DEFAULT_CLAUDE_COMMAND, ClaudeCodeAdapter
 from aico.core import (
@@ -34,6 +38,18 @@ class BlockingLineReader:
         return b""
 
 
+class NotifyingLineReader(FakeLineReader):
+    def __init__(self, lines: list[bytes], done_event: asyncio.Event) -> None:
+        super().__init__(lines)
+        self._done_event = done_event
+
+    async def readline(self) -> bytes:
+        line = await super().readline()
+        if not line:
+            self._done_event.set()
+        return line
+
+
 class FakeProcess:
     def __init__(
         self,
@@ -43,9 +59,10 @@ class FakeProcess:
         return_code: int = 0,
         wait_event: asyncio.Event | None = None,
         stdout_reader: FakeLineReader | BlockingLineReader | None = None,
+        stderr_reader: FakeLineReader | BlockingLineReader | None = None,
     ) -> None:
         self.stdout = stdout_reader or FakeLineReader(stdout)
-        self.stderr = FakeLineReader(stderr or [])
+        self.stderr = stderr_reader or FakeLineReader(stderr or [])
         self.returncode: int | None = None
         self.terminated = False
         self.killed = False
@@ -78,6 +95,37 @@ def test_claude_code_adapter_default_command_is_non_interactive_for_remote_appro
         "--permission-mode",
         "bypassPermissions",
     )
+
+
+async def test_create_process_closes_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+    created_process = object()
+
+    async def fake_create_subprocess_exec(*command: str, **kwargs: object) -> object:
+        calls.append({"command": command, **kwargs})
+        return created_process
+
+    monkeypatch.setattr(
+        claude_code_module,
+        "create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+
+    process = await claude_code_module._create_process(  # noqa: SLF001
+        ("codex", "exec"),
+        Path("/tmp/work"),
+    )
+
+    assert process is created_process
+    assert calls == [
+        {
+            "command": ("codex", "exec"),
+            "stdin": DEVNULL,
+            "stdout": PIPE,
+            "stderr": PIPE,
+            "cwd": "/tmp/work",
+        }
+    ]
 
 
 async def test_claude_code_adapter_streams_stdout_and_done() -> None:
@@ -270,6 +318,33 @@ async def test_claude_code_adapter_emits_stderr_when_process_fails() -> None:
     assert outputs[0].content == "bad credentials"
 
 
+async def test_claude_code_adapter_drains_stderr_while_process_runs() -> None:
+    stderr_done = asyncio.Event()
+
+    async def factory(command: tuple[str, ...], cwd: Path | None) -> FakeProcess:
+        _ = (command, cwd)
+        return FakeProcess(
+            stdout=[b"ok\n"],
+            stderr_reader=NotifyingLineReader(
+                [f"diagnostic {index}\n".encode() for index in range(100)],
+                stderr_done,
+            ),
+            wait_event=stderr_done,
+        )
+
+    adapter = ClaudeCodeAdapter(process_factory=factory)
+    task = _task("task-1", "inspect")
+
+    ack = await adapter.receive_task(task)
+    outputs = await asyncio.wait_for(
+        _collect_outputs(adapter, task.task_id),
+        timeout=1.0,
+    )
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert outputs[-1].type is OutputType.DONE
+
+
 async def test_claude_code_adapter_interrupt_terminates_running_process() -> None:
     process: FakeProcess | None = None
     wait_event = asyncio.Event()
@@ -319,6 +394,33 @@ async def test_claude_code_adapter_fails_when_process_has_no_output_for_too_long
     assert adapter.status() is AdapterStatus.IDLE
 
 
+async def test_claude_code_adapter_emits_quiet_status_before_idle_timeout() -> None:
+    process: FakeProcess | None = None
+
+    async def factory(command: tuple[str, ...], cwd: Path | None) -> FakeProcess:
+        nonlocal process
+        _ = (command, cwd)
+        process = FakeProcess(stdout=[], stdout_reader=BlockingLineReader())
+        return process
+
+    adapter = ClaudeCodeAdapter(
+        process_factory=factory,
+        output_idle_timeout_seconds=0.03,
+        quiet_status_interval_seconds=0.01,
+    )
+
+    ack = await adapter.receive_task(_task("task-1", "long silent"))
+    outputs = [output async for output in adapter.stream_output("task-1")]
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert process is not None
+    assert process.terminated
+    assert outputs[0].type is OutputType.STATUS
+    assert outputs[0].content.startswith("Still running: no adapter output for ")
+    assert outputs[-1].type is OutputType.ERROR
+    assert outputs[-1].content == "adapter output idle timeout after 0.03s"
+
+
 async def test_claude_code_adapter_unknown_task_stream_reports_error() -> None:
     adapter = ClaudeCodeAdapter()
 
@@ -348,3 +450,7 @@ def _task(task_id: str, payload: str) -> Task:
 
 def _without_timestamps(outputs: list[TaskOutput]) -> list[dict[str, object]]:
     return [output.model_dump(exclude={"timestamp"}) for output in outputs]
+
+
+async def _collect_outputs(adapter: ClaudeCodeAdapter, task_id: str) -> list[TaskOutput]:
+    return [output async for output in adapter.stream_output(task_id)]

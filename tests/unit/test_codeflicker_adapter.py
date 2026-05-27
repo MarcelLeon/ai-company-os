@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from aico.adapter.claude_code import DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
 from aico.adapter.codeflicker import DEFAULT_CODEFLICKER_COMMAND, CodeFlickerAdapter
 from aico.core import (
     Capability,
@@ -14,7 +15,9 @@ def test_codeflicker_adapter_uses_safe_quiet_defaults() -> None:
     adapter = CodeFlickerAdapter()
 
     assert adapter.name == "codeflicker"
-    assert adapter._output_idle_timeout_seconds == 300.0  # noqa: SLF001
+    assert (  # noqa: SLF001
+        adapter._output_idle_timeout_seconds == DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
+    )
     assert DEFAULT_CODEFLICKER_COMMAND == (
         "flickcli",
         "-q",

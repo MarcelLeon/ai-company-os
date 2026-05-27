@@ -79,6 +79,7 @@ Playbook = "可执行的步骤清单",特点:
 - [x] [`phase-6-observability.md`](phase-6-observability.md) — Phase 6 `/metrics` 可观测 smoke test
 - [x] [`phase-7-shared-memory.md`](phase-7-shared-memory.md) — Phase 7 共享记忆第一切片验收
 - [x] [`phase-8-offline-delegation.md`](phase-8-offline-delegation.md) — Phase 8 离线托管第一切片验收
+- [x] [`phase-8-absence-loop.md`](phase-8-absence-loop.md) — Phase 8 老板缺席闭环 sprint 验收
 - [x] [`optional-agent-adapters.md`](optional-agent-adapters.md) — Cursor / CodeFlicker / Trae / Gemini 可选 Adapter 验收
 - [x] [`feishu-channel.md`](feishu-channel.md) — Feishu Channel webhook 文本收发 smoke test
 - [ ] `test-new-telegram-bot.md` — 验证新 Telegram Bot 配置

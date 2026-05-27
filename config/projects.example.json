@@ -31,6 +31,13 @@
       "summary": "Review design risk, code quality, test gaps, and maintainability.",
       "default_permissions": ["read_repo", "read_docs", "read_audit"]
     },
+    "challenger": {
+      "id": "challenger",
+      "title": "Critical Philosopher",
+      "prompt": "prompts/roles/challenger.md",
+      "summary": "Challenge project decisions, hidden assumptions, opportunity cost, and long-term risk before the lead commits.",
+      "default_permissions": ["read_docs", "read_audit"]
+    },
     "tester": {
       "id": "tester",
       "title": "Test Lead",
@@ -68,6 +75,10 @@
           "role": "reviewer",
           "prompt_override": "prompts/projects/aico/reviewer.md"
         },
+        "challenger": {
+          "role": "challenger",
+          "prompt_override": "prompts/projects/aico/challenger.md"
+        },
         "pm": {
           "role": "pm",
           "prompt_override": "prompts/projects/aico/pm.md"
@@ -93,6 +104,15 @@
       "session_policy": "bind_or_resume",
       "risk_policy": "read_only",
       "permissions": ["read_repo", "read_docs", "read_audit"]
+    },
+    {
+      "project": "aico",
+      "agent": "codex",
+      "role": "challenger",
+      "seat": "aico-challenger",
+      "session_policy": "bind_or_resume",
+      "risk_policy": "read_only",
+      "permissions": ["read_docs", "read_audit"]
     }
   ]
 }

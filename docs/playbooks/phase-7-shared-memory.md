@@ -46,6 +46,8 @@ Phase 7 的记忆层不是让老板高频维护 `/remember`、`/recall`、`/forg
    - `ttl`
    - `sensitivity`
    - `status`: `candidate` / `active` / `archived` / `superseded`
+   - `purpose_tags`: `general_context` / `public_broadcast` / `task_key_progress` /
+     `task_private` / `decision_review`
 2. 新增 `MemoryStore` 接口:
    - `append(record)`
    - `list(project_id, include_archived=False)`
@@ -146,6 +148,19 @@ TDD 验收:
 - tester / reviewer / release-manager 能更优先召回 test / review / release 相关记忆。
 - `/recall` 展示 final / semantic / scope / graph score 分项,方便真实 IM 验收。
 
+### Iteration 8 — 记忆用途标签与 lead 决策可见性
+
+目标:让 shared memory 不只按 scope 和 tag 分类,还按用途决定能否进入 lead 决策上下文。
+
+TDD 验收:
+- `MemoryAtom.purpose_tags` 默认为 `general_context`,旧 JSONL 记录可兼容恢复。
+- `/remember` 和 boss feedback 写入 `general_context`。
+- Team broadcast 生成的记忆带 `public_broadcast`,并不会把源记忆的 `task_private` 继续传播。
+- `task_private` 默认不进入 `MemoryRetriever` 普通检索和 Prompt Stack。
+- 显式 `allowed_purposes=(task_private,)` 才能召回内部短期记忆。
+- `/recall` 输出展示 purpose,方便 boss / lead / 下一轮 agent 判断记忆用途。
+- Prompt Stack 的 `Shared memory` 行展示 purpose,但仍只展示 MemoryPacket 投影。
+
 ## 验收
 
 ### 本地单测
@@ -208,6 +223,7 @@ git diff --check
 - 语义检索仍先做 scope 过滤和 MemoryGovernor 投影;不要为了召回效果绕过 project/team 隔离、candidate 或 sensitivity 策略。
 - `/recall <query>` 输出应包含 reason,能解释 semantic match、scope、sensitivity 和 confidence。
 - `/recall <query>` 输出应包含 score 分项,能看到 final / semantic / scope / graph 对排序的贡献。
+- `/recall <query>` 输出应包含 purpose;`task_private` 默认不应出现。
 
 ## 失败排查
 

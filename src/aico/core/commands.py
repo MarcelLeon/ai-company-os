@@ -10,6 +10,9 @@ class CommandName(StrEnum):
     HELP = "help"
     STATUS = "status"
     METRICS = "metrics"
+    INBOX = "inbox"
+    MORNING = "morning"
+    LANGUAGE = "language"
     TASKS = "tasks"
     TASK = "task"
     AUDIT = "audit"
@@ -22,6 +25,8 @@ class CommandName(StrEnum):
     DAILY = "daily"
     WEEKLY = "weekly"
     OVERNIGHT = "overnight"
+    DREAM = "dream"
+    GOAL = "goal"
     ASSIGNMENTS = "assignments"
     ASSIGNMENT = "assignment"
     ROLES = "roles"
@@ -63,6 +68,9 @@ def parse_command(text: str) -> Command | None:
         CommandName.HELP,
         CommandName.STATUS,
         CommandName.METRICS,
+        CommandName.INBOX,
+        CommandName.MORNING,
+        CommandName.LANGUAGE,
         CommandName.TASKS,
         CommandName.AUDIT,
         CommandName.PROJECTS,
@@ -72,6 +80,8 @@ def parse_command(text: str) -> Command | None:
         CommandName.DAILY,
         CommandName.WEEKLY,
         CommandName.OVERNIGHT,
+        CommandName.DREAM,
+        CommandName.GOAL,
         CommandName.ASSIGNMENTS,
         CommandName.ROLES,
         CommandName.TEAM,
@@ -104,6 +114,9 @@ def help_text() -> str:
         "Commands:\n"
         "/status - show adapter status\n"
         "/metrics - show local task and agent metrics\n"
+        "/inbox - show project approvals, running work, handoffs, and follow-ups\n"
+        "/morning - show done, blocked, risks, and next actions for the active project\n"
+        "/language [en|zh] - set future agent reply language for this chat; default English\n"
         "/tasks [limit] - show recent tasks\n"
         "/task <task_id> - show one task and available actions\n"
         "/audit - show recent audit events\n"
@@ -116,6 +129,8 @@ def help_text() -> str:
         "/daily [project] - show a daily local project report\n"
         "/weekly [project] - show a weekly local project report\n"
         "/overnight <goal> - delegate an offline project goal to the current lead\n"
+        "/dream - record reviewable runbook memory candidates from recent project signals\n"
+        "/goal [role] <objective> - attach a verifiable goal brief to project work\n"
         "/roles [project|all] - show compact role board; add all for hidden roles\n"
         "/role <id> - show one role's scope and approval policy\n"
         "/role propose <need> - draft a new project role for confirmation\n"

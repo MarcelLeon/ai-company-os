@@ -11,9 +11,11 @@ from aico.core import (
     IncomingMessage,
     MessageAction,
     MessageContent,
+    MessageNativeFormat,
     MessageTextSpan,
     MessageTextStyle,
 )
+from aico.core.message_rendering import rich_text_message
 
 
 async def test_telegram_channel_parses_text_update_and_advances_offset() -> None:
@@ -204,6 +206,57 @@ async def test_telegram_channel_renders_text_spans_as_telegram_html() -> None:
     assert json.loads(calls[0][1]) == {
         "chat_id": "chat-1",
         "text": "<b>Project &lt;A&gt;</b> ready",
+        "parse_mode": "HTML",
+    }
+
+
+async def test_telegram_channel_renders_agent_markdown_as_html() -> None:
+    calls: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, request.read()))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 123}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+
+        await channel.send_message(
+            target,
+            rich_text_message(
+                "Decision Memo## DecisionYes\n\n| Sprint | Status |\n|---|---|\n| Inbox | OK |"
+            ),
+        )
+
+    payload = json.loads(calls[0][1])
+    assert payload["parse_mode"] == "HTML"
+    assert "<b>Decision</b>" in payload["text"]
+    assert "<code>Sprint | Status</code>" in payload["text"]
+
+
+async def test_telegram_channel_sends_native_telegram_html_without_span_rewrite() -> None:
+    calls: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, request.read()))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 123}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+
+        await channel.send_message(
+            target,
+            MessageContent(
+                text="<b>Status</b>\n<pre>Inbox | OK</pre>",
+                native_format=MessageNativeFormat.TELEGRAM_HTML,
+            ),
+        )
+
+    payload = json.loads(calls[0][1])
+    assert payload == {
+        "chat_id": "chat-1",
+        "text": "<b>Status</b>\n<pre>Inbox | OK</pre>",
         "parse_mode": "HTML",
     }
 

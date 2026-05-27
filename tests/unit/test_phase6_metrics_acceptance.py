@@ -210,5 +210,8 @@ def _assert_metrics_acceptance(metrics: str) -> None:
     assert "waiting_approval=1" in metrics
     assert "agents: scripted=2" in metrics
     assert "collaboration: 1" in metrics
-    assert "open work:\n- task-approval [scripted]: waiting_approval" in metrics
+    assert (
+        "open work:\n• task-approval [scripted]: waiting_approval" in metrics
+        or "open work:\n- task-approval [scripted]: waiting_approval" in metrics
+    )
     assert "token/cost: unavailable from current CLI adapters" in metrics

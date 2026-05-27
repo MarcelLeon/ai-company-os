@@ -37,7 +37,9 @@
 具体包括:
 - `CursorAdapter` 默认命令为 `cursor-agent -p --output-format text`。
 - `CodeFlickerAdapter` 默认命令为 `flickcli -q --output-format text --tools '{"bash":false,"write":false}'`。
-- 两者默认 `output_idle_timeout_seconds=90`,避免 CLI accepted 后长期无 stdout 占用 Adapter。
+- 两者默认启用 no-output idle timeout,避免 CLI accepted 后长期无 stdout 占用 Adapter。
+  Round 114 后运行默认值为 1800 秒,并可通过 `AICO_*_OUTPUT_IDLE_TIMEOUT_SECONDS=0`
+  禁用自动 idle timeout。
 - `aico-phase1` 增加 `AICO_ENABLE_CURSOR_ADAPTER` 和 `AICO_ENABLE_CODEFLICKER_ADAPTER` 开关。
 - 启用后内置 personas 增加 `cursor` 和 `codeflicker`,让 `/agents` 能展示新成员。
 

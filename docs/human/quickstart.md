@@ -16,6 +16,21 @@ CLI 后的可选成员启用。Feishu Channel 已有实现切片,但仍需要真
 
 ## 5 步快速上手
 
+### 不配置 token 先看效果
+
+第一次看项目时,可以先跑本地 deterministic Release Room demo。它使用 fake adapters,
+不需要 Telegram Bot Token,也不会调用 Claude / Codex / 任何付费 provider:
+
+```bash
+git clone https://github.com/MarcelLeon/ai-company-os.git
+cd ai-company-os
+
+env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
+env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo
+```
+
+如果这条链路能看懂,再配置真实 Telegram runtime。
+
 ### 前置依赖
 
 - macOS / Linux
@@ -38,6 +53,7 @@ export AICO_PERSONA_CONFIG_PATH="config/personas.example.json"
 export AICO_PROJECT_CONFIG_PATH="config/projects.example.json"
 export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
 export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
+export AICO_STATE_DB_PATH="/tmp/aico-state.db"
 
 # 3. 安装依赖
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
@@ -74,6 +90,12 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
 - 写文件、shell 或 destructive 任务会先进入 `/approve` / `/reject` 审批流。
 - 指定 `AICO_MEMORY_PATH` 后,`/remember` / `/recall` / `/forget` 使用本地 JSONL
   共享记忆;如果启动时没带这个环境变量,运行中的 Bot 需要重启后才会启用记忆。
+- 指定 `AICO_STATE_DB_PATH` 后,task records、task snapshots、pending approval
+  和 `/overnight` 托管工单会写入 SQLite;重启后 `/tasks`、`/task <id>`、`/approve`
+  和 `/overnight` 能恢复 AICO 业务状态。
+- 开发期如果只想快速启用本地状态库,也可以设置 `AICO_STATE_DB_PATH=true`;
+  AICO 会映射到 `.aico/state.db`,避免在仓库根目录生成名为 `true` 的数据库文件。
+  用 `aico-state --db .aico/state.db` 可以查看 schema version 和各状态表行数。
 
 ---
 

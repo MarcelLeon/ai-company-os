@@ -7,6 +7,7 @@ from uuid import uuid4
 from aico.core.memory import (
     MemoryAtom,
     MemoryEvidence,
+    MemoryPurpose,
     MemoryScope,
     MemoryStatus,
     MemoryStore,
@@ -70,6 +71,7 @@ class MemoryCaptureService:
                 created_by=message.sender_id,
                 status=status,
                 tags=("boss-feedback", "boss-preference"),
+                purpose_tags=(MemoryPurpose.GENERAL_CONTEXT,),
                 reason=status_reason or scope_reason,
             )
         )

@@ -5,7 +5,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from aico.adapter.claude_code import ClaudeCodeAdapter, ProcessFactory
+from aico.adapter.claude_code import (
+    DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS,
+    ClaudeCodeAdapter,
+    ProcessFactory,
+)
 from aico.core.agent_session import ProviderSessionMode, provider_session_from_task
 from aico.core.models import Capability, Task
 
@@ -31,7 +35,7 @@ class CodexAdapter(ClaudeCodeAdapter):
         cwd: Path | None = None,
         process_factory: ProcessFactory | None = None,
         interrupt_timeout_seconds: float = 5.0,
-        output_idle_timeout_seconds: float | None = 300.0,
+        output_idle_timeout_seconds: float | None = DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS,
         max_concurrent_tasks: int = 5,
     ) -> None:
         super().__init__(

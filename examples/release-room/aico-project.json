@@ -43,6 +43,13 @@
       "default_permissions": ["code", "docs", "audit"],
       "inline_prompt": "Prioritize concrete bugs, untested behavior, documentation drift, and risky shortcuts. Findings first."
     },
+    "challenger": {
+      "id": "challenger",
+      "title": "Critical Philosopher",
+      "summary": "Challenge release decisions, hidden assumptions, opportunity cost, and long-term maintenance risk before the lead commits.",
+      "default_permissions": ["docs", "audit"],
+      "inline_prompt": "Act as the lead's independent critic. Challenge release scope, assumptions, evidence quality, user value, and long-term cost. End with oppose, conditional support, or support."
+    },
     "release-manager": {
       "id": "release-manager",
       "title": "Release Manager",
@@ -81,6 +88,10 @@
         "reviewer": {
           "role": "reviewer",
           "resources": ["README.md", "CHANGELOG.md", "src/notes_cli/__main__.py", "tests/"]
+        },
+        "challenger": {
+          "role": "challenger",
+          "resources": ["STATUS.md", "issues/003-v02-release.md", "README.md", "CHANGELOG.md"]
         },
         "release-manager": {
           "role": "release-manager",
@@ -132,6 +143,16 @@
     },
     {
       "project": "release-room",
+      "agent": "codex",
+      "role": "challenger",
+      "seat": "release-room-challenger",
+      "session_policy": "bind_or_resume",
+      "risk_policy": "read_only",
+      "permissions": ["docs", "audit"],
+      "workspace": "examples/release-room/notes-cli"
+    },
+    {
+      "project": "release-room",
       "agent": "claude",
       "role": "release-manager",
       "seat": "release-room-release-manager",
@@ -142,4 +163,3 @@
     }
   ]
 }
-

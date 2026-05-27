@@ -85,7 +85,7 @@
 
 - `/agents` 展示已启用的 `cursor`、`codeflicker`、`trae`、`gemini`。
 - `/agent <agent>` 的 capabilities 包含 `code_edit` / `shell_exec` / `code_review` / `interruptible`。
-- 只读任务能 accepted 并最终 done / failed;如果 CLI 无输出,默认 300 秒左右会触发 idle timeout,Adapter 释放并发槽位。
+- 只读任务能 accepted 并最终 done / failed;如果 CLI 无输出,默认 1800 秒左右会触发 idle timeout,Adapter 释放并发槽位。需要长时间托管时可把对应 `AICO_*_OUTPUT_IDLE_TIMEOUT_SECONDS` 设为 `0` 禁用自动 idle timeout。
 - `/agents` / `/agent <agent>` 会展示当前运行数和最大并发。默认单 adapter 最多 5 个运行中任务,建议不要给同一个 agent 任命超过 5 个高频 role。
 - 写文件或 shell 类任务必须先进入 AICO 审批,批准后才派发到底层 CLI。
 

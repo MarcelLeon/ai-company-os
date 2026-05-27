@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,10 +24,13 @@ from aico.core import (
     MemoryAtom,
     MemoryBroadcastService,
     MemoryEvidence,
+    MemoryPurpose,
     MemoryScope,
     MemoryStatus,
     MessageContent,
+    MessageNativeFormat,
     MessageRouter,
+    MetadataEntry,
     Orchestrator,
     OutputType,
     PersonaProfile,
@@ -39,6 +43,7 @@ from aico.core import (
     ProviderSessionRef,
     RoleProfile,
     SentMessage,
+    SQLiteOfflineDelegationStore,
     Task,
     TaskAck,
     TaskBus,
@@ -214,8 +219,8 @@ async def test_orchestrator_status_includes_recent_tasks() -> None:
     await orchestrator.handle_incoming(_incoming_message())
     await orchestrator.handle_incoming(_incoming_message(text="/status"))
 
-    assert channel.sent_messages[-1] == MessageContent(
-        text="scripted: idle 0/1 running\n\nRecent tasks:\ntask-4 [scripted]: done"
+    assert channel.sent_messages[-1].text == (
+        "scripted: idle 0/1 running\n\nRecent tasks:\ntask-4 [scripted]: done"
     )
 
 
@@ -255,7 +260,7 @@ async def test_orchestrator_reports_local_metrics_without_submitting_task() -> N
     assert "waiting_approval=1" in metrics
     assert "agents: scripted=2" in metrics
     assert "collaboration: 1" in metrics
-    assert "open work:\n- task-approval [scripted]: waiting_approval" in metrics
+    assert "open work:\n• task-approval [scripted]: waiting_approval" in metrics
     assert "token/cost: unavailable from current CLI adapters" in metrics
     assert len(adapter.received_tasks) == 1
 
@@ -274,8 +279,8 @@ async def test_orchestrator_lists_recent_tasks_without_submitting_task() -> None
 
     assert adapter.received_tasks[0].task_id == "task-4"
     assert len(adapter.received_tasks) == 1
-    assert channel.sent_messages[-1] == MessageContent(
-        text=("Recent tasks:\ntask-4 [scripted]: done\n\nUse /task <task_id> for details.")
+    assert channel.sent_messages[-1].text == (
+        "Recent tasks:\ntask-4 [scripted]: done\n\nUse /task <task_id> for details."
     )
 
 
@@ -297,7 +302,7 @@ async def test_orchestrator_reports_task_detail_and_available_actions() -> None:
     assert "target: lao-zhang\n" in detail
     assert "status: waiting_approval\n" in detail
     assert "risk: write_files\n" in detail
-    assert "Actions:\n- /approve task-app\n- /reject task-app" in detail
+    assert "Actions:\n• /approve task-app\n• /reject task-app" in detail
     assert adapter.received_tasks == []
 
 
@@ -517,11 +522,11 @@ async def test_orchestrator_reports_recent_audit_events() -> None:
 
     audit_text = channel.sent_messages[-1].text
     assert audit_text.startswith("Recent audit events:")
-    assert "- task_submitted\n" in audit_text
+    assert "• task_submitted\n" in audit_text
     assert "  task: task-audit\n" in audit_text
     assert "  actor: user-1\n" in audit_text
     assert "  target: lao-zhang\n" in audit_text
-    assert "- approval_requested\n" in audit_text
+    assert "• approval_requested\n" in audit_text
     assert "  risk: shell_exec" in audit_text
     assert adapter.received_tasks == []
 
@@ -544,6 +549,80 @@ async def test_orchestrator_reports_help_without_submitting_task() -> None:
     assert "/approve [task_id]" in channel.sent_messages[0].text
     assert "/codex <task>" in channel.sent_messages[0].text
     assert channel.edited_messages == []
+
+
+async def test_orchestrator_language_command_scopes_future_agent_replies() -> None:
+    adapter = ScriptedAdapter()
+    channel = RecordingChannel()
+    task_ids = iter(("task-language-1", "task-language-2", "task-language-3"))
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
+        task_bus=TaskBus(adapter),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/language"))
+    await orchestrator.handle_incoming(_incoming_message(text="/language zh"))
+    await orchestrator.handle_incoming(_incoming_message(text="please inspect"))
+    await orchestrator.handle_incoming(_incoming_message(text="/language en"))
+    await orchestrator.handle_incoming(_incoming_message(text="please inspect again"))
+
+    assert channel.sent_messages[0].text.startswith("Agent response language\n")
+    assert "current: English" in channel.sent_messages[0].text
+    assert channel.sent_messages[1].text.startswith("Agent response language updated\n")
+    assert "current: Simplified Chinese" in channel.sent_messages[1].text
+    assert "Response language:\n- Reply to the boss in Simplified Chinese." in (
+        adapter.received_tasks[0].payload
+    )
+    assert "Current task:" not in adapter.received_tasks[0].payload
+    assert adapter.received_tasks[0].metadata[-1].key == "aico.response_language"
+    assert "Response language:" not in adapter.received_tasks[1].payload
+
+
+async def test_orchestrator_language_command_injects_project_role_tasks() -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-language"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(_incoming_message(text="/language zh", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/ask implementer summarize status", mentions=())
+    )
+
+    payload = adapter.received_tasks[0].payload
+    assert payload.startswith("Response language:\n")
+    assert "Reply to the boss in Simplified Chinese." in payload
+    assert "Current task:\nsummarize status" in payload
+
+
+async def test_orchestrator_can_pilot_native_telegram_agent_output() -> None:
+    adapter = ScriptedAdapter(output_texts=("<b>Status</b>\n<pre>Inbox | OK</pre>",))
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-native"),
+        task_bus=TaskBus(adapter),
+        prefer_native_channel_format=True,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="summarize status"))
+
+    task = adapter.received_tasks[0]
+    assert task.payload.startswith("Output format for Telegram:\n")
+    assert task.payload.endswith("\n\nsummarize status")
+    assert task.metadata[-1].key == "aico.native_output_format"
+    assert task.metadata[-1].value == MessageNativeFormat.TELEGRAM_HTML.value
+    assert channel.edited_messages[-1] == MessageContent(
+        text="<b>Status</b>\n<pre>Inbox | OK</pre>",
+        native_format=MessageNativeFormat.TELEGRAM_HTML,
+    )
 
 
 async def test_orchestrator_broadcasts_to_persona_targets() -> None:
@@ -627,9 +706,10 @@ async def test_orchestrator_routes_adapter_collaboration_directive_to_target_per
     assert reviewer.received_tasks[0].payload == (
         "Role: reviewer.\n\nCollaboration request from implementer:\n\ninspect this implementation"
     )
-    assert (
-        MessageContent(text="Collaboration requested: implementer -> reviewer")
-        in channel.sent_messages
+    assert any(
+        message.text == "Collaboration requested\nsource: implementer\ntarget: reviewer"
+        and message.spans
+        for message in channel.sent_messages
     )
     assert MessageContent(text="Task accepted: task-child [reviewer]") in channel.sent_messages
     assert MessageContent(text="looks good") in channel.edited_messages
@@ -646,12 +726,130 @@ async def test_orchestrator_routes_adapter_collaboration_directive_to_target_per
 
     await orchestrator.handle_incoming(_incoming_message(text="/task task-child"))
     child_detail = channel.sent_messages[-1].text
-    assert "Collaboration:\n- requested by: implementer\n" in child_detail
-    assert "- parent: task-par (/task task-par)" in child_detail
+    assert "Collaboration:\n• requested by: implementer\n" in child_detail
+    assert "• parent: task-par (/task task-par)" in child_detail
 
     await orchestrator.handle_incoming(_incoming_message(text="/task task-parent"))
     parent_detail = channel.sent_messages[-1].text
-    assert "Collaboration:\n- children:\n  - task-chi -> reviewer (/task task-chi)" in parent_detail
+    assert "Collaboration:\n• children:\n  • task-chi -> reviewer (/task task-chi)" in parent_detail
+
+
+async def test_orchestrator_routes_later_collaboration_directive_and_keeps_text() -> None:
+    implementer = ScriptedAdapter(
+        name="claude-code",
+        output_texts=("Plan:\n- implement inbox list\n@reviewer: inspect this implementation\n",),
+    )
+    reviewer = ScriptedAdapter(name="codex", output_texts=("looks good",))
+    persona_registry = PersonaRegistry(
+        [
+            PersonaProfile(
+                name="implementer",
+                adapter_name="claude-code",
+                role_instruction="Role: implementer.",
+            ),
+            PersonaProfile(
+                name="reviewer",
+                adapter_name="codex",
+                role_instruction="Role: reviewer.",
+            ),
+        ]
+    )
+    channel = RecordingChannel()
+    task_ids = iter(("task-parent", "task-child"))
+    bus = TaskBus(
+        AdapterRegistry([implementer, reviewer]),
+        persona_registry=persona_registry,
+    )
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(
+            default_persona="implementer",
+            task_id_factory=lambda: next(task_ids),
+        ),
+        task_bus=bus,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/implementer implement feature"))
+
+    assert reviewer.received_tasks[0].payload == (
+        "Role: reviewer.\n\n"
+        "Collaboration request from implementer:\n\n"
+        "Context from implementer output so far:\n"
+        "Plan:\n- implement inbox list\n\n"
+        "Request:\n"
+        "inspect this implementation"
+    )
+    assert any(
+        message.text == "Plan:\n• implement inbox list" for message in channel.edited_messages
+    )
+    assert any(
+        message.text == "Collaboration requested\nsource: implementer\ntarget: reviewer"
+        and message.spans
+        for message in channel.sent_messages
+    )
+
+
+async def test_orchestrator_collaboration_uses_assignment_role_and_parent_context() -> None:
+    adapter = ScriptedAdapter(
+        name="claude-code",
+        output_texts=(
+            "Findings:\n"
+            "(a) keep /inbox read-only.\n"
+            "(b) do not normalize batched approvals.\n"
+            "@implementer: reflect (a)-(b) in the inbox plan\n",
+        ),
+    )
+    channel = RecordingChannel()
+    task_ids = iter(("task-parent", "task-child"))
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(
+            default_persona="implementer",
+            task_id_factory=lambda: next(task_ids),
+        ),
+        task_bus=bus,
+    )
+    task = Task(
+        task_id="task-parent",
+        payload="review plan",
+        requester_id="user-1",
+        target_persona="implementer",
+        metadata=(MetadataEntry(key="aico.assignment_role", value="reviewer"),),
+    )
+    await bus.submit(task)
+
+    sent_message = await channel.send_message(
+        _incoming_message().source,
+        MessageContent(text="Task accepted: task-parent [reviewer]"),
+    )
+    await orchestrator._stream_outputs_for_task(
+        _incoming_message(),
+        sent_message,
+        task,
+    )
+
+    assert adapter.received_tasks[0].task_id == "task-parent"
+    assert adapter.received_tasks[1].payload == (
+        "Collaboration request from reviewer:\n\n"
+        "Context from reviewer output so far:\n"
+        "Findings:\n"
+        "(a) keep /inbox read-only.\n"
+        "(b) do not normalize batched approvals.\n\n"
+        "Request:\n"
+        "reflect (a)-(b) in the inbox plan"
+    )
+    assert any(
+        message.text == "Collaboration requested\nsource: reviewer\ntarget: implementer"
+        and message.spans
+        for message in channel.sent_messages
+    )
+    collaboration_event = next(
+        event
+        for event in bus.audit_events(limit=None)
+        if event.event_type is AuditEventType.COLLABORATION_REQUESTED
+    )
+    assert collaboration_event.actor_id == "reviewer"
 
 
 async def test_orchestrator_splits_long_stream_output_across_messages() -> None:
@@ -743,16 +941,14 @@ async def test_orchestrator_reports_agents_and_agent_card() -> None:
     await orchestrator.handle_incoming(_incoming_message(text="/agents", mentions=()))
     await orchestrator.handle_incoming(_incoming_message(text="/agent claude", mentions=()))
 
-    assert channel.sent_messages[0] == MessageContent(
-        text=(
-            "Agents:\n"
-            "- claude -> claude-code (idle 0/1 running, max 1 concurrent) "
-            "[role: implementer]\n\n"
-            "Next:\n"
-            "- /agent <agent>\n"
-            "- /roles\n"
-            "- /appoint <agent> as <role>"
-        )
+    assert channel.sent_messages[0].text == (
+        "Agents:\n"
+        "• claude -> claude-code (idle 0/1 running, max 1 concurrent) "
+        "[role: implementer]\n\n"
+        "Next:\n"
+        "• /agent <agent>\n"
+        "• /roles\n"
+        "• /appoint <agent> as <role>"
     )
     assert channel.sent_messages[1].text.startswith("Agent: claude\n")
     assert "role: implementer" in channel.sent_messages[1].text
@@ -761,7 +957,7 @@ async def test_orchestrator_reports_agents_and_agent_card() -> None:
     assert "recommended_appointments: <= 1\n" in channel.sent_messages[1].text
     assert "skills: provider_cli via /skills claude" in channel.sent_messages[1].text
     assert (
-        "Next:\n- /roles\n- /appoint claude as <role>\n- /new claude"
+        "Next:\n• /roles\n• /appoint claude as <role>\n• /new claude"
         in channel.sent_messages[1].text
     )
     assert adapter.received_tasks == []
@@ -869,6 +1065,75 @@ async def test_orchestrator_handles_team_who_appoint_default_and_ask_commands() 
     assert adapter.received_tasks[0].metadata[1].value == "aico-tester"
     assert "Current task:\nplain project task" in adapter.received_tasks[1].payload
     assert adapter.received_tasks[1].metadata[1].value == "aico-tester"
+
+
+async def test_orchestrator_goal_command_attaches_goal_brief_to_project_role() -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-goal-1"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(
+            text="/goal implementer inspect release plan 验收: summarize blockers",
+            mentions=(),
+        )
+    )
+    await orchestrator.handle_incoming(_incoming_message(text="/task task-goa", mentions=()))
+
+    goal_notice = channel.sent_messages[1].text
+    task = adapter.received_tasks[0]
+
+    assert goal_notice.startswith("Goal queued. goal-task-goa\n")
+    assert "owner: implementer -> claude\n" in goal_notice
+    assert "objective: inspect release plan" in goal_notice
+    assert "acceptance:\n• summarize blockers" in goal_notice
+    assert channel.sent_messages[1].spans
+    assert "AICO Goal Brief" in task.payload
+    assert "goal_id: goal-task-goa" in task.payload
+    assert "objective: inspect release plan" in task.payload
+    assert "Do not claim done until every acceptance criterion has evidence." in task.payload
+    assert _metadata_value(task, "aico.intent") == "goal_brief"
+    assert _metadata_value(task, "aico.goal_id") == "goal-task-goa"
+    detail = channel.sent_messages[-1].text
+    assert "Goal brief:\nid: goal-task-goa" in detail
+    assert "objective: inspect release plan" in detail
+    assert "acceptance: summarize blockers" in detail
+
+
+async def test_orchestrator_ask_with_acceptance_attaches_goal_brief_conservatively() -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-goal-2"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(
+            text="/ask implementer inspect release plan 验收: summarize blockers",
+            mentions=(),
+        )
+    )
+
+    goal_notice = channel.sent_messages[1].text
+    task = adapter.received_tasks[0]
+
+    assert goal_notice.startswith("Verifiable task detected. Goal brief attached. goal-task-goa\n")
+    assert "owner: implementer -> claude\n" in goal_notice
+    assert "AICO Goal Brief" in task.payload
+    assert _metadata_value(task, "aico.intent") == "goal_brief"
+    assert _metadata_value(task, "aico.goal_acceptance") == "summarize blockers"
 
 
 async def test_orchestrator_reports_project_roles_and_appointment_gaps() -> None:
@@ -1309,6 +1574,252 @@ async def test_orchestrator_queues_overnight_delegation_to_project_lead() -> Non
     assert "• night-task-nig: implementer -> claude (task-nig)" in channel.sent_messages[-1].text
 
 
+async def test_orchestrator_inbox_summarizes_project_attention_and_handoffs() -> None:
+    adapter = ScriptedAdapter(name="claude-code", output_texts=("overnight done",))
+    channel = RecordingChannel()
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-night-1"),
+        task_bus=bus,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/overnight finish the phase 8 plan", mentions=())
+    )
+    await bus.submit(
+        _project_task(
+            "task-running-1",
+            target_persona="reviewer",
+            payload="review quietly",
+        )
+    )
+    await bus.submit(
+        _project_task(
+            "task-approval-1",
+            target_persona="implementer",
+            payload="update docs",
+        )
+    )
+    await bus.submit(
+        _project_task(
+            "task-goal-1",
+            target_persona="tester",
+            payload="check acceptance evidence",
+            metadata=(MetadataEntry(key="aico.intent", value="goal_brief"),),
+        )
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/inbox", mentions=()))
+
+    inbox = channel.sent_messages[-1].text
+    assert "Inbox: aico\n" in inbox
+    assert "scope: current project (aico)\n" in inbox
+    assert "First action:\n• decide task-app -> /approve task-app or /reject task-app" in inbox
+    assert "decide task-app [implementer]" in inbox
+    assert "-> /approve task-app or /reject task-app" in inbox
+    assert "monitor task-run [reviewer/claude-code] running" in inbox
+    assert "-> /task task-run or /interrupt task-run" in inbox
+    assert "inspect handoff night-task-nig: implementer -> claude (task-nig)" in inbox
+    assert "inspect goal_brief: task-goa [running] -> /task task-goa" in inbox
+    assert "Next:\n• /inbox\n• /daily aico\n• /tasks\n• /audit" in inbox
+
+
+async def test_orchestrator_morning_handoff_summarizes_absence_recovery() -> None:
+    adapter = ScriptedAdapter(name="claude-code", output_texts=("morning evidence",))
+    channel = RecordingChannel()
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-night-2"),
+        task_bus=bus,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/overnight finish the morning report", mentions=())
+    )
+    await bus.submit(
+        _project_task(
+            "task-approval-2",
+            target_persona="implementer",
+            payload="update docs",
+        )
+    )
+    await bus.submit(
+        _project_task(
+            "task-running-2",
+            target_persona="tester",
+            payload="check status",
+        )
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/morning", mentions=()))
+
+    handoff = channel.sent_messages[-1].text
+    assert "Morning handoff: aico\n" in handoff
+    assert "Done:\n• task-nig [implementer] done" in handoff
+    assert "Blocked:\n• task-app waiting approval" in handoff
+    assert "Risks:\n• task-app [write_files] waiting_approval" in handoff
+    assert "Overnight handoffs:\n• night-task-nig: implementer -> claude" in handoff
+    assert "Next actions:\n• /approve task-app or /reject task-app" in handoff
+    assert "• /task task-run or /interrupt task-run" in handoff
+    assert "• /dream" in handoff
+
+
+async def test_orchestrator_goal_runs_outcome_grader_when_tester_is_appointed() -> None:
+    adapter = ScriptedAdapter(
+        name="claude-code",
+        output_texts=("Evidence: summarized blockers and next action.",),
+    )
+    channel = RecordingChannel()
+    task_ids = iter(("task-goal-3", "task-grade-3"))
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_tester(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(
+            text="/goal implementer inspect release plan 验收: summarize blockers",
+            mentions=(),
+        )
+    )
+
+    owner_task = adapter.received_tasks[0]
+    grader_task = adapter.received_tasks[1]
+    assert "AICO Goal Brief" in owner_task.payload
+    assert "AICO Outcome Grader" in grader_task.payload
+    assert "graded_task_id: task-goal-3" in grader_task.payload
+    assert "Evidence: summarized blockers and next action." in grader_task.payload
+    assert _metadata_value(grader_task, "aico.intent") == "outcome_grader"
+    assert _metadata_value(grader_task, "aico.graded_task_id") == "task-goal-3"
+    assert _metadata_value(grader_task, "aico.outcome_goal_id") == "goal-task-goa"
+    assert any(
+        message.text.startswith("Outcome grading queued: task-gra")
+        for message in channel.sent_messages
+    )
+
+
+async def test_orchestrator_dream_writes_reviewable_candidate_memory(tmp_path: Path) -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    bus = TaskBus(adapter)
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=bus,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await bus.submit(
+        _project_task(
+            "task-approval-3",
+            target_persona="implementer",
+            payload="update docs",
+        )
+    )
+    await orchestrator.handle_incoming(_incoming_message(text="/dream", mentions=()))
+
+    dream = channel.sent_messages[-1].text
+    atoms = memory_store.list_atoms(MemoryScope.project("aico"))
+    assert dream.startswith("Dream review: aico\n")
+    assert "status: candidate memory only" in dream
+    assert "Meaning:\n• These are reusable lessons" in dream
+    assert "1 task(s) are blocked on approval (task-app)" in dream
+    assert channel.sent_messages[-1].spans
+    assert "active memory unchanged" not in dream
+    assert len(atoms) == 1
+    assert atoms[0].status is MemoryStatus.CANDIDATE
+    assert atoms[0].source == "dream_review"
+    assert atoms[0].tags == ("dream", "runbook-candidate")
+
+
+async def test_orchestrator_restores_overnight_delegations_from_sqlite(
+    tmp_path: Path,
+) -> None:
+    state_db_path = tmp_path / "aico-state.db"
+    first_adapter = ScriptedAdapter(name="claude-code", output_texts=("queued",))
+    first_channel = RecordingChannel()
+    first_orchestrator = Orchestrator(
+        channel=first_channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-night-1"),
+        task_bus=TaskBus(first_adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        offline_delegation_store=SQLiteOfflineDelegationStore(state_db_path),
+    )
+
+    await first_orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await first_orchestrator.handle_incoming(
+        _incoming_message(text="/overnight finish the phase 8 plan", mentions=())
+    )
+
+    restored_adapter = ScriptedAdapter(name="claude-code")
+    restored_channel = RecordingChannel()
+    restored_orchestrator = Orchestrator(
+        channel=restored_channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-new"),
+        task_bus=TaskBus(restored_adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        offline_delegation_store=SQLiteOfflineDelegationStore(state_db_path),
+    )
+
+    await restored_orchestrator.handle_incoming(
+        _incoming_message(text="/project aico", mentions=())
+    )
+    await restored_orchestrator.handle_incoming(_incoming_message(text="/overnight", mentions=()))
+
+    assert restored_channel.sent_messages[-1].text.startswith("Overnight delegations for aico:\n")
+    assert (
+        "• night-task-nig: implementer -> claude (task-nig)"
+        in restored_channel.sent_messages[-1].text
+    )
+    assert restored_adapter.received_tasks == []
+
+
+async def test_orchestrator_overnight_requires_challenger() -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    directory = _project_directory()
+    directory.remove_appointment_for_role("aico", "challenger")
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-night-1"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=directory,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/overnight finish the phase 8 plan", mentions=())
+    )
+
+    assert channel.sent_messages[-1].text == (
+        "Team incomplete for aico: missing challenger.\n"
+        "Offline delegation needs a project lead and challenger.\n\n"
+        "Next:\n"
+        "- /team\n"
+        "- /appoint <agent> as challenger"
+    )
+    assert adapter.received_tasks == []
+
+
 async def test_orchestrator_overnight_requires_active_project() -> None:
     adapter = ScriptedAdapter(name="claude-code")
     channel = RecordingChannel()
@@ -1609,6 +2120,128 @@ async def test_orchestrator_injects_broadcast_team_memory_for_active_project_tas
     assert "scope: team:aico/default" in payload
 
 
+async def test_orchestrator_lead_decision_workflow_consults_roles_records_audit_and_memory(
+    tmp_path: Path,
+) -> None:
+    adapter = ScriptedAdapter(name="claude-code", output_texts=("decision output",))
+    channel = RecordingChannel()
+    task_ids = iter(("task-challenger", "task-reviewer", "task-lead"))
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    _append_memory(
+        memory_store,
+        "mem-public",
+        "Release policy: public GIF must show audit and approvals.",
+        purpose_tags=(MemoryPurpose.PUBLIC_BROADCAST,),
+    )
+    _append_memory(
+        memory_store,
+        "mem-progress",
+        "Release progress: Stage 3 README GIF is ready.",
+        purpose_tags=(MemoryPurpose.TASK_KEY_PROGRESS,),
+    )
+    _append_memory(
+        memory_store,
+        "mem-review",
+        "Prior decision review: do not ship without challenger objections.",
+        purpose_tags=(MemoryPurpose.DECISION_REVIEW,),
+    )
+    _append_memory(
+        memory_store,
+        "mem-private",
+        "Private scratchpad: release secret must not leak.",
+        purpose_tags=(MemoryPurpose.TASK_PRIVATE,),
+    )
+    _append_memory(
+        memory_store,
+        "mem-general",
+        "General context: release wording should stay concise.",
+        purpose_tags=(MemoryPurpose.GENERAL_CONTEXT,),
+    )
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
+        task_bus=bus,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_reviewer(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="decide whether release Stage 3 now", mentions=())
+    )
+
+    assert len(adapter.received_tasks) == 3
+    challenger_task, reviewer_task, lead_task = adapter.received_tasks
+    assert "Role: challenger" in challenger_task.payload
+    assert "Decision consultation request." in challenger_task.payload
+    assert "Role: reviewer" in reviewer_task.payload
+    assert "Decision consultation request." in reviewer_task.payload
+    assert "Role: implementer" in lead_task.payload
+    assert "Lead decision workflow." in lead_task.payload
+    assert "Output a decision memo with exactly these sections:" in lead_task.payload
+    assert "mem-public" in lead_task.payload
+    assert "mem-progress" in lead_task.payload
+    assert "mem-review" in lead_task.payload
+    assert "mem-private" not in lead_task.payload
+    assert "mem-general" not in lead_task.payload
+    assert "challenger -> claude (task-challenger): decision output" in lead_task.payload
+    assert "reviewer -> claude (task-reviewer): decision output" in lead_task.payload
+
+    decision_events = [
+        event
+        for event in bus.audit_events(limit=None)
+        if event.event_type is AuditEventType.LEAD_DECISION_RECORDED
+    ]
+    assert len(decision_events) == 1
+    assert decision_events[0].task_id == "task-lead"
+    detail = json.loads(decision_events[0].detail or "{}")
+    assert detail["project_id"] == "aico"
+    assert set(detail["memory_refs"]) == {"mem-public", "mem-progress", "mem-review"}
+    assert [item["role"] for item in detail["consultations"]] == ["challenger", "reviewer"]
+
+    decision_memories = [
+        atom
+        for atom in memory_store.list_atoms(MemoryScope.project("aico"))
+        if MemoryPurpose.DECISION_REVIEW in atom.purpose_tags
+        and atom.source == "lead_decision_workflow"
+    ]
+    assert len(decision_memories) == 1
+    assert "decision output" in decision_memories[0].claim
+    assert decision_memories[0].evidence[0].ref == f"audit:{decision_events[0].event_id}"
+
+
+async def test_orchestrator_ask_lead_alias_runs_lead_decision_workflow() -> None:
+    adapter = ScriptedAdapter(name="claude-code", output_texts=("decision output",))
+    channel = RecordingChannel()
+    task_ids = iter(("task-challenger", "task-reviewer", "task-lead"))
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
+        task_bus=bus,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_reviewer(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(
+            text="/ask lead decide whether Phase 8 operator inbox should start now",
+            mentions=(),
+        )
+    )
+
+    assert len(adapter.received_tasks) == 3
+    assert adapter.received_tasks[-1].task_id == "task-lead"
+    assert "Lead decision workflow." in adapter.received_tasks[-1].payload
+    assert any(
+        event.event_type is AuditEventType.LEAD_DECISION_RECORDED
+        for event in bus.audit_events(limit=None)
+    )
+
+
 async def test_orchestrator_memory_commands_require_active_project(tmp_path: Path) -> None:
     adapter = ScriptedAdapter(name="claude-code")
     channel = RecordingChannel()
@@ -1716,15 +2349,18 @@ async def test_orchestrator_remember_recall_and_forget_project_memory(
     assert "scope: project:aico" in channel.sent_messages[1].text
     assert "project: aico" in channel.sent_messages[1].text
     assert "Phase 7 memory must be agent-driven." in channel.sent_messages[2].text
-    assert f"- {atom.memory_id} | confidence: 1.00 | scope: project:aico" in (
+    assert channel.sent_messages[1].spans
+    assert f"• {atom.memory_id} | confidence: 1.00 | scope: project:aico" in (
         channel.sent_messages[2].text
     )
+    assert channel.sent_messages[2].spans
+    assert "| purpose: general_context" in channel.sent_messages[2].text
     assert channel.sent_messages[3].text == "Memory not found in active project: mem-other-project"
     assert channel.sent_messages[4].text == (
         f"Memory archived\nid: {atom.memory_id}\nscope: project:aico"
     )
     assert channel.sent_messages[5].text == (
-        "No memories found for aico.\n\nNext:\n- /remember <fact>"
+        "No memories found for aico\n\nNext:\n• /remember <fact>"
     )
     assert "Phase 7 memory must be agent-driven." not in adapter.received_tasks[0].payload
     assert memory_store.list_atoms(MemoryScope.project("other"))[0].memory_id == "mem-other-project"
@@ -1985,6 +2621,11 @@ def _project_directory() -> ProjectAssignmentDirectory:
                     title="Test Lead",
                     default_permissions=("code", "tests"),
                 ),
+                "challenger": RoleProfile(
+                    id="challenger",
+                    title="Critical Philosopher",
+                    default_permissions=("docs", "audit"),
+                ),
             },
             projects={
                 "aico": ProjectProfile(
@@ -1997,6 +2638,7 @@ def _project_directory() -> ProjectAssignmentDirectory:
                     roles={
                         "implementer": ProjectRoleProfile(role="implementer"),
                         "tester": ProjectRoleProfile(role="tester"),
+                        "challenger": ProjectRoleProfile(role="challenger"),
                     },
                 )
             },
@@ -2008,7 +2650,74 @@ def _project_directory() -> ProjectAssignmentDirectory:
                     seat="aico-implementer",
                     permissions=("code", "tests", "docs"),
                 ),
+                AssignmentProfile(
+                    project="aico",
+                    agent="claude",
+                    role="challenger",
+                    seat="aico-challenger",
+                    permissions=("docs", "audit"),
+                ),
             ),
+        )
+    )
+
+
+def _project_directory_with_reviewer() -> ProjectAssignmentDirectory:
+    config = _project_directory()._config  # noqa: SLF001
+    project = config.projects["aico"]
+    return ProjectAssignmentDirectory(
+        config.model_copy(
+            update={
+                "roles": {
+                    **config.roles,
+                    "reviewer": RoleProfile(
+                        id="reviewer",
+                        title="Code Reviewer",
+                        default_permissions=("docs", "audit"),
+                    ),
+                },
+                "projects": {
+                    **config.projects,
+                    "aico": project.model_copy(
+                        update={
+                            "roles": {
+                                **project.roles,
+                                "reviewer": ProjectRoleProfile(role="reviewer"),
+                            }
+                        }
+                    ),
+                },
+                "assignments": (
+                    *config.assignments,
+                    AssignmentProfile(
+                        project="aico",
+                        agent="claude",
+                        role="reviewer",
+                        seat="aico-reviewer",
+                        permissions=("docs", "audit"),
+                    ),
+                ),
+            }
+        )
+    )
+
+
+def _project_directory_with_tester() -> ProjectAssignmentDirectory:
+    config = _project_directory()._config  # noqa: SLF001
+    return ProjectAssignmentDirectory(
+        config.model_copy(
+            update={
+                "assignments": (
+                    *config.assignments,
+                    AssignmentProfile(
+                        project="aico",
+                        agent="claude",
+                        role="tester",
+                        seat="aico-tester",
+                        permissions=("code", "tests"),
+                    ),
+                ),
+            }
         )
     )
 
@@ -2032,11 +2741,59 @@ def _project_directory_with_risky_role_prompt() -> ProjectAssignmentDirectory:
     )
 
 
+def _append_memory(
+    store: JsonlMemoryStore,
+    memory_id: str,
+    claim: str,
+    *,
+    purpose_tags: tuple[MemoryPurpose, ...],
+) -> None:
+    store.append_atom(
+        MemoryAtom(
+            memory_id=memory_id,
+            claim=claim,
+            evidence=(
+                MemoryEvidence(
+                    ref=f"audit:{memory_id}",
+                    source="test",
+                    captured_at=datetime(2026, 5, 15, tzinfo=UTC),
+                ),
+            ),
+            scope=MemoryScope.project("aico"),
+            source="test",
+            confidence=0.92,
+            created_by="tester",
+            tags=("release",),
+            purpose_tags=purpose_tags,
+        )
+    )
+
+
 def _metadata_value(task: Task, key: str) -> str | None:
     for entry in task.metadata:
         if entry.key == key:
             return str(entry.value)
     return None
+
+
+def _project_task(
+    task_id: str,
+    *,
+    target_persona: str,
+    payload: str,
+    metadata: tuple[MetadataEntry, ...] = (),
+) -> Task:
+    return Task(
+        task_id=task_id,
+        payload=payload,
+        requester_id="user-1",
+        target_persona=target_persona,
+        metadata=(
+            MetadataEntry(key="aico.project_id", value="aico"),
+            MetadataEntry(key="aico.assignment_role", value=target_persona),
+            *metadata,
+        ),
+    )
 
 
 def _incoming_message(

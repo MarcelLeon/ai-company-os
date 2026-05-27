@@ -50,6 +50,7 @@ class AckStatus(StrEnum):
 class OutputType(StrEnum):
     TEXT = "text"
     TOOL_CALL = "tool_call"
+    STATUS = "status"
     ERROR = "error"
     DONE = "done"
 
@@ -90,6 +91,7 @@ class AuditEventType(StrEnum):
     TASK_REJECTED = "task_rejected"
     TASK_USAGE_RECORDED = "task_usage_recorded"
     MEMORY_BROADCASTED = "memory_broadcasted"
+    LEAD_DECISION_RECORDED = "lead_decision_recorded"
 
 
 class MessageKind(StrEnum):
@@ -100,6 +102,10 @@ class MessageTextStyle(StrEnum):
     BOLD = "bold"
     ITALIC = "italic"
     CODE = "code"
+
+
+class MessageNativeFormat(StrEnum):
+    TELEGRAM_HTML = "telegram_html"
 
 
 class MessageTextSpan(FrozenModel):
@@ -157,6 +163,7 @@ class TaskSnapshot(FrozenModel):
     status: TaskStatus
     reason: str | None = None
     risk_level: RiskLevel = RiskLevel.READ_ONLY
+    metadata: tuple[MetadataEntry, ...] = ()
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -201,6 +208,7 @@ class MessageContent(FrozenModel):
     text: str = Field(min_length=1)
     spans: tuple[MessageTextSpan, ...] = ()
     actions: tuple[MessageAction, ...] = ()
+    native_format: MessageNativeFormat | None = None
 
 
 class ChannelTarget(FrozenModel):

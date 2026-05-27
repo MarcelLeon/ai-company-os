@@ -12,18 +12,27 @@ class CollaborationDirective:
 
 
 def parse_collaboration_directive(text: str) -> CollaborationDirective | None:
-    line = _first_non_empty_line(text)
-    if line is None or not line.startswith("@"):
-        return None
+    directive, _ = split_collaboration_directive(text)
+    return directive
 
-    target, payload = _split_directive(line[1:])
-    if target is None or payload is None:
-        return None
-    target = target.strip()
-    payload = payload.strip()
-    if not target or not payload or not _is_persona_name(target):
-        return None
-    return CollaborationDirective(target_persona=target, payload=payload)
+
+def split_collaboration_directive(
+    text: str,
+) -> tuple[CollaborationDirective | None, str]:
+    kept_lines: list[str] = []
+    directive: CollaborationDirective | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if directive is None and stripped.startswith("@"):
+            target, payload = _split_directive(stripped[1:])
+            if target is not None and payload is not None:
+                target = target.strip()
+                payload = payload.strip()
+                if target and payload and _is_persona_name(target):
+                    directive = CollaborationDirective(target_persona=target, payload=payload)
+                    continue
+        kept_lines.append(line)
+    return directive, "\n".join(kept_lines)
 
 
 def collaboration_payload(
@@ -31,24 +40,45 @@ def collaboration_payload(
     payload: str,
     *,
     memory_refs: tuple[str, ...] = (),
+    source_context: str | None = None,
     use_memory_refs: bool = False,
 ) -> str:
+    context = _trim_source_context(source_context)
+    if not context:
+        if use_memory_refs and memory_refs:
+            return (
+                f"Collaboration request from {source_persona}:\n\n"
+                f"Memory refs: {', '.join(memory_refs)}\n"
+                "Delta:\n"
+                f"{payload}"
+            )
+        return f"Collaboration request from {source_persona}:\n\n{payload}"
+
     if use_memory_refs and memory_refs:
-        return (
+        text = (
             f"Collaboration request from {source_persona}:\n\n"
             f"Memory refs: {', '.join(memory_refs)}\n"
-            "Delta:\n"
-            f"{payload}"
         )
-    return f"Collaboration request from {source_persona}:\n\n{payload}"
+    else:
+        text = f"Collaboration request from {source_persona}:\n\n"
+
+    if context:
+        text += f"Context from {source_persona} output so far:\n{context}\n\n"
+
+    label = "Delta" if use_memory_refs and memory_refs else "Request"
+    return f"{text}{label}:\n{payload}"
 
 
-def _first_non_empty_line(text: str) -> str | None:
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped:
-            return stripped
-    return None
+_SOURCE_CONTEXT_LIMIT = 4000
+
+
+def _trim_source_context(source_context: str | None) -> str:
+    if source_context is None:
+        return ""
+    context = source_context.strip()
+    if len(context) <= _SOURCE_CONTEXT_LIMIT:
+        return context
+    return f"...\n{context[-_SOURCE_CONTEXT_LIMIT:]}"
 
 
 def _is_persona_name(value: str) -> bool:

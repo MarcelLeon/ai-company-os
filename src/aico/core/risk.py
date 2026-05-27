@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from aico.core.lead_decision import LEAD_DECISION_INTENT, LEAD_DECISION_INTENT_KEY
 from aico.core.models import RiskAssessment, RiskLevel, Task
+from aico.core.outcome_grader import OUTCOME_GRADER_INTENT, OUTCOME_GRADER_INTENT_KEY
 from aico.core.project_summary import PROJECT_SUMMARY_INTENT, PROJECT_SUMMARY_INTENT_KEY
 from aico.core.role_proposal import ROLE_PROPOSAL_INTENT, ROLE_PROPOSAL_INTENT_KEY
 
@@ -47,12 +49,23 @@ def _is_internal_read_only_task(task: Task) -> bool:
     return any(
         _is_intent(entry.key, entry.value, ROLE_PROPOSAL_INTENT)
         or _is_intent(entry.key, entry.value, PROJECT_SUMMARY_INTENT)
+        or _is_intent(entry.key, entry.value, LEAD_DECISION_INTENT)
+        or _is_intent(entry.key, entry.value, OUTCOME_GRADER_INTENT)
         for entry in task.metadata
     )
 
 
 def _is_intent(key: str, value: object, intent: str) -> bool:
-    return key in {ROLE_PROPOSAL_INTENT_KEY, PROJECT_SUMMARY_INTENT_KEY} and value == intent
+    return (
+        key
+        in {
+            ROLE_PROPOSAL_INTENT_KEY,
+            PROJECT_SUMMARY_INTENT_KEY,
+            LEAD_DECISION_INTENT_KEY,
+            OUTCOME_GRADER_INTENT_KEY,
+        }
+        and value == intent
+    )
 
 
 @dataclass(frozen=True)

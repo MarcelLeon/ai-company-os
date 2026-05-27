@@ -3,15 +3,25 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-05-21
-**当前轮次**:Round 99(Traceable memory broadcast audit)
-**当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 开源主 Demo
+**最后更新**:2026-05-27
+**当前轮次**:Round 125(Transient Quiet Heartbeat Rendering)
+**当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 
 ---
 
 ## 项目宏大叙事(一句话)
 
-把开发者 Mac 上散落的 AI 工具收编成一个可远程指挥的"虚拟公司",通过 IM 异步协作,让"AI 团队"成为开发者真正的生产力杠杆。
+把开发者 Mac 上散落的 AI CLI 收编成一个可通过 IM 远程指挥的"虚拟公司",让老板不在电脑前时,AI 团队仍能异步推进、审批、叫停、交接和早报。
+
+## 老板不在场假设
+
+AICO 的产品边界是 absence-first:
+
+- OMC 更像在浏览器里经营 AI 公司,CoWork OS 更像在桌面上做 AI super app;AICO 假设老板经常不在电脑前。
+- IM 不是通知层,而是老板远程下达任务、查看状态、审批风险、叫停任务和接收早报的管理层。
+- 本地 AI CLI 不是按钮集合,而是被任命到项目角色里的团队成员:lead、challenger、implementer、tester、reviewer 等。
+- Phase 8 的 `/overnight`、operator inbox、morning handoff、lead decision、memory/audit/state 持久化,都服务于同一件事:老板离开 Mac 后,项目仍可推进且可接手。
+- 新能力优先级先问 5 个问题:只靠 IM 能不能下达?离开后能不能推进?风险能不能等审批?早上能不能看懂?出问题能不能审计、叫停、恢复?
 
 ---
 
@@ -76,6 +86,8 @@
 - [x] Stage 3:真实 IM + Claude/Codex dogfooding 录屏,生成 README 首页可嵌入 GIF。
 - [x] 开源首屏第一版:英文主 README、中文 README、痛点/差异化/当前可用能力、Quickstart 状态修正、MIT License、SECURITY 和 issue templates。
 - [x] 开源首屏第二版:同步 Cursor / CodeFlicker / Trae / Gemini smoke test 已完成状态,补安全模型图、今日使用场景和 GitHub publication 手动配置指南。
+- [x] GitHub UI metadata 验收完成:description、topics、social preview 已由人类在 GitHub UI 配置验证。
+- [x] 开源首屏第三版:新增无 token Release Room demo CLI、PR template 和 good-first-issue template。
 
 ---
 
@@ -198,6 +210,7 @@
 - [x] Project Facts Markdown heading render spans
 - [x] Task trace commands(`/tasks` / `/task`)
 - [x] `/task` collaboration parent / child trace
+- [x] Agent reply language command(`/language [en|zh]`):默认英文,可按 IM chat 作用域限制后续 agent 回复语言,不改变内置命令语言。
 - [x] Phase 5 feature complete handoff
 - [ ] Telegram 真实协作 smoke test(作为 Phase 6 回归验收保留)
 - [x] Prompt 分层渲染
@@ -252,7 +265,28 @@
 - [x] `/overnight` 当前项目托管工单查看
 - [x] 托管工单复用当前项目 lead/default role、appointment prompt、memory 和 provider session
 - [x] 托管工单危险动作继续走 `/approve` 门禁
-- [ ] 托管工单持久化与重启恢复
+- [x] Goal-mode 交互和 prompt 契约设计(ADR-0025 Accepted)
+- [x] Goal-mode 支持 agent capability 分层:native goal / adapter sugar / managed Ralph loop。
+- [x] Lead decision team contract Stage 1:强化 lead 决策责任、默认新增 challenger,并让 `/overnight` 要求 lead + challenger。
+- [x] Memory purpose 标签:区分 public broadcast / task key progress / task private / decision review。
+- [x] Lead decision workflow:决策类任务自动召回记忆、咨询 challenger/reviewer、输出 decision memo 并写 audit。
+- [x] Goal Brief v0:`/goal` 和带明确验收/停止/证据 marker 的 `/ask` 可附加轻量目标契约,并在 `/task` 中可见。
+- [x] SQLite task state store 第一切片:`AICO_STATE_DB_PATH` 可持久化 task records、task snapshots 和 pending approvals。
+- [x] Core structure cleanup:B-004 已收口,`Orchestrator` / `TaskBus` 类体重新低于 500 行,命令分发函数低于 100 行。
+- [x] 托管工单持久化与重启恢复:`AICO_STATE_DB_PATH` 可恢复 `/overnight` 最近托管工单列表。
+- [x] SQLite 快速迭代治理:`aico_schema` metadata、`aico-state` inspect/reset 工具和 bool-like path 兜底。
+- [x] 长静默 Adapter 任务 quiet heartbeat:provider 无 stdout 但进程仍运行时,IM 会显示 `Still running...`,并保留 `/interrupt` 与 idle timeout 兜底。
+- [x] `/inbox` 当前项目老板收件箱第一切片:聚合待审批、running/failed/interrupted、离线托管、Goal Brief / lead decision 和协作 follow-up。
+- [x] CLI Adapter 非交互 stdin 收口:子进程启动时显式 `stdin=DEVNULL`,避免 Codex 等待 inherited stdin 的额外输入。
+- [x] CLI Adapter stderr drain:子进程运行期间持续读取 stderr,避免 Codex 运行日志写满 pipe 后反压阻塞 stdout。
+- [x] ADR-0029 Phase 8 Absence Loop:把 actionable inbox、morning handoff、outcome grader、Dream/runbook memory 和 hybrid retrieval 固定为短期 sprint 队列。
+- [x] Phase 8 Absence Loop playbook:每个 sprint 都有直接可问的 IM 验收路径和防跑偏护栏。
+- [x] `/inbox` actionable 化第一切片:新增 First action,并把审批、running、失败恢复、handoff、Goal/decision、协作 follow-up 都渲染为可直接执行的下一步命令。
+- [x] `/morning` 手动早报第一切片:按 active project 汇总 done、blocked、risks、overnight handoffs 和 next actions。
+- [x] Outcome Grader 第一切片:Goal Brief 执行完成后自动派 tester / reviewer 验收,并把 grader task 标记为 `outcome_grader` follow-up。
+- [x] `/dream` Dream/runbook memory 第一切片:从 waiting approval / running / failed / interrupted / rejected 任务生成 reviewable candidate memory,默认不注入 prompt。
+- [x] Hybrid Memory Retrieval 第一切片:默认本地 scorer 从纯 semantic 升级为 exact phrase + phrase overlap + semantic alias fallback,保留 MemoryGovernor 边界。
+- [x] Telegram native output pilot:`AICO_PREFER_NATIVE_CHANNEL_FORMAT=true` 时 agent 优先输出 Telegram HTML,验证失败自动回退 rich text。
 - [ ] 多 step / 多 agent 夜间自动编排
 - [ ] 早报自动生成或定时推送
 
@@ -268,6 +302,220 @@
 ---
 
 ## 上一轮做了什么
+
+**Round 125**(2026-05-27,Codex):
+- 人类反馈真实 Telegram 输出把 `Still running: no adapter output for 120s...` 和后续 native HTML 结果拼到同一条消息里,导致 `<b>` / `<code>` 等标签裸露,列表也粘成一段。
+- 根因确认:`OutputType.STATUS` quiet heartbeat 过去通过 `StreamedMessageWriter.append()` 写入 `_current_text`;后续 agent 输出到达时,状态行和 native HTML 混在同一缓冲区,`/task <id>` 的 `<id>` 还会让 native HTML 验证失败并回退。
+- 修复 `StreamedMessageWriter.show_status()`:heartbeat 只临时编辑当前消息,不进入最终输出缓冲区;真实输出到达后会替换 heartbeat。
+- `Orchestrator` 对 `OutputType.STATUS` 改为 `show_status()` 后 `continue`,确保 status 不进入 captured output、native HTML 验证或最终 IM 内容。
+- 补充 Telegram native output prompt:标题、段落、列表项要分行,bullet 使用 `•`,不要使用 Markdown `- ` bullet。
+- 新增 `tests/unit/test_streaming.py`,覆盖 heartbeat 不污染 native final output,以及输出开始后 late status 不覆盖结果。
+- 验证通过:`uv run pytest` 325 passed / 1 skipped;`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check`。
+
+**Round 124**(2026-05-27,Codex):
+- 人类真实 dogfood `/goal implementer inspect inbox handoff ...` 后,Telegram 收到裸 `<b>` / `<blockquote>` / `<pre>` 标签,说明 native Telegram HTML 输出被打回 fallback。
+- 根因确认:模型输出整体是合法 Telegram HTML,但 `<pre>` 文本里包含 `/task <id>`、`/task <id>` 这类占位符;Python HTML parser 把 `<id>` 当 unknown tag,旧 sanitizer 因 unsupported tag 拒绝整条 native 输出。
+- 修复 Telegram HTML sanitizer:在 `<pre>` / `<code>` literal block 内遇到 unknown tag 或 placeholder 时,安全转义为文本保留;literal block 外的 unsupported HTML 仍会失败并回退。
+- 新增单测覆盖 `<pre>/task <id></pre>` 会变成 `<pre>/task &lt;id&gt;</pre>` 并继续走 native Telegram HTML。
+- 验证通过:`uv run pytest` 323 passed / 1 skipped;`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check`。
+
+**Round 123**(2026-05-27,Codex):
+- 人类指出 `rich_text_message()` 适配模型输出到 Telegram spans 的 case 可能无限膨胀,要求另起一条链路验证“让模型直接输出 Channel 支持格式,失败再回退”。
+- 新增 opt-in native output contract:`AICO_PREFER_NATIVE_CHANNEL_FORMAT=true` 时,Telegram task prompt 会要求 agent 使用 Telegram Bot API HTML 子集,而不是 Markdown。
+- 新增 `MessageNativeFormat.TELEGRAM_HTML` 和 `native_output.py`;agent 输出先经过 Telegram HTML 白名单 sanitizer,只允许安全标签且不允许属性/unsupported tag。
+- `StreamedMessageWriter` 优先发送 native Telegram HTML;如果模型输出 Markdown table、fenced code 或 unsupported HTML,自动回退到 `rich_text_message()`。
+- Telegram Channel 支持 `MessageContent.native_format=telegram_html` 时直接发送 HTML parse mode,不再把 native HTML 当 spans 重写。
+- 修复 fallback 中单行 fenced code(```uv run pytest```)被吞的问题。
+- 验证通过:`uv run pytest` 322 passed / 1 skipped;`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check`。
+
+**Round 122**(2026-05-27,Codex):
+- 人类确认 Telegram 侧返回格式仍有较大问题:collaboration requested 没有富文本化;模型复杂 Markdown 输出没有被稳定转为 Telegram HTML;`/recall` 中带粘连 `## DecisionYes` 的记忆内容难读。
+- 确认当前架构:核心不直接输出 Telegram Markdown,而是输出 `MessageContent.text + MessageTextSpan`;Telegram Channel 在有 spans 时用 `parse_mode=HTML` 发送。
+- 将 renderer 从“逐命令补 spans”升级为通用 IM Markdown normalization + span rendering:先修正模型常见 Markdown 结构,再生成平台无关 spans。
+- `rich_text_message()` 新增粘连 Markdown heading 拆分、已知 heading 内容拆分、Markdown table 到等宽 IM table、fenced code block code span、大小写无关 label span。
+- `Collaboration requested` 内置提示改为结构化富文本消息,显示 source / target。
+- 新增单测覆盖粘连 heading、Markdown table、fenced code block、Telegram HTML 输出和 collaboration requested spans。
+- 验证通过:`uv run pytest` 315 passed / 1 skipped;`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check`。
+
+**Round 121**(2026-05-27,Codex):
+- 人类反馈纯英文 agent 回复有时阅读吃力,要求新增一个通用语言切换命令,能力只限制 agent 回复语言,默认英文。
+- 新增 `/language [en|zh]` 命令;`/language` 查看当前 chat 的 agent response language,`/language zh` 设置为简体中文,`/language en` 恢复默认英文。
+- 新增 `ResponseLanguageStore`,按 `session_scope` 记录偏好;所有真正提交给 agent 的 task 在 `_run_task()` 前统一注入 `Response language` 约束,覆盖 plain task、project role task、Goal、broadcast 和 collaboration。
+- 语言约束只作用于 agent payload,不强制翻译 AICO 内置命令、代码、CLI 片段、路径、日志、标识符、协议关键字和严格 JSON/schema。
+- 修复实现中发现的一个风险:语言提示词不能包含 `shell command` 等风险关键词,否则会让普通任务误触发 approval gate;最终提示词改为 `CLI snippets` 并保留 schema 约束。
+- 验证通过:`uv run pytest` 311 passed / 1 skipped;`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check`。
+
+**Round 120**(2026-05-27,Codex):
+- 人类 dogfood 确认 `/inbox` 和 `/morning` 没问题,但反馈 `/goal`、Outcome Grader 和 `/recall` 返回没有 IM Markdown/富文本格式化,`/dream` 输出也难以判断是否正确。
+- 修复 Goal Brief、Outcome Grader、Dream review、Memory remembered/recall/archived/no-result 等内置命令消息,统一走 `rich_text_message()`,让标题、无序列表、字段 label 和 slash command 在 Telegram/IM 中可格式化。
+- 扩展 `message_rendering` 的 label keys,覆盖 `owner`、`tracking`、`goal`、`grader`、`graded_task`、`query`、`purpose`、`evidence` 等 Phase 8 输出字段。
+- 优化 `/dream`:从“逐条吐旧 task 候选”改为按阻塞/失败原因聚合成 reusable lesson candidate,并在输出中解释 Meaning / Effect / Next,明确 candidate memory 不会自动注入 prompt。
+- 新增/更新单测覆盖 Goal/Dream/Recall 富文本 spans 和 Dream 聚合候选。
+- 验证通过:`uv run pytest` 309 passed / 1 skipped;`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check`。
+
+**Round 119**(2026-05-26,Codex):
+- 人类要求把刚新增的四个 Sprint 按顺序执行,并给出 human 可逐条 dogfood 的问题样例、预期观测指标和效果。
+- Sprint 2 完成:`/morning` 新增 active-project 手动早报,汇总 done、blocked、risks、overnight handoffs 和 next actions,让老板早上不必翻 `/tasks`。
+- Sprint 3 完成:Goal Brief 任务完成后自动寻找 tester / reviewer 生成 Outcome Grader 任务;grader prompt 要求 verdict、evidence、gaps 和 boss_next_action,且被标记为内部只读验收任务。
+- Sprint 4 完成:`/dream` 从当前项目任务状态生成 candidate runbook memory,只写 `candidate` 状态,默认不会进入 Prompt Stack。
+- Sprint 5 完成:MemoryStore / MemoryRetriever 默认使用本地 hybrid scorer,支持 exact phrase、短语 overlap 和中英 alias fallback,治理边界仍由 scope / purpose / sensitivity / confidence 控制。
+- 验证通过:`uv run pytest` 309 passed / 1 skipped;`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check`。
+
+**Round 118**(2026-05-26,Codex):
+- 人类确认把 Phase 8 后续 P0-P4 全部纳入短期可落地计划,并要求写入文档后直接进入研发。
+- 新增 ADR-0029 `Phase 8 Absence Loop`,把 Phase 8 明确为“下任务 -> 执行 -> 审批/叫停 -> 验收 -> 早上接手 -> 经验沉淀 -> 下次召回”的老板缺席闭环。
+- 新增 `docs/playbooks/phase-8-absence-loop.md`,把 Sprint 1 actionable inbox、Sprint 2 morning handoff、Sprint 3 outcome grader、Sprint 4 Dream/runbook memory、Sprint 5 hybrid retrieval 写成直接可问的 IM 验收路径。
+- 更新 playbook / ADR 索引,让后续 Agent 接手时先按 sprint 队列执行,不要把 Dream、self-improving 和 retrieval backend 一锅炖。
+- 进入 Sprint 1 研发:`/inbox` 新增 `First action`,并把待审批、running、failed/interrupted/rejected、overnight handoff、Goal/decision、collaboration follow-up 都改成带明确下一步命令的动作项。
+- 验证通过:`uv run pytest` 305 passed / 1 skipped,`uv run ruff check .`,`uv run ruff format --check .`,`uv run mypy src tests`,`git diff --check`。
+
+**Round 117**(2026-05-26,Codex):
+- 人类继续追问 reviewer/Codex 为什么同一条 `/ask reviewer review whether the Phase 8 inbox plan violates approval or audit boundaries...` 仍然 120/240 秒只有 heartbeat。
+- 日志确认新 task `3be492f3` 已 accepted 并进入 `Stream start`;SQLite 显示 payload 约 1996 字符;`ps` 确认 Codex 子进程确实在跑且命令中包含完整 reviewer prompt。
+- 产品判断:这不是问题太难,也不是 `/ask` 没交给 Codex;短 read-only boundary review 不应 6 分钟没有任何 stdout。
+- 根因判断:Round 116 关闭 stdin 后仍卡住,下一层是 stderr pipe。Codex CLI 会把运行头、hook、工具日志和 warning 写 stderr;AICO 过去只在进程退出后读 stderr,可能导致 pipe 写满后反压阻塞,stdout 永远出不来。
+- 修复 `_run_task()` 在子进程启动后立即后台 drain stderr,仅保留 tail 用于失败错误内容;成功任务不把 stderr 噪音推给 IM。
+- 新增单测构造“stderr 不被读取则 process.wait 不返回”的场景,确认 adapter 会并发 drain stderr。
+- 验证通过:`uv run pytest` 305 passed / 1 skipped,`uv run ruff check .`,`uv run ruff format --check .`,`uv run mypy src tests`,`git diff --check`;结构扫描无单类 >500 或单函数 >100。
+- 人类真实 IM 复验确认改动有效,reviewer/Codex 长任务卡住问题关闭。
+
+**Round 116**(2026-05-26,Codex):
+- 人类验证 Round 115 heartbeat 生效,但新 task `0e72ac63` 连续显示 `Still running...` 到 1680 秒仍没有结果。
+- 日志和 SQLite 状态确认该任务已被 Codex 接收并进入 `Stream start`,payload 约 1996 字符,不是异常巨大的 prompt;没有任何 `type=text` 输出。
+- 最小 Codex CLI smoke 在相同用户权限下 4 秒返回 `AICO_SMOKE_OK`,说明不是 Codex CLI、账号或网络整体不可用。
+- 根因判断:Adapter 启动子进程时未显式关闭 stdin;Codex 0.125 `exec` 会尝试读取 stdin 作为 additional input,若继承到不会 EOF 的 stdin,会长期等待而没有 stdout。
+- 修复 `_create_process()` 为 `stdin=DEVNULL`,让 Claude/Codex/optional CLI adapter 都以真正非交互形态启动。
+- 新增单测覆盖子进程创建时 stdin 关闭,并更新 CHANGELOG、Phase 5 playbook 和 P-026。
+- 验证通过:`uv run pytest` 304 passed / 1 skipped,`uv run ruff check .`,`uv run ruff format --check .`,`uv run mypy src tests`,`git diff --check`。
+- 注意:当前已经 running 的 `0e72ac63` 不会自动获得修复,需要 `/interrupt 0e72ac63` 后重启 AICO 再提交。
+
+**Round 115**(2026-05-26,Codex):
+- 排查人类真实 IM 长任务 `01ddaa36`:日志确认 Codex adapter 已接收任务、CLI 进程已启动并进入 `Stream start`,但 14 分钟以上没有 stdout chunk 或退出事件;这不是路由提交失败,而是 provider 长静默导致 IM 缺少活性反馈。
+- 产品判断:Round 114 放宽 idle timeout 后,长任务不应被 5 分钟误杀,但 absence-first 仍要求老板离开后能看到“员工还在工作”、能从 IM 汇总待处理事项、能随时 `/interrupt`。
+- 新增 Adapter quiet heartbeat:底层进程存活但长时间无 stdout 时产出 `OutputType.STATUS`,IM 显示 `Still running...`;TaskBus 保持任务 `running`,并把 status 写入 reason。
+- `OutputType.STATUS` 不进入普通任务 captured output,避免污染 lead decision memo、Goal Brief 结果或协作上下文。
+- 新增 `/inbox` 只读命令,按当前 active project 汇总待审批、running 静默任务、failed/interrupted/rejected、`/overnight` 工单、Goal Brief / lead decision 和协作 follow-up。
+- 同步更新 daily ops、Phase 5 / Phase 8 playbook、CHANGELOG 和 P-025。
+- 验证通过:`uv run pytest` 303 passed / 1 skipped,`uv run ruff check .`,`uv run ruff format --check .`,`uv run mypy src tests`,`git diff --check`。
+
+**Round 114**(2026-05-25,Codex):
+- 排查人类下午真实 IM dogfood:`/ask reviewer review whether the Phase 8 inbox plan violates approval or audit boundaries...` 再次返回 `ERROR: adapter output idle timeout after 300s`。
+- 产品判断:5 分钟对“公司员工”不是异常长任务;在 absence-first 场景里,no-output timeout 不能等同于 task runtime limit,否则老板不在时会误杀正常长 review / dogfooding。
+- 将 Codex / Cursor / CodeFlicker / Trae / Gemini optional CLI adapter 默认 `output_idle_timeout_seconds` 从 300 秒放宽到 1800 秒。
+- `Phase1Settings` 允许 `AICO_*_OUTPUT_IDLE_TIMEOUT_SECONDS=0`,启动 runtime 时会转换为 `None`,即禁用自动 no-output idle timeout;仍可用 `/interrupt <task_id>` 远程叫停。
+- 更新 daily ops、Phase 5 collaboration playbook、optional adapter playbook 和 PITFALL P-014 / P-022,明确默认 1800 秒、`0` 禁用、这是 no-output guard 不是任务总时长限制。
+- 新增/更新测试覆盖 optional adapter 默认 1800 秒和 `0` 禁用。
+- 验证通过:`uv run pytest` 301 passed / 1 skipped,`ruff check .`,`ruff format --check .`,`mypy src tests`,`git diff --check`。
+
+**Round 113**(2026-05-25,Codex):
+- 排查人类真实 IM dogfood:`/ask reviewer review whether the Phase 8 inbox plan violates approval or audit boundaries...` 首次任务 `f9d9990f` 被临时任命到 `claude-code`,新 provider session 启动后 7 分钟无 stdout,被人类 `/interrupt` 后收口为 `failed / task interrupted`。
+- 继续排查后续成功输出任务 `f8e6c321`:reviewer 输出了 `@implementer: please reflect (a)-(d) ...`,系统触发 `Collaboration requested: implementer -> implementer`,但 child task 只收到短指令,没有收到 reviewer 前文中定义的 (a)-(d),导致 implementer 回答“缺少上下文”。
+- 修复协作 handoff:触发 child task 时会把父任务截至协作指令前的可见输出作为 `Context from ... output so far` 注入 child payload,避免引用型短指令丢上下文。
+- 修复协作来源展示:project appointment 任务优先用 `aico.assignment_role` 作为协作来源和 audit actor,避免 reviewer 被底层 claude/implementer persona 显示成 `implementer -> implementer`。
+- 新增回归测试覆盖 parent context 传递和 assignment role 来源展示。
+- 验证通过:`uv run pytest` 300 passed / 1 skipped,`ruff check .`,`ruff format --check .`,`mypy src tests`,`git diff --check`。
+
+**Round 112**(2026-05-25,Codex):
+- 按人类选择的方案 C,新增并强化 AICO 的"老板不在场假设",但不改写北极星三句话正文。
+- `NORTH_STAR.md` 在第一句业务价值下新增"老板缺席操作模型(Absence-first)",明确 AICO 默认老板不在电脑前,通过 IM 指挥本地 AI CLI 团队继续工作。
+- 将 AICO 与 OMC / CoWork OS 的边界写清:OMC 偏浏览器里经营 AI 公司,CoWork OS 偏桌面 AI super app,AICO 偏离开电脑后的远程异步托管和交接。
+- 新增 5 个后续功能取舍问题:只靠 IM 能不能下达、离开后能不能推进、风险能不能等审批、早上能不能看懂、出问题能不能审计/叫停/恢复。
+- `STATUS.md` 更新宏大叙事和"老板不在场假设",并把 Phase 8 operator inbox / morning handoff 重新锚定为 absence-first 的关键拼图。
+- 本轮只更新产品目标与交接文档,未改运行代码,未跑单测。
+
+**Round 111**(2026-05-24,Codex):
+- 排查人类真实 IM 反馈:两条验证命令只留下 `4697ce83... [codex]: running` 与 `4c31d567... [codex]: running`。
+- 日志确认两条任务均由 Codex 接收后 300 秒无 stdout,最终触发 idle timeout;当时没有产生 lead decision memo 或 reviewer child task 的可见结果。
+- 修复 `/ask lead ...` 语义:`lead` / `default` 现在会解析到当前项目 default assignment,使老板可用自然 lead 说法触发 lead decision workflow。
+- 修复协作指令解析:Adapter 输出中的 `@reviewer: ...` 不再必须是第一条非空行;模型先输出计划、后输出 reviewer 指令也能触发 child task。
+- 修复协作输出展示:含协作指令的多行输出会保留非指令正文,不会为了触发 child task 把前面的计划正文吞掉。
+- 新增回归测试覆盖 lead alias、后续行协作指令、正文保留和现有 lead decision / collaboration 行为。
+- 验证通过:`pytest` 298 passed / 1 skipped,`ruff check .`,`ruff format --check .`,`mypy src tests`。
+
+**Round 109**(2026-05-22,Codex):
+- 按人类最新反馈校准待办状态:Adapter appointment / concurrency 真实 IM 回归已由人类验证完成,不再放在下一轮高优队列。
+- Memory Retrieval 真实 IM 验收已由人类验证完成,不再放在下一轮高优队列。
+- 将剩余真实 IM 待办改写为“真实问题列表 + 预期效果”,避免下一轮只按标题重复执行。
+- 本轮只更新状态与交接文档,未改运行代码,未跑测试。
+
+**Round 108**(2026-05-21,Codex):
+- 人类完成 Telegram render 复验:`/agents` 和 `/appoint codex as tester` 观感“好很多”,本轮关闭该问题状态。
+- 继续推进高优能力:实现 `/overnight` 托管工单持久化与重启恢复。
+- 新增 `OfflineDelegationStore` 协议和 `SQLiteOfflineDelegationStore`,复用 `AICO_STATE_DB_PATH` 对应 SQLite 文件保存 `offline_delegations` 表。
+- 新增共享 SQLite state layer:`SQLiteStateDatabase` 统一维护 `aico_schema` metadata、schema version、表计数和已知状态表 reset。
+- 新增 `aico-state --db <path>` CLI:默认输出 schema version 和状态表行数;`reset --yes` 可清空已知 AICO 状态表,适合开发期快速迭代。
+- `AICO_STATE_DB_PATH=true` 现在映射到 `.aico/state.db`,`false` / `0` / `off` 视为关闭,避免再次生成仓库根目录 `true` 数据库文件;`.aico/` 已加入 `.gitignore`。
+- `OfflineDelegationCommandHandler` 支持可选 store;未配置时仍保持内存行为,配置后 `/overnight` 写入 SQLite,重启并重新进入同一 project 后 `/overnight` 可列出历史托管工单。
+- `Phase1Runtime` 在配置 `AICO_STATE_DB_PATH` 时同时启用 task state store 和 offline delegation store。
+- README / README.zh-CN / Quickstart / daily ops / Phase 8 playbook / ADR-0028 同步更新,不再把 `/overnight` persistence 标为进行中。
+- 新增回归测试覆盖 SQLite 恢复 overnight delegation,并确认恢复列表不会再次派发 Adapter 任务。
+- 验证通过:`pytest` 293 passed / 1 skipped,`ruff check .`,`ruff format --check .`,`mypy src tests`,`git diff --check`,结构扫描无单类 >=500 行或单函数 >=100 行。
+
+**Round 107**(2026-05-21,Codex):
+- 按人类要求拆 `Orchestrator` / `TaskBus`:新增 `OrchestratorTaskFactory` 承载 project/session/memory task 构造,新增 `TaskStateRepository` 承载 task records、snapshots、approvals 和 adapter mapping。
+- `Orchestrator` 类体从约 646 行降到 480 行;`TaskBus` 类体从约 566 行降到 448 行;模块级命令分发拆成 project / role / directory / memory helper 后不再超过 100 行。
+- 继续修 Telegram 可读性:`rich_text_message()` 会把普通 `-` / `*` 列表转成 `•`,并对 `agent_title:`、`role:`、`adapter:` 等字段左侧 label 加粗;`/agents` 和 `/appoint` 的真实输出会更像结构化 IM 消息。
+- 维持 render contract 边界:核心仍只输出平台无关 `MessageTextSpan`,Telegram Channel 只做 HTML 映射,没有把 Telegram Markdown 方言塞回核心。
+- 更新测试覆盖 `/agents` 列表、字段 label 加粗、`/appoint` label 加粗和结构拆分后的回归。
+- 验证通过:`pytest` 289 passed / 1 skipped,`ruff check .`,`ruff format --check .`,`mypy src tests`,`git diff --check`,结构扫描无单类 >=500 行或单函数 >=100 行。
+
+**Round 106**(2026-05-21,Codex):
+- 按人类确认,将 GitHub UI metadata(description、topics、social preview)视为已验收,不再作为公开发布缺口。
+- 改善 Telegram 消息体感:新增平台无关 rich text renderer,流式 provider 输出和内置命令输出会把轻量 Markdown 标题、小节标题、inline bold/code/italic 和 slash command 转成 `MessageTextSpan`,Telegram 渲染为 HTML;标题前自动留出结构空行。
+- 决策并落地 SQLite 持久化第一切片:新增 ADR-0028、`TaskStateStore` 协议和 `SQLiteTaskStateStore`;通过 `AICO_STATE_DB_PATH` 可持久化 task records、task snapshots 和 pending approvals,重启后继续支持 `/tasks`、`/task` 和 pending `/approve`。
+- 从 1k stars 缺口和 GitHub 公开高优事项中选择两个最关键点落地:
+  - 新增 `aico-release-room-demo` 无 token Release Room 本地 demo,陌生开发者不用 Telegram Bot Token 或 LLM provider 也能看到团队/记忆/审批/日报/审计链路。
+  - 新增 `.github/PULL_REQUEST_TEMPLATE.md` 和 `.github/ISSUE_TEMPLATE/good_first_issue.yml`,降低公开后外部贡献者参与门槛。
+- README / README.zh-CN / Quickstart / daily ops 同步新增 no-token demo 和 `AICO_STATE_DB_PATH` 配置说明。
+- 新增 B-004,记录 `Orchestrator` / `TaskBus` 超过单类尺寸硬约束的公开前结构债。
+
+**Round 105**(2026-05-21,Codex):
+- 按人类“先别做重”的判断,把 ADR-0025 收敛为轻量 Goal Brief v0:先验证 `/goal` + 可验证 `/ask` 的目标/验收 prompt 价值,完整 `GoalCapability` / `GoalExecutor` / managed Ralph loop 暂缓。
+- 新增 `/goal [role] <objective>` 命令;未指定 role 时使用当前 project lead/default role,`/goal` 可列出最近带 goal brief 元数据的任务。
+- `/ask <role> <task>` 仅在文本出现明确验收、停止、通过/失败、证据等 marker 时保守附加 `AICO Goal Brief`;普通咨询不升级。
+- Goal Brief 会注入 objective、acceptance、verification hints、stop conditions 和“没有证据不得 claim done”的规则;Task metadata 写入 `aico.intent=goal_brief`、`aico.goal_id`、`aico.goal_objective`、`aico.goal_acceptance`。
+- `/task <id>` 详情新增 `Goal brief:` 区块,展示 goal id、objective 和 acceptance。
+- 新增 `GoalBriefCommandHandler`,避免把 goal 逻辑继续塞进 Orchestrator;同步更新 ADR-0025、CHANGELOG 和 Phase 8 playbook。
+- 验证通过:目标 command/orchestrator 单测、完整 `tests/unit/test_commands.py tests/unit/test_orchestrator.py`、定向 ruff / format / mypy。
+
+**Round 104**(2026-05-21,Codex):
+- 完成 lead decision workflow Stage 3:当前项目 lead/default role 收到明确决策类任务时,会进入只读决策流程。
+- 决策流程优先召回 `public_broadcast`、`task_key_progress`、`decision_review` purpose 的记忆,不把 `task_private` 和普通 `general_context` 混入 decision packet。
+- 自动咨询 challenger,并在 reviewer 已任命时同时咨询 reviewer;咨询任务复用 appointment prompt、provider session、普通 TaskBus 和协作审计 trace。
+- Lead 最终任务会收到固定 decision memo 输出契约:Decision、Why、Evidence / memory refs、Consulted roles、Rejected alternatives、Risks / approval need、Next actions。
+- 新增 `lead_decision_recorded` audit event,detail 记录 project、lead、boss task、memory refs、consulted roles 和 memo 摘要;memo 会写回 project memory,并标记 `decision_review`。
+- 验证通过:98 个相关测试覆盖 Orchestrator、Memory、TaskBus、Audit 和 Phase 7 acceptance;定向 ruff / format / mypy 通过。
+
+**Round 103**(2026-05-21,Codex):
+- 继续执行 lead 决策能力 Stage 2,新增 ADR-0027 `Memory Purpose Tags`。
+- `MemoryAtom` 新增 `purpose_tags`,旧记录默认 `general_context`,并新增 `MemoryPurpose`: `general_context`、`public_broadcast`、`task_key_progress`、`task_private`、`decision_review`。
+- `MemoryRetriever` 默认排除 `task_private`,只有显式 `allowed_purposes` 时才会召回内部短期记忆。
+- Team broadcast 生成的 team memory 会标记 `public_broadcast`,并丢弃源记忆中的 `task_private`。
+- `/remember` 和 boss feedback 写入 `general_context`;`/recall` 输出展示 purpose。
+- Prompt Stack 的 Shared memory 行展示 purpose,让 lead / agent 能区分公共共识、任务进展和决策评审。
+- 验证通过:26 个 memory 目标测试覆盖 JSONL 兼容、purpose 过滤、broadcast purpose、`/recall` purpose、Phase 7 acceptance 和 Release Room acceptance。
+
+**Round 102**(2026-05-21,Codex):
+- 按人类确认开始落地 lead 决策团队契约第一阶段,新增 ADR-0026 `Lead Decision Team Contract`。
+- 默认角色库新增 `challenger` / Critical Philosopher,职责是从反方视角挑战方案前提、机会成本和长期风险。
+- 默认项目配置和 Release Room 配置补齐 challenger appointment;`/roles` 默认核心岗位会显示 challenger。
+- 项目办公室和 `/team` 输出新增 `team readiness`,用于明确当前团队是否具备 lead + challenger。
+- project lead 的 appointment prompt 增加责任约束:减少 boss 认知负担、基于记忆和团队意见做低风险决策、高风险事项升级 boss。
+- `/overnight` 现在要求当前项目团队完整;缺 challenger 时提示 `/appoint <agent> as challenger`,不会派发托管任务。
+- 验证通过:57 个目标测试覆盖 project assignment、prompt stack、project messages、phase1 runtime、orchestrator overnight、Release Room 示例和 acceptance。
+
+**Round 100**(2026-05-21,Codex):
+- 调研 Codex `/goal`:本机 Codex CLI 为 `0.125.0`,未包含该实验命令;OpenAI Developers 文档确认 `/goal` 需要 `features.goals`,用于带明确停止条件和验证循环的长任务。
+- 新增 ADR-0025 `Goal Mode Orchestration`,定义 AICO `/goal` 的显式命令、`/ask` 自动升级规则、boss 分配流程、lead 子目标流程、目标状态和 prompt 模板。
+- 设计结论:goal-mode 是 `/ask` 与 `/overnight` 之间的通用目标契约层,不绕过 `/approve`,并要求 goal 状态写入 audit、可在 `/goal`、`/tasks`、`/task`、`/daily` 中追踪。
+- 本轮只做设计文档,未改运行代码;下一轮优先实现 GoalRecord 持久化、parser、render/audit 和单测。
+
+**Round 101**(2026-05-21,Codex):
+- 按人类反馈重构 ADR-0025:不同 agent 不能统一走 AICO loop,应先生成统一 `GoalContract`,再按 Adapter `GoalCapability` 选择执行器。
+- 新增 `GoalCapability` 分层:`native_goal`、`adapter_goal_sugar`、`managed_ralph_loop`、`no_goal`。
+- 对 Codex / Claude Code 等支持 goal 的 agent,由 Adapter 封装语法糖并传入明确目标、验收标准和停止条件;core 不硬编码具体 agent 语法。
+- 对不支持 goal 的 agent,由 AICO 托管 managed Ralph loop:通过长期目标 prompt、hook 输出契约、continuation task、预算和审批边界避免模型过早结束或失控。
+- 本轮仍只改设计文档;下一轮实现应先做 Adapter capability 模型和 GoalExecutor 分发,再做 managed loop。
 
 **Round 96**(2026-05-20,Codex):
 - 落地记忆检索 Stage 1+2:新增 `MemoryRetrievalQuery` / `MemoryRetrievalHit`,让检索 query、scope、top_k、token budget 和可解释 hit 成为稳定契约。
@@ -996,35 +1244,60 @@
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【高】Adapter appointment / concurrency 真实 IM 回归**:
-   - 重启 AICO 后跑 `/agents` / `/agent codex`,确认显示 `0/5 running`、`max_concurrent: 5` 和建议任命上限。
-   - 跑 `/appoint codeflicker as tester`,确认不再返回 `Cannot appoint`;再用 `/who tester` / `/team` 确认 owner。
-   - 将 `codex` 同时任命为 reviewer / tester,连续 `/ask reviewer ...` 和 `/ask tester ...`,确认未到 5 个并发前不会返回 `Task busy`。
-   - 对 Codex 长任务确认 idle timeout 文案变为 300s 阈值;若真实任务仍超时,再按 provider 输出特性设计 heartbeat 或更长 per-adapter 配置。
-2. **【高】Memory Retrieval 真实 IM 验收**:
-   - 用 `/remember` 写入 release / audit / tester 相关记忆,再用 `/recall <query>` 检查 reason 和 score 分项。
-   - 用 `/ask tester ...` / `/ask reviewer ...` 验证 role/task hints 能把测试/审计/风险记忆注入对应角色 prompt。
-   - 用 team broadcast 或测试脚本确认 graph neighbor 能进 packet,同时跨 project 记忆不泄漏。
-3. **【高】开源首屏二次验收:AI agent 开发者 / 个人开发者视角**:
+1. **【高】Phase 8 Absence Loop 真实 IM dogfood,按顺序逐条问**:
+   - 直接可问的问题:
+     - `/project aico`
+     - `/inbox`
+     - `/morning`
+     - `/goal implementer inspect inbox handoff 验收: list actionable items; explain blocked risks`
+     - `/task <outcome_grader_task_id>`
+     - `/dream`
+     - `/remember Morning handoff must show done, blocked, risks, and next actions.`
+     - `/recall 早报接手`
+   - 预期效果:`/inbox` 顶部有 `First action`,每个待处理项都能直接看出下一步:审批用 `/approve` / `/reject`,running 用 `/task` / `/interrupt`,handoff 用 `/task` / `/daily`,Goal/decision/collaboration 都能跳转到对应 task。输出仍只包含 current active project。
+   - 补充预期:`/morning` 汇总 done/blocked/risks/next actions;`/goal` 完成后如 tester/reviewer 已任命会出现 Outcome Grader 任务;`/dream` 只生成 candidate memory;`/recall 早报接手` 能召回刚写入的 morning handoff 记忆。
+2. **【高】Lead decision workflow 真实 IM 验收**:
+   - 直接可问的问题:
+     - `/project aico`
+     - `/team`
+     - `/ask lead decide whether we should start Phase 8 operator inbox now. Consider current project status, risks, and alternatives.`
+     - `/audit`
+     - `/recall decision`
+     - `/inbox`
+   - 预期效果:老板只发一个决策问题,系统自动拉反方/评审意见,最后给一份可追踪 decision memo,并能用 `/audit` / `/recall decision` 复盘。`/inbox` 应把该决策类任务列入 current-project follow-up,但不把 heartbeat 文本混进 memo。
+3. **【高】Goal Brief v0 真实 IM dogfooding**:
+   - 直接可问的问题:
+     - `/project aico`
+     - `/goal implementer inspect whether Phase 8 operator inbox is ready to implement. 验收: summarize blockers, required state tables, and stop conditions.`
+     - `/task <上一步返回的 task id>`
+     - `/inbox`
+     - `/ask tester check the Phase 8 inbox acceptance path, 必须给出通过/失败证据`
+     - `/ask tester what is the current project testing strategy?`
+   - 预期效果:复杂任务的目标、验收、证据和停止条件前置到 prompt 与任务详情里;`/task` 能看到 goal id/objective/acceptance,`/inbox` 能在 current-project scope 下列出 Goal Brief follow-up。
+4. **【高】Phase 5 真实协作 smoke test 作为后续回归项**:
+   - 直接可问的问题:
+     - `/project aico`
+     - `/ask implementer propose a tiny Phase 8 inbox implementation plan, then ask @reviewer: review whether the plan violates approval or audit boundaries.`
+     - `/tasks`
+     - `/task <父任务 id>`
+     - `/task <reviewer 子任务 id>`
+     - `/inbox`
+     - `/status`
+   - 预期效果:Phase 5 的 A2A 协作在真实 Telegram 下不是“只创建任务”,而是有输出、可追踪、可恢复;即便 provider 静默,系统也能用 heartbeat、`/task`、`/inbox`、`/interrupt` 给出可操作状态。
+5. **【高】开源首屏二次验收:AI agent 开发者 / 个人开发者视角**:
    - 检查 README 首屏是否在 30 秒内说清“远程指挥本机真实 AI 工具”。
-   - 按 `docs/human/github-publication.md` 手动补 GitHub metadata:description、topics、social preview、about link。
-   - 补外部贡献者基础设施:公开 roadmap 摘要、PR template、贡献者 first issue 列表。
    - 用全新 clone + Telegram token 跑一次 Quickstart,记录外部开发者真实卡点。
-4. **【高】Release Room Stage 3 GIF 复剪 / README 体验复核**:
+6. **【高】Release Room Stage 3 GIF 复剪 / README 体验复核**:
    - 已生成真实 Telegram dogfooding GIF: `docs/assets/release-room-demo.gif`,并嵌入 README。
    - 当前 GIF 是 35 秒实录剪辑,覆盖 `/use`、`/team`、project memory、Codex PM/tester 输出、`/daily` 和 `/audit`。
    - 下一轮可做一次更精剪版本:减少旧消息露出,补更清晰的 approval gate 镜头,并避免 read-only pytest 临时目录失败入镜。
    - 若继续录真实 CLI,优先让 Codex tester 使用可写临时目录或只做静态检查,不要在 read-only sandbox 里直接跑 pytest。
-5. **【高】Phase 8 `/overnight` 持久化与重启恢复**:
-   - 让托管工单列表可从 audit JSONL 恢复,避免重启后 `/overnight` 看不到昨晚托管记录。
-   - 继续保持危险动作必须 `/approve`,不因为离线托管放大权限。
-6. **【高】Feishu Channel 部署层与真实 smoke test**:
+7. **【高】Feishu Channel 部署层与真实 smoke test**:
    - 用 FastAPI route 或现有部署入口把飞书事件 callback 接到 `FeishuChannel.handle_event(payload)`。
    - 在飞书开放平台完成 URL verification,订阅 `im.message.receive_v1`。
    - 配置 App ID / App Secret / Verification Token,跑文本入站、回复、编辑/删除降级 smoke test。
-7. **【高】Phase 5 真实协作 smoke test 作为后续回归项**:重新跑 `@reviewer ...`,确认 child task accepted 后要么有 reviewer 输出,要么 300 秒 idle timeout 后恢复为可接新任务状态。
-8. **【中】Codex bind / Claude resume / 长文本复测**:继续确认 session 和长文本分片不被 Phase 6 命令影响。
-9. **【低】Adapter usage 上报**:等 Claude/Codex Adapter 能稳定提供 usage 后,记录 `task_usage_recorded` 审计事件;当前只保留接入边界,不伪造数据。
+11. **【中】Codex bind / Claude resume / 长文本复测**:继续确认 session 和长文本分片不被 Phase 6 命令影响。
+12. **【低】Adapter usage 上报**:等 Claude/Codex Adapter 能稳定提供 usage 后,记录 `task_usage_recorded` 审计事件;当前只保留接入边界,不伪造数据。
 
 ---
 

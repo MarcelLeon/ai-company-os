@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 from aico.core.agent_session import AgentCard
+from aico.core.goal_brief import (
+    GOAL_BRIEF_ACCEPTANCE_KEY,
+    GOAL_BRIEF_ID_KEY,
+    GOAL_BRIEF_OBJECTIVE_KEY,
+    goal_metadata,
+)
+from aico.core.message_rendering import rich_text_message
 from aico.core.metrics import MetricsReport, MetricsSummary, build_metrics_report
 from aico.core.models import (
     AckStatus,
@@ -29,18 +36,16 @@ TOOLS_PROMPT = (
 
 def ack_failure_message(status: AckStatus, reason: str | None) -> MessageContent:
     reason_text = f": {reason}" if reason else ""
-    return MessageContent(text=f"Task {status.value}{reason_text}")
+    return rich_text_message(f"Task {status.value}{reason_text}")
 
 
 def approval_required_message(task_id: str, reason: str | None) -> MessageContent:
     reason_text = f"\n{reason}" if reason else ""
     short_id = short_id_text(task_id)
-    return MessageContent(
-        text=(
-            f"Approval required: {short_id}{reason_text}\n"
-            "Send /approve to continue, or /reject to stop.\n"
-            f"If several approvals are pending, use /approve {short_id}."
-        )
+    return rich_text_message(
+        f"Approval required: {short_id}{reason_text}\n"
+        "Send /approve to continue, or /reject to stop.\n"
+        f"If several approvals are pending, use /approve {short_id}."
     )
 
 
@@ -53,17 +58,17 @@ def status_message(
         lines.append("")
         lines.append("Recent tasks:")
         lines.extend(_task_status_line(snapshot) for snapshot in task_snapshots)
-    return MessageContent(text="\n".join(lines))
+    return rich_text_message("\n".join(lines))
 
 
 def tasks_message(task_snapshots: tuple[TaskSnapshot, ...]) -> MessageContent:
     if not task_snapshots:
-        return MessageContent(text="No recent tasks")
+        return rich_text_message("No recent tasks")
     lines = ["Recent tasks:"]
     lines.extend(_task_status_line(snapshot) for snapshot in task_snapshots)
     lines.append("")
     lines.append("Use /task <task_id> for details.")
-    return MessageContent(text="\n".join(lines))
+    return rich_text_message("\n".join(lines))
 
 
 def metrics_message(
@@ -71,7 +76,7 @@ def metrics_message(
     audit_events: tuple[AuditEvent, ...],
 ) -> MessageContent:
     report = build_metrics_report(task_snapshots, audit_events)
-    return MessageContent(text=metrics_report_text(report))
+    return rich_text_message(metrics_report_text(report))
 
 
 def metrics_report_text(report: MetricsReport) -> str:
@@ -101,6 +106,11 @@ def task_detail_message(
     ]
     if snapshot.reason:
         lines.append(f"reason: {snapshot.reason}")
+    goal_lines = _task_goal_lines(snapshot)
+    if goal_lines:
+        lines.append("")
+        lines.append("Goal brief:")
+        lines.extend(goal_lines)
     collaboration_lines = _task_collaboration_lines(snapshot, audit_events)
     if collaboration_lines:
         lines.append("")
@@ -111,15 +121,29 @@ def task_detail_message(
         lines.append("")
         lines.append("Actions:")
         lines.extend(actions)
-    return MessageContent(text="\n".join(lines))
+    return rich_text_message("\n".join(lines))
+
+
+def _task_goal_lines(snapshot: TaskSnapshot) -> tuple[str, ...]:
+    metadata = goal_metadata(snapshot)
+    if not metadata:
+        return ()
+    goal_id = metadata.get(GOAL_BRIEF_ID_KEY, "-")
+    objective = metadata.get(GOAL_BRIEF_OBJECTIVE_KEY, "-")
+    acceptance = metadata.get(GOAL_BRIEF_ACCEPTANCE_KEY, "-")
+    return (
+        f"id: {goal_id}",
+        f"objective: {objective}",
+        f"acceptance: {acceptance}",
+    )
 
 
 def audit_message(events: tuple[AuditEvent, ...]) -> MessageContent:
     if not events:
-        return MessageContent(text="No audit events")
+        return rich_text_message("No audit events")
     blocks = ["Recent audit events:"]
     blocks.extend(_audit_event_block(event) for event in events)
-    return MessageContent(text="\n\n".join(blocks))
+    return rich_text_message("\n\n".join(blocks))
 
 
 def agent_list_message(
@@ -127,14 +151,14 @@ def agent_list_message(
     adapter_snapshots: tuple[AdapterSnapshot, ...],
 ) -> MessageContent:
     if not cards:
-        return MessageContent(text="No agents")
+        return rich_text_message("No agents")
     statuses = _adapter_statuses(adapter_snapshots)
     lines = ["Agents:"]
     lines.extend(
         _agent_list_line(card, statuses.get(card.adapter_name, "unknown")) for card in cards
     )
     lines.extend(_next_lines(("/agent <agent>", "/roles", "/appoint <agent> as <role>")))
-    return MessageContent(text="\n".join(lines))
+    return rich_text_message("\n".join(lines))
 
 
 def agent_card_message(
@@ -149,22 +173,20 @@ def agent_card_message(
     role = card.name if display_name != card.name else card.role_description
     status = statuses.get(card.adapter_name, "unknown")
     next_lines = _agent_next_lines(display_name, status)
-    return MessageContent(
-        text=(
-            f"Agent: {display_name}\n"
-            f"adapter: {card.adapter_name}\n"
-            f"provider: {card.provider_name}\n"
-            f"status: {status}\n"
-            f"max_concurrent: {card.max_concurrent_tasks}\n"
-            f"recommended_appointments: <= {card.max_concurrent_tasks}\n"
-            f"role: {role}\n"
-            f"aliases: {aliases}\n"
-            f"capabilities: {capabilities}\n"
-            f"tools: {card.tools_source.value} via /tools {display_name}\n"
-            f"skills: {card.skills_source.value} via /skills {display_name}\n"
-            f"sessions: {sessions}"
-            f"{next_lines}"
-        )
+    return rich_text_message(
+        f"Agent: {display_name}\n"
+        f"adapter: {card.adapter_name}\n"
+        f"provider: {card.provider_name}\n"
+        f"status: {status}\n"
+        f"max_concurrent: {card.max_concurrent_tasks}\n"
+        f"recommended_appointments: <= {card.max_concurrent_tasks}\n"
+        f"role: {role}\n"
+        f"aliases: {aliases}\n"
+        f"capabilities: {capabilities}\n"
+        f"tools: {card.tools_source.value} via /tools {display_name}\n"
+        f"skills: {card.skills_source.value} via /skills {display_name}\n"
+        f"sessions: {sessions}"
+        f"{next_lines}"
     )
 
 

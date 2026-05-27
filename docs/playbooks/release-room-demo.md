@@ -47,7 +47,8 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 /team
 ```
 
-预期:看到 pm、implementer、reviewer、tester、release-manager 等岗位,并看到当前 lead。
+预期:看到 pm、implementer、reviewer、challenger、tester、release-manager 等岗位,
+看到当前 lead,并看到 `team readiness: complete`。
 
 3. 写入项目共识:
 
@@ -77,14 +78,16 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 
 预期:如果底层 Adapter 需要写文件或执行命令,AICO 仍按风险策略进入 `/approve`。
 
-6. 让 tester 和 reviewer 独立验收:
+6. 让 tester、reviewer 和 challenger 独立验收:
 
 ```text
 /ask tester 根据 tests/test_v02_contract.py 设计回归验证，运行必要测试并报告失败项。
 /ask reviewer review v0.2 改动，重点检查行为回归、测试缺口、README/CHANGELOG 是否一致。
+/ask challenger 从反方视角挑战 v0.2 release 方案，重点检查隐藏前提、机会成本和长期维护风险。
 ```
 
 预期:tester / reviewer 不应只复述 implementer 输出,而应各自给出验证和风险。
+challenger 应给出 oppose / conditional support / support 之一,并说明改变判断所需证据。
 
 7. 托管剩余 release 工作:
 
@@ -122,7 +125,7 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 1. 进入 project office,显示 `/team`。
 2. 写入三条 `/remember`,随后 `/ask pm` 自动使用项目共识。
 3. Implementer 触发审批,老板用 `/approve`。
-4. Reviewer / tester 独立验收。
+4. Reviewer / tester / challenger 独立验收。
 5. `/overnight` 后用 `/daily` 收早报。
 6. 最后用 `/audit` / `/task` 证明可追溯。
 
@@ -138,6 +141,7 @@ bash examples/release-room/make-gif.sh /path/to/recording.mov docs/assets/releas
 - 示例仓库存在 `NORTH_STAR.md`、`STATUS.md`、`docs/journal/*` 和 v0.2 issue。
 - Stage 2 本地 transcript 覆盖团队、记忆、审批、托管、早报、任务、指标和审计。
 - `/team` 展示 lead 和多 role appointment。
+- `/team` 展示 challenger,且 team readiness complete。
 - `/remember` 的 project-scoped 记忆能被后续 project task 召回。
 - 危险动作不会因为 demo 或 `/overnight` 绕过审批。
 - 早报不是营销文案,必须列出 done、blocked、risks、next actions。

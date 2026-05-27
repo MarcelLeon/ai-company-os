@@ -1,3 +1,4 @@
+from aico.adapter.claude_code import DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
 from aico.adapter.trae import DEFAULT_TRAE_COMMAND, TraeAdapter
 from aico.core import (
     Capability,
@@ -12,6 +13,9 @@ def test_trae_adapter_uses_print_yolo_defaults() -> None:
     adapter = TraeAdapter()
 
     assert adapter.name == "trae"
+    assert (  # noqa: SLF001
+        adapter._output_idle_timeout_seconds == DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
+    )
     assert DEFAULT_TRAE_COMMAND == ("trae-cli", "--print", "--yolo")
     assert adapter.capabilities() == frozenset(
         {

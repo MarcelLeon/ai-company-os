@@ -41,6 +41,7 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
+.aico/
 data/
 storage/
 

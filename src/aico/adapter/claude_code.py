@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shutil
-from asyncio.subprocess import PIPE, create_subprocess_exec
+from asyncio.subprocess import DEVNULL, PIPE, create_subprocess_exec
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,7 +33,10 @@ DEFAULT_CLAUDE_COMMAND = (
     "--permission-mode",
     "bypassPermissions",
 )
+DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS = 1800.0
+DEFAULT_QUIET_STATUS_INTERVAL_SECONDS = 120.0
 _FINISHED = object()
+_MAX_STDERR_TAIL_CHARS = 8000
 
 
 class AsyncLineReader(Protocol):
@@ -90,6 +93,7 @@ class ClaudeCodeAdapter:
         process_factory: ProcessFactory | None = None,
         interrupt_timeout_seconds: float = 5.0,
         output_idle_timeout_seconds: float | None = None,
+        quiet_status_interval_seconds: float | None = DEFAULT_QUIET_STATUS_INTERVAL_SECONDS,
         max_concurrent_tasks: int = 5,
     ) -> None:
         if not adapter_name:
@@ -100,6 +104,8 @@ class ClaudeCodeAdapter:
             raise ValueError("interrupt_timeout_seconds must be positive")
         if output_idle_timeout_seconds is not None and output_idle_timeout_seconds <= 0:
             raise ValueError("output_idle_timeout_seconds must be positive")
+        if quiet_status_interval_seconds is not None and quiet_status_interval_seconds <= 0:
+            raise ValueError("quiet_status_interval_seconds must be positive")
         if max_concurrent_tasks <= 0:
             raise ValueError("max_concurrent_tasks must be positive")
 
@@ -109,6 +115,7 @@ class ClaudeCodeAdapter:
         self._process_factory = process_factory or _create_process
         self._interrupt_timeout_seconds = interrupt_timeout_seconds
         self._output_idle_timeout_seconds = output_idle_timeout_seconds
+        self._quiet_status_interval_seconds = quiet_status_interval_seconds
         self._max_concurrent_tasks = max_concurrent_tasks
         self._tasks: dict[str, _TaskHandle] = {}
 
@@ -224,6 +231,7 @@ class ClaudeCodeAdapter:
     async def _run_task(self, task: Task, queue: asyncio.Queue[QueueItem]) -> None:
         handle = self._tasks[task.task_id]
         sequence = 0
+        stderr_task: asyncio.Task[None] | None = None
         try:
             log.info(
                 "Adapter process starting: adapter=%s task_id=%s cwd=%s",
@@ -244,6 +252,8 @@ class ClaudeCodeAdapter:
             )
             process = await self._process_factory(command, self._cwd)
             handle.process = process
+            stderr_tail = _TextTailBuffer(max_chars=_MAX_STDERR_TAIL_CHARS)
+            stderr_task = asyncio.create_task(_drain_stderr(process.stderr, stderr_tail))
             try:
                 sequence = await self._stream_reader(task.task_id, process.stdout, queue, sequence)
             except AdapterOutputIdleTimeoutError as exc:
@@ -255,9 +265,11 @@ class ClaudeCodeAdapter:
                     self._output_idle_timeout_seconds,
                 )
                 await self._stop_process(process)
+                await _finish_stderr_task(stderr_task)
                 await queue.put(_output(task.task_id, sequence, OutputType.ERROR, str(exc)))
                 return
             return_code = await process.wait()
+            await _finish_stderr_task(stderr_task)
             log.info(
                 "Adapter process exited: adapter=%s task_id=%s return_code=%s stdout_chunks=%s",
                 self._name,
@@ -274,8 +286,7 @@ class ClaudeCodeAdapter:
                 await queue.put(_output(task.task_id, sequence, OutputType.DONE, ""))
                 return
 
-            stderr_text = await _read_remaining(process.stderr)
-            content = self._process_error_content(stderr_text, return_code)
+            content = self._process_error_content(stderr_tail.text(), return_code)
             await queue.put(_output(task.task_id, sequence, OutputType.ERROR, content))
         except asyncio.CancelledError:
             raise
@@ -283,6 +294,9 @@ class ClaudeCodeAdapter:
             log.exception("Claude Code task failed: task_id=%s", task.task_id)
             await queue.put(_output(task.task_id, sequence, OutputType.ERROR, str(exc)))
         finally:
+            if stderr_task is not None and not stderr_task.done():
+                stderr_task.cancel()
+                await _suppress_cancelled(stderr_task)
             handle.done = True
             await queue.put(_FINISHED)
             log.info("Adapter task finished: adapter=%s task_id=%s", self._name, task.task_id)
@@ -298,7 +312,32 @@ class ClaudeCodeAdapter:
             return start_sequence
 
         sequence = start_sequence
-        while line := await self._readline(reader, sequence):
+        loop = asyncio.get_running_loop()
+        last_adapter_output_at = loop.time()
+        last_status_at = last_adapter_output_at
+        while line := await self._readline(
+            reader,
+            sequence,
+            last_adapter_output_at=last_adapter_output_at,
+            last_status_at=last_status_at,
+        ):
+            if line is _QUIET_STATUS:
+                now = loop.time()
+                elapsed = now - last_adapter_output_at
+                await queue.put(
+                    _output(
+                        task_id,
+                        sequence,
+                        OutputType.STATUS,
+                        _quiet_status_message(elapsed),
+                    )
+                )
+                last_status_at = now
+                continue
+            if not isinstance(line, bytes):
+                continue
+            last_adapter_output_at = loop.time()
+            last_status_at = last_adapter_output_at
             content = self._process_stdout_line(_decode(line))
             if content is None:
                 continue
@@ -316,19 +355,47 @@ class ClaudeCodeAdapter:
         self,
         reader: AsyncLineReader,
         sequence: int,
-    ) -> bytes:
-        if self._output_idle_timeout_seconds is None:
+        *,
+        last_adapter_output_at: float,
+        last_status_at: float,
+    ) -> bytes | object:
+        timeout = self._next_read_timeout(
+            last_adapter_output_at=last_adapter_output_at,
+            last_status_at=last_status_at,
+        )
+        if timeout is None:
             return await reader.readline()
         try:
-            return await asyncio.wait_for(
-                reader.readline(),
-                timeout=self._output_idle_timeout_seconds,
-            )
+            return await asyncio.wait_for(reader.readline(), timeout=timeout)
         except TimeoutError as exc:
-            raise AdapterOutputIdleTimeoutError(
-                timeout_seconds=self._output_idle_timeout_seconds,
-                sequence=sequence,
-            ) from exc
+            elapsed = asyncio.get_running_loop().time() - last_adapter_output_at
+            if (
+                self._output_idle_timeout_seconds is not None
+                and elapsed >= self._output_idle_timeout_seconds
+            ):
+                raise AdapterOutputIdleTimeoutError(
+                    timeout_seconds=self._output_idle_timeout_seconds,
+                    sequence=sequence,
+                ) from exc
+            return _QUIET_STATUS
+
+    def _next_read_timeout(
+        self,
+        *,
+        last_adapter_output_at: float,
+        last_status_at: float,
+    ) -> float | None:
+        loop_time = asyncio.get_running_loop().time()
+        deadlines: list[float] = []
+        if self._output_idle_timeout_seconds is not None:
+            deadlines.append(
+                max(self._output_idle_timeout_seconds - (loop_time - last_adapter_output_at), 0)
+            )
+        if self._quiet_status_interval_seconds is not None:
+            deadlines.append(
+                max(self._quiet_status_interval_seconds - (loop_time - last_status_at), 0)
+            )
+        return min(deadlines) if deadlines else None
 
     async def _stop_process(self, process: AdapterProcess) -> None:
         if process.returncode is not None:
@@ -354,23 +421,58 @@ class ClaudeCodeAdapter:
         return (*self._command, "--resume", provider_session.session_id, task.payload)
 
 
+_QUIET_STATUS = object()
+
+
+class _TextTailBuffer:
+    def __init__(self, *, max_chars: int) -> None:
+        self._max_chars = max_chars
+        self._chunks: list[str] = []
+        self._size = 0
+
+    def append(self, value: str) -> None:
+        if not value:
+            return
+        self._chunks.append(value)
+        self._size += len(value)
+        while self._size > self._max_chars and self._chunks:
+            removed = self._chunks.pop(0)
+            self._size -= len(removed)
+
+    def text(self) -> str:
+        return "".join(self._chunks).strip()
+
+
+def _quiet_status_message(elapsed_seconds: float) -> str:
+    elapsed = max(0, int(elapsed_seconds))
+    return (
+        f"Still running: no adapter output for {elapsed}s. "
+        "Use /task <id> for details or /interrupt <id> to stop."
+    )
+
+
+async def _drain_stderr(reader: AsyncLineReader | None, tail: _TextTailBuffer) -> None:
+    if reader is None:
+        return
+    while line := await reader.readline():
+        tail.append(_decode(line))
+
+
+async def _finish_stderr_task(task: asyncio.Task[None]) -> None:
+    try:
+        await task
+    except asyncio.CancelledError:
+        raise
+
+
 async def _create_process(command: tuple[str, ...], cwd: Path | None) -> AdapterProcess:
     return await create_subprocess_exec(
         *command,
+        stdin=DEVNULL,
         stdout=PIPE,
         stderr=PIPE,
         cwd=None if cwd is None else str(cwd),
     )
-
-
-async def _read_remaining(reader: AsyncLineReader | None) -> str:
-    if reader is None:
-        return ""
-
-    chunks: list[str] = []
-    while line := await reader.readline():
-        chunks.append(_decode(line))
-    return "".join(chunks).strip()
 
 
 async def _suppress_cancelled(task: asyncio.Task[None]) -> None:

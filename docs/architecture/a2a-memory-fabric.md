@@ -54,6 +54,7 @@ created_at
 ttl
 sensitivity
 status: active / candidate / archived / superseded
+purpose_tags: general_context / public_broadcast / task_key_progress / task_private / decision_review
 reason
 ```
 
@@ -107,6 +108,8 @@ policy_summary
 ```
 
 每个 item 只包含 claim、confidence、reason、citation id,不包含完整内部 metadata。
+`purpose_tags` 会随 item 投影,用于说明这条记忆是公共共识、任务关键进展、
+内部短期记忆还是决策评审。
 
 ---
 
@@ -142,6 +145,8 @@ policy_summary
 - sensitivity 过滤。
 - confidence 下限。
 - archived / superseded 过滤。
+- purpose 过滤:普通检索默认排除 `task_private`;lead 决策优先读取 `public_broadcast`、
+  `task_key_progress` 和 `decision_review`。
 
 ### MemoryCaptureService
 

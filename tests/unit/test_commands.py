@@ -4,6 +4,9 @@ from aico.core import CommandName, parse_command, reject_parts
 def test_parse_command_accepts_plain_readonly_commands() -> None:
     status = parse_command("status")
     metrics = parse_command("metrics")
+    inbox = parse_command("inbox")
+    morning = parse_command("morning")
+    language = parse_command("language")
     tasks = parse_command("tasks")
     help_command = parse_command("help")
     audit = parse_command("audit")
@@ -15,12 +18,17 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     daily = parse_command("daily")
     weekly = parse_command("weekly")
     overnight = parse_command("overnight")
+    dream = parse_command("dream")
+    goal = parse_command("goal")
     roles = parse_command("roles")
     assignments = parse_command("assignments")
     sessions = parse_command("sessions")
 
     assert status is not None
     assert metrics is not None
+    assert inbox is not None
+    assert morning is not None
+    assert language is not None
     assert tasks is not None
     assert help_command is not None
     assert audit is not None
@@ -32,11 +40,16 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     assert daily is not None
     assert weekly is not None
     assert overnight is not None
+    assert dream is not None
+    assert goal is not None
     assert roles is not None
     assert assignments is not None
     assert sessions is not None
     assert status.name is CommandName.STATUS
     assert metrics.name is CommandName.METRICS
+    assert inbox.name is CommandName.INBOX
+    assert morning.name is CommandName.MORNING
+    assert language.name is CommandName.LANGUAGE
     assert tasks.name is CommandName.TASKS
     assert help_command.name is CommandName.HELP
     assert audit.name is CommandName.AUDIT
@@ -48,6 +61,8 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     assert daily.name is CommandName.DAILY
     assert weekly.name is CommandName.WEEKLY
     assert overnight.name is CommandName.OVERNIGHT
+    assert dream.name is CommandName.DREAM
+    assert goal.name is CommandName.GOAL
     assert roles.name is CommandName.ROLES
     assert assignments.name is CommandName.ASSIGNMENTS
     assert sessions.name is CommandName.SESSIONS
@@ -162,6 +177,8 @@ def test_parse_command_accepts_project_assignment_commands() -> None:
     daily_command = parse_command("/daily aico")
     weekly_command = parse_command("/weekly aico")
     overnight_command = parse_command("/overnight finish the phase 8 plan")
+    dream_command = parse_command("/dream")
+    goal_command = parse_command("/goal implementer inspect release plan")
     roles_command = parse_command("/roles aico")
     role_command = parse_command("/role propose 需要一个增长分析岗位")
     who_command = parse_command("/who implementer")
@@ -183,6 +200,8 @@ def test_parse_command_accepts_project_assignment_commands() -> None:
     assert daily_command is not None
     assert weekly_command is not None
     assert overnight_command is not None
+    assert dream_command is not None
+    assert goal_command is not None
     assert roles_command is not None
     assert role_command is not None
     assert who_command is not None
@@ -215,6 +234,10 @@ def test_parse_command_accepts_project_assignment_commands() -> None:
     assert weekly_command.payload == "aico"
     assert overnight_command.name is CommandName.OVERNIGHT
     assert overnight_command.payload == "finish the phase 8 plan"
+    assert dream_command.name is CommandName.DREAM
+    assert dream_command.payload == ""
+    assert goal_command.name is CommandName.GOAL
+    assert goal_command.payload == "implementer inspect release plan"
     assert roles_command.name is CommandName.ROLES
     assert roles_command.payload == "aico"
     assert role_command.name is CommandName.ROLE

@@ -11,6 +11,7 @@ from aico.core.memory import (
     MemoryEdge,
     MemoryEdgeType,
     MemoryEvidence,
+    MemoryPurpose,
     MemoryScope,
     MemoryScopeType,
     MemoryStore,
@@ -68,6 +69,7 @@ class MemoryBroadcastService:
                 ttl_seconds=source.ttl_seconds,
                 sensitivity=source.sensitivity,
                 tags=_broadcast_tags(source.tags),
+                purpose_tags=_broadcast_purposes(source.purpose_tags),
                 reason=reason,
             )
         )
@@ -120,6 +122,15 @@ def _broadcast_tags(tags: tuple[str, ...]) -> tuple[str, ...]:
             continue
         seen.add(tag)
         values.append(tag)
+    return tuple(values)
+
+
+def _broadcast_purposes(purpose_tags: tuple[MemoryPurpose, ...]) -> tuple[MemoryPurpose, ...]:
+    values: list[MemoryPurpose] = [MemoryPurpose.PUBLIC_BROADCAST]
+    for purpose in purpose_tags:
+        if purpose is MemoryPurpose.TASK_PRIVATE or purpose in values:
+            continue
+        values.append(purpose)
     return tuple(values)
 
 

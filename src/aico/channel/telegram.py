@@ -15,6 +15,7 @@ from aico.core.models import (
     HealthStatus,
     IncomingMessage,
     MessageContent,
+    MessageNativeFormat,
     SentMessage,
 )
 
@@ -328,7 +329,9 @@ def _telegram_text_payload(target: ChannelTarget, content: MessageContent) -> di
         "chat_id": target.target_id,
         "text": content.text,
     }
-    if content.spans:
+    if content.native_format is MessageNativeFormat.TELEGRAM_HTML:
+        payload["parse_mode"] = "HTML"
+    elif content.spans:
         payload["text"] = _html_text(content)
         payload["parse_mode"] = "HTML"
     if content.actions:

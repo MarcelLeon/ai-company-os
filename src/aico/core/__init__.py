@@ -26,8 +26,17 @@ from aico.core.collaboration import (
     parse_collaboration_directive,
 )
 from aico.core.commands import Command, CommandName, parse_command, reject_parts
+from aico.core.language import (
+    DEFAULT_LANGUAGE_CODE,
+    RESPONSE_LANGUAGE_METADATA_KEY,
+    ResponseLanguage,
+    ResponseLanguageStore,
+    parse_response_language,
+    task_with_response_language,
+)
 from aico.core.memory import (
     JsonlMemoryStore,
+    LocalHybridMemoryScorer,
     LocalSemanticMemoryScorer,
     MemoryAtom,
     MemoryCitation,
@@ -38,6 +47,7 @@ from aico.core.memory import (
     MemoryGraphMatch,
     MemoryPacket,
     MemoryPacketItem,
+    MemoryPurpose,
     MemoryRetrievalHit,
     MemoryRetrievalQuery,
     MemoryRetriever,
@@ -79,6 +89,7 @@ from aico.core.models import (
     MessageAction,
     MessageContent,
     MessageKind,
+    MessageNativeFormat,
     MessageTextSpan,
     MessageTextStyle,
     MetadataEntry,
@@ -93,11 +104,20 @@ from aico.core.models import (
     TaskSnapshot,
     TaskStatus,
 )
+from aico.core.native_output import (
+    NATIVE_OUTPUT_FORMAT_METADATA_KEY,
+    agent_output_message,
+    native_output_format_from_task,
+    task_with_native_output_format,
+    telegram_html_message,
+)
 from aico.core.offline_delegation import (
     OFFLINE_DELEGATION_INTENT,
     OFFLINE_DELEGATION_INTENT_KEY,
     OfflineDelegationCommandHandler,
     OfflineDelegationRecord,
+    OfflineDelegationStore,
+    SQLiteOfflineDelegationStore,
 )
 from aico.core.orchestrator import Orchestrator
 from aico.core.persona_registry import PersonaRegistry
@@ -124,6 +144,7 @@ from aico.core.status_island import (
 )
 from aico.core.streaming import STREAM_MESSAGE_TEXT_LIMIT, StreamedMessageWriter
 from aico.core.task_bus import TaskBus
+from aico.core.task_store import SQLiteTaskStateStore, TaskStateStore
 
 __all__ = [
     "AckStatus",
@@ -153,10 +174,12 @@ __all__ = [
     "InMemoryAuditLog",
     "JsonlAuditSink",
     "JsonlMemoryStore",
+    "LocalHybridMemoryScorer",
     "LocalSemanticMemoryScorer",
     "MessageAction",
     "MessageContent",
     "MessageKind",
+    "MessageNativeFormat",
     "MessageRouter",
     "MessageTextSpan",
     "MessageTextStyle",
@@ -176,6 +199,7 @@ __all__ = [
     "MemoryGovernor",
     "MemoryPacket",
     "MemoryPacketItem",
+    "MemoryPurpose",
     "MemoryRetrievalHit",
     "MemoryRetrievalQuery",
     "MemoryRetriever",
@@ -186,11 +210,16 @@ __all__ = [
     "MemoryStatus",
     "MemoryStore",
     "MemoryCaptureService",
+    "NATIVE_OUTPUT_FORMAT_METADATA_KEY",
+    "DEFAULT_LANGUAGE_CODE",
+    "RESPONSE_LANGUAGE_METADATA_KEY",
     "Orchestrator",
     "OFFLINE_DELEGATION_INTENT",
     "OFFLINE_DELEGATION_INTENT_KEY",
     "OfflineDelegationCommandHandler",
     "OfflineDelegationRecord",
+    "OfflineDelegationStore",
+    "SQLiteOfflineDelegationStore",
     "OutputType",
     "PersonaProfile",
     "PersonaRegistry",
@@ -202,6 +231,8 @@ __all__ = [
     "ProviderSessionRef",
     "ProviderSessionMode",
     "ProviderTaskSession",
+    "ResponseLanguage",
+    "ResponseLanguageStore",
     "RequesterOrListedApproverPolicy",
     "RiskAssessment",
     "RiskLevel",
@@ -209,6 +240,7 @@ __all__ = [
     "RoleScope",
     "STREAM_MESSAGE_TEXT_LIMIT",
     "SentMessage",
+    "SQLiteTaskStateStore",
     "StatusIslandSnapshot",
     "StatusIslandTask",
     "StreamedMessageWriter",
@@ -217,11 +249,13 @@ __all__ = [
     "TaskBus",
     "TaskOutput",
     "TaskSnapshot",
+    "TaskStateStore",
     "TaskStatus",
     "TokenCostSummary",
     "UsageRecord",
     "TextRiskAssessor",
     "agent_cards_from_personas",
+    "agent_output_message",
     "build_metrics_report",
     "build_metrics_summaries",
     "build_status_island_snapshot",
@@ -229,15 +263,20 @@ __all__ = [
     "metrics_report_to_dict",
     "parse_collaboration_directive",
     "parse_command",
+    "parse_response_language",
+    "native_output_format_from_task",
     "provider_session_from_task",
     "reject_parts",
     "render_appointment_prompt",
     "read_jsonl_audit_events",
     "task_with_provider_session",
+    "task_with_native_output_format",
+    "task_with_response_language",
     "task_with_assignment_context",
     "task_snapshots_from_audit_events",
     "status_island_text",
     "status_island_to_dict",
     "usage_audit_detail",
     "usage_records_from_audit_events",
+    "telegram_html_message",
 ]

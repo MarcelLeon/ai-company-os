@@ -44,6 +44,13 @@ def test_project_assignment_directory_updates_default_role_and_appointments() ->
     assert directory.default_assignment("aico") == appointment
 
 
+def test_project_assignment_directory_resolves_lead_alias_to_default_assignment() -> None:
+    directory = ProjectAssignmentDirectory(_config())
+
+    assert directory.appointment_for_role("aico", "lead") == directory.default_assignment("aico")
+    assert directory.appointment_for_role("aico", "default") == directory.default_assignment("aico")
+
+
 def test_project_assignment_directory_inherits_role_permissions_when_appointing() -> None:
     directory = ProjectAssignmentDirectory(_config())
 
@@ -55,6 +62,22 @@ def test_project_assignment_directory_inherits_role_permissions_when_appointing(
 
     assert appointment is not None
     assert appointment.permissions == ("code", "tests")
+
+
+def test_project_assignment_directory_reports_missing_required_team_roles() -> None:
+    directory = ProjectAssignmentDirectory(_config())
+
+    assert directory.missing_required_team_roles("aico") == ("challenger",)
+
+    challenger = directory.upsert_appointment(
+        project_id="aico",
+        agent_id="claude",
+        role_id="challenger",
+        permissions=("docs", "audit"),
+    )
+
+    assert challenger is not None
+    assert directory.missing_required_team_roles("aico") == ()
 
 
 def test_project_assignment_directory_resolves_agent_by_provider_name() -> None:

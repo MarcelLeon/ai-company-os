@@ -3,6 +3,7 @@ from pathlib import Path
 from aico.core import (
     ChannelTarget,
     JsonlMemoryStore,
+    MemoryPurpose,
     MemoryScope,
     MemoryStatus,
     MessageContent,
@@ -30,6 +31,7 @@ def test_memory_capture_records_project_feedback_when_project_is_explicit(
     assert atom.status is MemoryStatus.ACTIVE
     assert atom.source == "boss_feedback_capture"
     assert atom.created_by == "boss-1"
+    assert atom.purpose_tags == (MemoryPurpose.GENERAL_CONTEXT,)
     assert "以后这个项目汇报进度一定要告诉我还剩几阶段" in atom.claim
     assert atom.reason == "boss feedback captured from explicit project context"
     assert store.list_atoms(MemoryScope.project("aico")) == (atom,)

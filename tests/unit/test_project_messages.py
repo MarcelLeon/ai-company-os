@@ -10,6 +10,7 @@ from aico.core import (
 )
 from aico.core.project_docs import ProjectDocumentSnippet
 from aico.core.project_messages import (
+    appointment_created_message,
     project_blockers_message,
     project_next_message,
     project_office_message,
@@ -52,6 +53,7 @@ def test_project_office_message_adds_short_next_actions() -> None:
     )
 
     assert "Next:\n- /brief\n- /team\n- /next\n- /daily\n- /weekly" in message.text
+    assert "team readiness: incomplete\nmissing: challenger" in message.text
     assert _code_texts(message).isdisjoint({"/brief", "/team", "/next", "/daily", "/weekly"})
 
 
@@ -105,7 +107,32 @@ def test_team_message_guides_role_workflow() -> None:
     )
 
     assert "Next:\n- /ask implementer <task>\n- /who implementer\n- /roles" in message.text
+    assert "team readiness: incomplete\nmissing: challenger" in message.text
     assert _code_texts(message).isdisjoint({"/ask", "/who", "/roles"})
+
+
+def test_appointment_created_message_bolds_label_values() -> None:
+    project = ProjectProfile(id="aico", name="AI Company OS", repo="/repo/aico")
+    appointment = AssignmentProfile(
+        project="aico",
+        agent="codex",
+        role="tester",
+        seat="seat-1",
+    )
+    message = appointment_created_message(
+        project,
+        appointment,
+        None,
+        RoleProfile(id="tester", title="Test Lead"),
+    )
+
+    styles = [(span.offset, span.length, span.style) for span in message.spans]
+    assert (
+        message.text.index("agent_title"),
+        len("agent_title"),
+        MessageTextStyle.BOLD,
+    ) in styles
+    assert (message.text.index("role"), len("role"), MessageTextStyle.BOLD) in styles
 
 
 def test_project_blockers_message_adds_section_and_command_spans() -> None:

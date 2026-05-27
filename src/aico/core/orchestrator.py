@@ -11,12 +11,9 @@ from aico.core.agent_directory import AgentDirectory
 from aico.core.agent_session import (
     AgentSession,
     InMemoryAgentSessionStore,
-    ProviderSessionMode,
     ProviderSessionRef,
-    provider_session_from_task,
-    task_with_provider_session,
 )
-from aico.core.collaboration import collaboration_payload, parse_collaboration_directive
+from aico.core.collaboration import collaboration_payload, split_collaboration_directive
 from aico.core.command_messages import (
     ack_failure_message,
     approval_required_message,
@@ -26,9 +23,24 @@ from aico.core.command_messages import (
     status_message,
 )
 from aico.core.commands import Command, CommandName, help_text, parse_command, reject_parts
-from aico.core.memory import MemoryPacket, MemoryRetriever, MemoryScope, MemoryStore
+from aico.core.dream import DreamCommandHandler
+from aico.core.goal_brief_commands import GoalBriefCommandHandler
+from aico.core.inbox import inbox_message
+from aico.core.language import (
+    ResponseLanguageStore,
+    language_message,
+    language_usage_message,
+    parse_response_language,
+    task_with_response_language,
+)
+from aico.core.lead_decision import (
+    LeadDecisionWorkflow,
+    is_decision_task,
+)
+from aico.core.memory import MemoryStore
 from aico.core.memory_capture import MemoryCaptureService
 from aico.core.memory_commands import MemoryCommandHandler
+from aico.core.message_rendering import rich_text_message
 from aico.core.models import (
     AckStatus,
     IncomingMessage,
@@ -37,16 +49,17 @@ from aico.core.models import (
     SentMessage,
     Task,
 )
-from aico.core.offline_delegation import OfflineDelegationCommandHandler
+from aico.core.morning import morning_message
+from aico.core.native_output import native_output_format_from_task, task_with_native_output_format
+from aico.core.offline_delegation import OfflineDelegationCommandHandler, OfflineDelegationStore
 from aico.core.orchestrator_commands import DirectoryCommandHandler
+from aico.core.orchestrator_task_factory import OrchestratorTaskFactory, _is_same_assignment
 from aico.core.project_assignment import (
     AssignmentProfile,
     ProjectAssignmentDirectory,
-    task_with_assignment_context,
 )
 from aico.core.project_commands import ProjectCommandHandler
 from aico.core.project_summary import ProjectSummaryCoordinator
-from aico.core.prompt_stack import render_appointment_prompt
 from aico.core.role_proposal import RoleProposalCoordinator
 from aico.core.router import MessageRouter
 from aico.core.session_commands import (
@@ -73,6 +86,8 @@ class Orchestrator:
         agent_directory: AgentDirectory | None = None,
         project_directory: ProjectAssignmentDirectory | None = None,
         memory_store: MemoryStore | None = None,
+        offline_delegation_store: OfflineDelegationStore | None = None,
+        prefer_native_channel_format: bool = False,
     ) -> None:
         self._channel = channel
         self._router = router
@@ -82,21 +97,30 @@ class Orchestrator:
         self._agent_directory = agent_directory or AgentDirectory()
         self._project_directory = project_directory or ProjectAssignmentDirectory()
         self._memory_store = memory_store
+        self._prefer_native_channel_format = prefer_native_channel_format
         self._task_sessions: dict[str, str] = {}
-        self._assignment_sessions: dict[str, str] = {}
+        self._response_languages = ResponseLanguageStore()
+        self._task_factory = OrchestratorTaskFactory(
+            router=self._router,
+            session_store=self._session_store,
+            agent_directory=self._agent_directory,
+            project_directory=self._project_directory,
+            memory_store=self._memory_store,
+            provider_session_factory=self._provider_session_factory,
+        )
         self._role_proposals = RoleProposalCoordinator(
             task_bus=self._task_bus,
             session_store=self._session_store,
             project_directory=self._project_directory,
             task_sessions=self._task_sessions,
-            task_for_assignment=self._internal_task_for_assignment,
+            task_for_assignment=self._task_factory.task_for_assignment,
         )
         self._project_summaries = ProjectSummaryCoordinator(
             task_bus=self._task_bus,
             session_store=self._session_store,
             project_directory=self._project_directory,
             task_sessions=self._task_sessions,
-            task_for_assignment=self._internal_task_for_assignment,
+            task_for_assignment=self._task_factory.task_for_assignment,
         )
         self._directory_commands = DirectoryCommandHandler(
             channel=self._channel,
@@ -122,11 +146,33 @@ class Orchestrator:
             project_directory=self._project_directory,
             memory_store=self._memory_store,
         )
+        self._dream_commands = DreamCommandHandler(
+            channel=self._channel,
+            project_directory=self._project_directory,
+            memory_store=self._memory_store,
+            task_bus=self._task_bus,
+        )
         self._offline_delegations = OfflineDelegationCommandHandler(
             channel=self._channel,
             project_directory=self._project_directory,
-            task_for_assignment=self._internal_task_for_assignment,
+            task_for_assignment=self._task_factory.task_for_assignment,
             run_delegated_task=self._run_delegated_task,
+            store=offline_delegation_store,
+        )
+        self._goal_briefs = GoalBriefCommandHandler(
+            channel=self._channel,
+            project_directory=self._project_directory,
+            task_bus=self._task_bus,
+            task_for_assignment=self._task_factory.task_for_assignment,
+            run_goal_task=self._run_delegated_task,
+        )
+        self._lead_decisions = LeadDecisionWorkflow(
+            channel=self._channel,
+            project_directory=self._project_directory,
+            memory_store=self._memory_store,
+            audit_recorder=self._task_bus,
+            task_for_assignment=self._task_factory.task_for_assignment_with_memory,
+            run_decision_task=self._run_decision_task,
         )
         self._memory_capture = (
             MemoryCaptureService(self._memory_store) if self._memory_store is not None else None
@@ -149,7 +195,17 @@ class Orchestrator:
             return
 
         self._capture_boss_feedback(message)
-        task, session = self._task_for_message(message)
+        lead_decision = self._lead_decision_assignment_for_message(message)
+        if lead_decision is not None:
+            project_id, assignment = lead_decision
+            await self._lead_decisions.run(
+                message,
+                project_id=project_id,
+                assignment=assignment,
+                boss_task=message.content.text.strip(),
+            )
+            return
+        task, session = self._task_factory.task_for_message(message)
         log.info(
             "Task routed: task_id=%s target=%s payload_chars=%s",
             task.task_id,
@@ -219,7 +275,7 @@ class Orchestrator:
         try:
             await self._stream_outputs_for_task(message, sent_message, approval_task)
             if session_id is not None:
-                self._mark_provider_initialized(session_id, approval_task)
+                self._task_factory.mark_provider_initialized(session_id, approval_task)
         finally:
             if session_id is not None:
                 self._session_store.mark_idle(session_id)
@@ -260,6 +316,27 @@ class Orchestrator:
             MessageContent(text=f"Task interrupted: {short_id_text(ack.task_id)}"),
         )
 
+    async def _handle_language(self, message: IncomingMessage, payload: str) -> None:
+        scope_id = session_scope(message)
+        if not payload.strip():
+            await self._channel.send_message(
+                message.source,
+                language_message(current=self._response_languages.current(scope_id)),
+            )
+            return
+        language = parse_response_language(payload)
+        if language is None:
+            await self._channel.send_message(message.source, language_usage_message())
+            return
+        self._response_languages.set_language(scope_id, language)
+        await self._channel.send_message(
+            message.source,
+            language_message(
+                current=self._response_languages.current(scope_id),
+                updated=True,
+            ),
+        )
+
     async def _run_task(
         self,
         message: IncomingMessage,
@@ -268,7 +345,16 @@ class Orchestrator:
         include_target: bool,
         collaboration_depth: int = 0,
         session_id: str | None = None,
-    ) -> None:
+    ) -> str:
+        task = task_with_response_language(
+            task,
+            self._response_languages.current(session_scope(message)),
+        )
+        task = task_with_native_output_format(
+            task,
+            channel_name=message.source.channel_name,
+            enabled=self._prefer_native_channel_format,
+        )
         if session_id is not None:
             self._task_sessions[task.task_id] = session_id
         ack = await self._task_bus.submit(task)
@@ -284,7 +370,7 @@ class Orchestrator:
                 message.source,
                 approval_required_message(task.task_id, ack.reason),
             )
-            return
+            return ""
         if ack.status is not AckStatus.ACCEPTED:
             if session_id is not None:
                 self._task_sessions.pop(task.task_id, None)
@@ -292,7 +378,7 @@ class Orchestrator:
                 message.source,
                 ack_failure_message(ack.status, ack.reason),
             )
-            return
+            return ""
 
         target_text = f" [{task.target_persona}]" if include_target else ""
         if session_id is not None:
@@ -302,14 +388,15 @@ class Orchestrator:
             MessageContent(text=f"Task accepted: {task.task_id}{target_text}"),
         )
         try:
-            await self._stream_outputs_for_task(
+            output_text = await self._stream_outputs_for_task(
                 message,
                 sent_message,
                 task,
                 collaboration_depth=collaboration_depth,
             )
             if session_id is not None:
-                self._mark_provider_initialized(session_id, task)
+                self._task_factory.mark_provider_initialized(session_id, task)
+            return output_text
         finally:
             if session_id is not None:
                 self._session_store.mark_idle(session_id)
@@ -323,8 +410,8 @@ class Orchestrator:
         message: IncomingMessage,
         task: Task,
         session: AgentSession | None,
-    ) -> None:
-        await self._run_task(
+    ) -> str:
+        return await self._run_task(
             message,
             task,
             include_target=True,
@@ -351,7 +438,24 @@ class Orchestrator:
                 MessageContent(text=f"Role not appointed in {project.id}: {role_ref}"),
             )
             return
-        task, session = self._task_for_assignment(message, project.id, assignment, payload=payload)
+        if self._should_run_lead_decision(project.id, assignment, payload):
+            await self._lead_decisions.run(
+                message,
+                project_id=project.id,
+                assignment=assignment,
+                boss_task=payload,
+            )
+            return
+        if await self._goal_briefs.maybe_run_auto_goal(
+            message,
+            project=project,
+            assignment=assignment,
+            payload=payload,
+        ):
+            return
+        task, session = self._task_factory.task_for_assignment(
+            message, project.id, assignment, payload=payload
+        )
         await self._run_task(
             message,
             task,
@@ -359,158 +463,47 @@ class Orchestrator:
             session_id=None if session is None else session.session_id,
         )
 
-    def _task_for_message(
+    def _lead_decision_assignment_for_message(
         self,
         message: IncomingMessage,
-    ) -> tuple[Task, AgentSession | None]:
+    ) -> tuple[str, AssignmentProfile] | None:
         if has_explicit_task_target(message):
-            return self._router.to_task(message), None
-
+            return None
         project = self._project_directory.active_project(session_scope(message))
-        if project is not None:
-            assignment = self._project_directory.default_assignment(project.id)
-            if assignment is not None:
-                return self._task_for_assignment(message, project.id, assignment)
+        if project is None:
+            return None
+        assignment = self._project_directory.default_assignment(project.id)
+        if assignment is None:
+            return None
+        if not self._should_run_lead_decision(project.id, assignment, message.content.text):
+            return None
+        return project.id, assignment
 
-        session = self._session_store.active(session_scope(message))
-        if session is None:
-            return self._router.to_task(message), None
-
-        task = self._router.to_task_for_target(
-            message,
-            session.agent_name,
-            message.content.text.strip(),
-        )
-        if session.provider_ref is not None:
-            mode = (
-                ProviderSessionMode.RESUME
-                if session.provider_ref.initialized
-                else ProviderSessionMode.NEW
-            )
-            task = task_with_provider_session(task, session.provider_ref, mode)
-        return task, session
-
-    def _internal_task_for_assignment(
+    def _should_run_lead_decision(
         self,
-        message: IncomingMessage,
         project_id: str,
         assignment: AssignmentProfile,
         payload: str,
-    ) -> tuple[Task, AgentSession | None]:
-        return self._task_for_assignment(message, project_id, assignment, payload=payload)
+    ) -> bool:
+        return _is_same_assignment(
+            assignment,
+            self._project_directory.default_assignment(project_id),
+        ) and is_decision_task(payload)
 
-    def _task_for_assignment(
+    async def _run_decision_task(
         self,
         message: IncomingMessage,
-        project_id: str,
-        assignment: AssignmentProfile,
-        *,
-        payload: str | None = None,
-    ) -> tuple[Task, AgentSession | None]:
-        project = self._project_directory.project(project_id)
-        if project is None:
-            return self._router.to_task(message), None
-        card = self._agent_directory.resolve(assignment.agent)
-        target_agent = assignment.agent if card is None else card.name
-        task = self._router.to_task_for_target(
+        task: Task,
+        session: AgentSession | None,
+        collaboration_depth: int,
+    ) -> str:
+        return await self._run_task(
             message,
-            target_agent,
-            message.content.text.strip() if payload is None else payload,
+            task,
+            include_target=True,
+            collaboration_depth=collaboration_depth,
+            session_id=None if session is None else session.session_id,
         )
-        task = task.model_copy(
-            update={
-                "payload": render_appointment_prompt(
-                    task=task,
-                    agent=self._project_directory.agent(assignment.agent),
-                    role=self._project_directory.role(assignment.role),
-                    project=project,
-                    project_role=self._project_directory.project_role(
-                        project.id,
-                        assignment.role,
-                    ),
-                    appointment=assignment,
-                    memory_packet=self._memory_packet_for_assignment(
-                        boss_id=message.sender_id,
-                        project_id=project.id,
-                        assignment=assignment,
-                        query=task.payload,
-                    ),
-                )
-            }
-        )
-        task = task_with_assignment_context(task, project=project, assignment=assignment)
-        session = self._ensure_assignment_session(assignment, target_agent, project.repo)
-        if session.provider_ref is not None:
-            mode = (
-                ProviderSessionMode.RESUME
-                if session.provider_ref.initialized
-                else ProviderSessionMode.NEW
-            )
-            task = task_with_provider_session(task, session.provider_ref, mode)
-        return task, session
-
-    def _memory_packet_for_assignment(
-        self,
-        *,
-        boss_id: str,
-        project_id: str,
-        assignment: AssignmentProfile,
-        query: str,
-    ) -> MemoryPacket | None:
-        if self._memory_store is None:
-            return None
-        scopes = (
-            MemoryScope.boss(boss_id),
-            MemoryScope.project(project_id),
-            MemoryScope.team(project_id, "default"),
-            MemoryScope.role(project_id, "default", assignment.role),
-            MemoryScope.agent(project_id, "default", assignment.agent),
-        )
-        packet = MemoryRetriever(self._memory_store).retrieve_packet(
-            scopes=scopes,
-            query=query,
-        )
-        return packet if packet.items else None
-
-    def _ensure_assignment_session(
-        self,
-        assignment: AssignmentProfile,
-        target_agent: str,
-        project_workspace: str,
-    ) -> AgentSession:
-        session_id = self._assignment_sessions.get(assignment.seat)
-        session = None if session_id is None else self._session_store.get(session_id)
-        card = self._agent_directory.resolve(target_agent)
-        adapter_name = assignment.agent if card is None else card.adapter_name
-        if (
-            session is not None
-            and session.agent_name == target_agent
-            and session.adapter_name == adapter_name
-        ):
-            return session
-
-        if session is not None:
-            self._session_store.close(session.session_id)
-        session = self._session_store.create(
-            agent_name=target_agent,
-            adapter_name=adapter_name,
-            workspace=assignment.workspace or project_workspace,
-        )
-        provider_ref = (
-            self._provider_session_factory(session) if self._provider_session_factory else None
-        )
-        if provider_ref is not None:
-            session = (
-                self._session_store.bind_provider_ref(session.session_id, provider_ref) or session
-            )
-        self._assignment_sessions[assignment.seat] = session.session_id
-        return session
-
-    def _mark_provider_initialized(self, session_id: str, task: Task) -> None:
-        provider_session = provider_session_from_task(task)
-        if provider_session is None or provider_session.mode is not ProviderSessionMode.NEW:
-            return
-        self._session_store.mark_provider_initialized(session_id)
 
     async def _stream_outputs_for_task(
         self,
@@ -519,22 +512,32 @@ class Orchestrator:
         task: Task,
         *,
         collaboration_depth: int = 0,
-    ) -> None:
+    ) -> str:
         log.info("Stream start: task_id=%s target=%s", task.task_id, task.target_persona)
-        writer = StreamedMessageWriter(self._channel, message.source, sent_message)
+        writer = StreamedMessageWriter(
+            self._channel,
+            message.source,
+            sent_message,
+            preferred_format=native_output_format_from_task(task),
+        )
+        captured: list[str] = []
         async for output in self._task_bus.stream_output(task.task_id):
             text = ""
             if output.type is OutputType.TEXT:
-                directive = parse_collaboration_directive(output.content)
+                directive, remaining = split_collaboration_directive(output.content)
                 if directive is not None and collaboration_depth == 0:
+                    parent_context = "".join((*captured, remaining))
                     await self._handle_collaboration_directive(
                         message,
                         task,
                         directive.target_persona,
                         directive.payload,
+                        parent_context,
                     )
-                    continue
-                text = output.content
+                text = remaining
+            elif output.type is OutputType.STATUS:
+                await writer.show_status(output.content)
+                continue
             elif output.type is OutputType.ERROR:
                 text = f"\nERROR: {output.content}"
             elif output.type is OutputType.DONE and output.content:
@@ -547,8 +550,10 @@ class Orchestrator:
                     output.type.value,
                     len(text),
                 )
+                captured.append(text)
             await writer.append(text)
         log.info("Stream finished: task_id=%s", task.task_id)
+        return "".join(captured)
 
     async def _stream_outputs(
         self,
@@ -571,32 +576,58 @@ class Orchestrator:
         source_task: Task,
         target_persona: str,
         payload: str,
+        source_context: str,
     ) -> None:
+        source_label = _collaboration_source_label(source_task)
         log.info(
             "Collaboration directive: parent_task=%s source=%s target=%s payload_chars=%s",
             source_task.task_id,
-            source_task.target_persona,
+            source_label,
             target_persona,
             len(payload),
         )
         await self._channel.send_message(
             message.source,
-            MessageContent(
-                text=f"Collaboration requested: {source_task.target_persona} -> {target_persona}"
+            rich_text_message(
+                "\n".join(
+                    (
+                        "# Collaboration requested",
+                        f"source: {source_label}",
+                        f"target: {target_persona}",
+                    )
+                )
             ),
         )
         child_task = self._router.to_task_for_target(
             message,
             target_persona,
-            collaboration_payload(source_task.target_persona, payload),
+            collaboration_payload(source_label, payload, source_context=source_context),
         )
-        self._task_bus.record_collaboration_requested(source_task, child_task)
+        self._task_bus.record_collaboration_requested(
+            source_task,
+            child_task,
+            actor_id=source_label,
+        )
         await self._run_task(
             message,
             child_task,
             include_target=True,
             collaboration_depth=1,
         )
+
+
+_ASSIGNMENT_ROLE_METADATA_KEY = "aico.assignment_role"
+
+
+def _collaboration_source_label(task: Task) -> str:
+    for entry in task.metadata:
+        if (
+            entry.key == _ASSIGNMENT_ROLE_METADATA_KEY
+            and isinstance(entry.value, str)
+            and entry.value.strip()
+        ):
+            return entry.value.strip()
+    return task.target_persona
 
 
 async def _handle_command(
@@ -622,6 +653,12 @@ async def _handle_command(
                 orchestrator._task_bus.audit_events(limit=None),
             ),
         )
+    elif command.name is CommandName.INBOX:
+        await _handle_inbox_command(orchestrator, message)
+    elif command.name is CommandName.MORNING:
+        await _handle_morning_command(orchestrator, message)
+    elif command.name is CommandName.LANGUAGE:
+        await orchestrator._handle_language(message, command.payload)
     elif command.name is CommandName.TASKS:
         await orchestrator._directory_commands.handle_tasks(message, command.payload)
     elif command.name is CommandName.TASK:
@@ -631,7 +668,120 @@ async def _handle_command(
             message.source,
             audit_message(orchestrator._task_bus.audit_events()),
         )
-    elif command.name is CommandName.PROJECTS:
+    elif command.name in _PROJECT_COMMANDS:
+        await _handle_project_command(orchestrator, message, command)
+    elif command.name is CommandName.OVERNIGHT:
+        await orchestrator._offline_delegations.handle_overnight(message, command.payload)
+    elif command.name is CommandName.DREAM:
+        await orchestrator._dream_commands.handle_dream(message)
+    elif command.name is CommandName.GOAL:
+        await orchestrator._goal_briefs.handle_goal(message, command.payload)
+    elif command.name in _PROJECT_ROLE_COMMANDS:
+        await _handle_project_role_command(orchestrator, message, command)
+    elif command.name in _DIRECTORY_COMMANDS:
+        await _handle_directory_command(orchestrator, message, command)
+    elif command.name in _MEMORY_COMMANDS:
+        await _handle_memory_command(orchestrator, message, command)
+    elif command.name is CommandName.APPROVE:
+        await orchestrator._handle_approval(message, command.payload or None)
+    elif command.name is CommandName.REJECT:
+        task_id, reason = reject_parts(command)
+        await orchestrator._handle_rejection(message, task_id, reason)
+    elif command.name is CommandName.INTERRUPT:
+        await orchestrator._handle_interrupt(message, command.payload)
+    elif command.name is CommandName.BROADCAST:
+        await orchestrator._handle_broadcast(message, command.payload)
+
+
+_PROJECT_COMMANDS = {
+    CommandName.PROJECTS,
+    CommandName.PROJECT,
+    CommandName.BRIEF,
+    CommandName.RISKS,
+    CommandName.BLOCKERS,
+    CommandName.NEXT,
+    CommandName.DAILY,
+    CommandName.WEEKLY,
+}
+
+_PROJECT_ROLE_COMMANDS = {
+    CommandName.ROLES,
+    CommandName.ROLE,
+    CommandName.TEAM,
+    CommandName.WHO,
+    CommandName.APPOINT,
+    CommandName.UNAPPOINT,
+    CommandName.ASK,
+    CommandName.LEAD,
+    CommandName.DEFAULT,
+    CommandName.ASSIGNMENTS,
+    CommandName.ASSIGNMENT,
+}
+
+_DIRECTORY_COMMANDS = {
+    CommandName.AGENTS,
+    CommandName.AGENT,
+    CommandName.SKILLS,
+    CommandName.TOOLS,
+    CommandName.SESSIONS,
+    CommandName.NEW,
+    CommandName.USE,
+    CommandName.BIND,
+}
+
+_MEMORY_COMMANDS = {CommandName.REMEMBER, CommandName.RECALL, CommandName.FORGET}
+
+
+async def _handle_inbox_command(orchestrator: Orchestrator, message: IncomingMessage) -> None:
+    project = orchestrator._project_directory.active_project(session_scope(message))
+    if project is None:
+        await orchestrator._channel.send_message(
+            message.source,
+            MessageContent(text="No active project. Use /project <project> first."),
+        )
+        return
+    await orchestrator._channel.send_message(
+        message.source,
+        inbox_message(
+            project_id=project.id,
+            task_snapshots=orchestrator._task_bus.task_snapshots(limit=None),
+            overnight_records=orchestrator._offline_delegations.records_for_scope(
+                session_scope(message),
+                project_id=project.id,
+            ),
+            audit_events=orchestrator._task_bus.audit_events(limit=None),
+        ),
+    )
+
+
+async def _handle_morning_command(orchestrator: Orchestrator, message: IncomingMessage) -> None:
+    project = orchestrator._project_directory.active_project(session_scope(message))
+    if project is None:
+        await orchestrator._channel.send_message(
+            message.source,
+            MessageContent(text="No active project. Use /project <project> first."),
+        )
+        return
+    await orchestrator._channel.send_message(
+        message.source,
+        morning_message(
+            project_id=project.id,
+            task_snapshots=orchestrator._task_bus.task_snapshots(limit=None),
+            overnight_records=orchestrator._offline_delegations.records_for_scope(
+                session_scope(message),
+                project_id=project.id,
+            ),
+            audit_events=orchestrator._task_bus.audit_events(limit=None),
+        ),
+    )
+
+
+async def _handle_project_command(
+    orchestrator: Orchestrator,
+    message: IncomingMessage,
+    command: Command,
+) -> None:
+    if command.name is CommandName.PROJECTS:
         await orchestrator._project_commands.handle_projects(message)
     elif command.name is CommandName.PROJECT:
         await orchestrator._project_commands.handle_project(message, command.payload)
@@ -647,9 +797,14 @@ async def _handle_command(
         await orchestrator._project_commands.handle_daily(message, command.payload or None)
     elif command.name is CommandName.WEEKLY:
         await orchestrator._project_commands.handle_weekly(message, command.payload or None)
-    elif command.name is CommandName.OVERNIGHT:
-        await orchestrator._offline_delegations.handle_overnight(message, command.payload)
-    elif command.name is CommandName.ROLES:
+
+
+async def _handle_project_role_command(
+    orchestrator: Orchestrator,
+    message: IncomingMessage,
+    command: Command,
+) -> None:
+    if command.name is CommandName.ROLES:
         await orchestrator._project_commands.handle_roles(message, command.payload or None)
     elif command.name is CommandName.ROLE:
         await orchestrator._project_commands.handle_role(message, command.payload)
@@ -669,7 +824,14 @@ async def _handle_command(
         await orchestrator._project_commands.handle_assignments(message, command.payload or None)
     elif command.name is CommandName.ASSIGNMENT:
         await orchestrator._project_commands.handle_assignment(message, command.payload)
-    elif command.name is CommandName.AGENTS:
+
+
+async def _handle_directory_command(
+    orchestrator: Orchestrator,
+    message: IncomingMessage,
+    command: Command,
+) -> None:
+    if command.name is CommandName.AGENTS:
         await orchestrator._directory_commands.handle_agents(message)
     elif command.name is CommandName.AGENT:
         await orchestrator._directory_commands.handle_agent(message, command.payload)
@@ -677,21 +839,6 @@ async def _handle_command(
         await orchestrator._directory_commands.handle_skills(message, command.payload)
     elif command.name is CommandName.TOOLS:
         await orchestrator._directory_commands.handle_tools(message, command.payload)
-    elif command.name is CommandName.REMEMBER:
-        await orchestrator._memory_commands.handle_remember(message, command.payload)
-    elif command.name is CommandName.RECALL:
-        await orchestrator._memory_commands.handle_recall(message, command.payload)
-    elif command.name is CommandName.FORGET:
-        await orchestrator._memory_commands.handle_forget(message, command.payload)
-    elif command.name is CommandName.APPROVE:
-        await orchestrator._handle_approval(message, command.payload or None)
-    elif command.name is CommandName.REJECT:
-        task_id, reason = reject_parts(command)
-        await orchestrator._handle_rejection(message, task_id, reason)
-    elif command.name is CommandName.INTERRUPT:
-        await orchestrator._handle_interrupt(message, command.payload)
-    elif command.name is CommandName.BROADCAST:
-        await orchestrator._handle_broadcast(message, command.payload)
     elif command.name is CommandName.SESSIONS:
         await orchestrator._directory_commands.handle_sessions(message)
     elif command.name is CommandName.NEW:
@@ -700,3 +847,16 @@ async def _handle_command(
         await orchestrator._directory_commands.handle_use_session(message, command.payload)
     elif command.name is CommandName.BIND:
         await orchestrator._directory_commands.handle_bind_session(message, command.payload)
+
+
+async def _handle_memory_command(
+    orchestrator: Orchestrator,
+    message: IncomingMessage,
+    command: Command,
+) -> None:
+    if command.name is CommandName.REMEMBER:
+        await orchestrator._memory_commands.handle_remember(message, command.payload)
+    elif command.name is CommandName.RECALL:
+        await orchestrator._memory_commands.handle_recall(message, command.payload)
+    elif command.name is CommandName.FORGET:
+        await orchestrator._memory_commands.handle_forget(message, command.payload)

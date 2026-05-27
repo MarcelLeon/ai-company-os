@@ -1,7 +1,10 @@
 import logging
 from pathlib import Path
 
-from aico.adapter.claude_code import ClaudeCodeAdapter
+from aico.adapter.claude_code import (
+    DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS,
+    ClaudeCodeAdapter,
+)
 from aico.adapter.codeflicker import CodeFlickerAdapter
 from aico.adapter.codex import CodexAdapter
 from aico.adapter.cursor import CursorAdapter
@@ -204,6 +207,32 @@ def test_build_phase1_runtime_configures_memory_store_when_path_set(tmp_path: Pa
     assert isinstance(runtime.orchestrator._memory_store, JsonlMemoryStore)  # noqa: SLF001
 
 
+def test_build_phase1_runtime_configures_sqlite_task_state_store(tmp_path: Path) -> None:
+    state_db_path = tmp_path / "state" / "aico.db"
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        claude_command="claude -p",
+        state_db_path=state_db_path,
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    assert runtime.orchestrator._task_bus._task_store is not None  # noqa: SLF001
+    assert state_db_path.exists()
+
+
+def test_phase1_settings_maps_bool_like_state_db_path_to_local_data_dir() -> None:
+    enabled = Phase1Settings.model_validate(
+        {"telegram_bot_token": "token", "state_db_path": "true"}
+    )
+    disabled = Phase1Settings.model_validate(
+        {"telegram_bot_token": "token", "state_db_path": "false"}
+    )
+
+    assert enabled.state_db_path == Path(".aico/state.db")
+    assert disabled.state_db_path is None
+
+
 def test_build_phase1_runtime_wires_telegram_channel_and_claude_adapter() -> None:
     settings = Phase1Settings(
         telegram_bot_token="token",
@@ -261,6 +290,7 @@ def test_build_phase1_runtime_can_enable_codex_adapter_for_status() -> None:
         enable_gemini_adapter=False,
         claude_command="claude -p",
         codex_command="codex --ask-for-approval never exec --sandbox read-only",
+        codex_output_idle_timeout_seconds=DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS,
     )
 
     runtime = build_phase1_runtime(settings)
@@ -269,8 +299,30 @@ def test_build_phase1_runtime_can_enable_codex_adapter_for_status() -> None:
     assert [snapshot.name for snapshot in snapshots] == ["claude-code", "codex"]
     codex = runtime.registry.get("codex")
     assert isinstance(codex, CodexAdapter)
-    assert codex._output_idle_timeout_seconds == 300.0  # noqa: SLF001
+    assert (  # noqa: SLF001
+        codex._output_idle_timeout_seconds == DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
+    )
     assert codex.max_concurrent_tasks() == 5
+
+
+def test_build_phase1_runtime_can_disable_optional_adapter_idle_timeout() -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        enable_codex_adapter=True,
+        enable_cursor_adapter=False,
+        enable_codeflicker_adapter=False,
+        enable_trae_adapter=False,
+        enable_gemini_adapter=False,
+        claude_command="claude -p",
+        codex_command="codex --ask-for-approval never exec --sandbox read-only",
+        codex_output_idle_timeout_seconds=0,
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    codex = runtime.registry.get("codex")
+    assert isinstance(codex, CodexAdapter)
+    assert codex._output_idle_timeout_seconds is None  # noqa: SLF001
 
 
 def test_build_phase1_runtime_can_enable_cursor_adapter_for_agents() -> None:
@@ -422,12 +474,15 @@ def test_build_phase1_runtime_registers_default_project_assignments() -> None:
     assert [assignment.seat for assignment in assignments] == [
         "aico-implementer",
         "aico-reviewer",
+        "aico-challenger",
     ]
     assert assignments[0].permissions == ("code", "tests", "docs")
     assert assignments[1].permissions == ("code", "docs", "audit")
+    assert assignments[2].permissions == ("docs", "audit")
     assert runtime.project_directory.default_assignment("aico") == assignments[0]
     assert runtime.project_directory.role("pm") is not None
     assert runtime.project_directory.role("senior-architect") is not None
+    assert runtime.project_directory.role("challenger") is not None
     assert runtime.project_directory.role("golden-tester") is not None
     assert runtime.project_directory.role("market-risk") is not None
     assert runtime.project_directory.role("legal-compliance") is not None

@@ -27,6 +27,8 @@
 
 ### Adapter 层
 - (待填充)
+- P-026:非交互 CLI 子进程继承 stdin 导致 Codex 长期等待额外输入
+- P-027:CLI 子进程 stderr 不读取导致 Codex stdout 被 pipe 反压卡住
 
 ### IM 通道
 - P-006:审批命令依赖完整 task id 导致 Telegram 真实交互失败
@@ -35,10 +37,15 @@
 - P-010:Telegram 单条消息长度上限导致长输出像被吞掉
 - P-011:后台缺少关键链路日志导致长任务卡点不可定位
 - P-012:Telegram no-op edit 400 导致流式 handler 中断
+- P-030:Renderer 只逐行加 spans 无法处理真实 agent Markdown
+- P-031:无限扩 Markdown 兼容 case 会让 IM 输出层失控
+- P-032:quiet heartbeat 进入结果缓冲导致 native HTML 回退裸露
 
 ### AI 间协作
 - P-009:协作指令只支持冒号导致真实自然语言未触发 reviewer
 - P-014:Reviewer 子任务已 accepted 但 Codex CLI 长时间无 stdout 且 IM 无中断入口
+- P-025:长沉默 Adapter 任务被误判为 IM 挂死
+- P-024:协作短指令引用父输出编号但 child task 丢失上下文
 
 ### 人格化与状态
 - P-013:Project Team 同一 role 可出现多个 appointment 导致 `/team` 重复成员
@@ -529,7 +536,7 @@ Project appointment 的底层存储按 `seat` 唯一,但产品语义真正需要
 
 **状态**:🟢 RESOLVED
 **首次踩中**:Round 53
-**最后更新**:2026-05-20
+**最后更新**:2026-05-25
 **影响范围**:`src/aico/core/commands.py`, `src/aico/core/orchestrator.py`, `src/aico/core/task_bus.py`, `src/aico/adapter/claude_code.py`, `src/aico/adapter/codex.py`, `src/aico/app/phase1.py`
 
 **症状**
@@ -556,13 +563,13 @@ Round 57 真实复测再次卡在 `Task accepted ... [reviewer]`,此时 `/interr
 - `TaskBus.interrupt()` 支持 task id 前缀匹配,和 `/approve <short_id>` 一样适配 IM 输入。
 - 中断 running 任务后任务状态更新为 `interrupted`,并记录 `task_interrupted` 审计事件。
 - Phase 5 collaboration playbook 增加卡在 `Task accepted ... [reviewer]` 时的排查和中断步骤。
-- Codex Adapter 默认启用输出空闲超时。Round 57 首版阈值为 90 秒;Round 98 已放宽到 300 秒,
-  返回 `adapter output idle timeout after 300s`,并释放并发槽位。
-- 可通过 `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 调整 Codex 空闲超时阈值。
+- Codex Adapter 默认启用输出空闲超时。Round 57 首版阈值为 90 秒;Round 98 放宽到 300 秒;
+  Round 114 进一步放宽到 1800 秒,避免把正常长 review / dogfooding 误杀。
+- 可通过 `AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 调整 Codex 空闲超时阈值;设为 `0` 可禁用自动 idle timeout。
 
 **如何避免再次踩中**
 - 真实 smoke test 如果停在 `Task accepted` 后无输出,先查 `/status`,再用 `/interrupt <short_task_id>`。
-- 重启到 Round 98 之后,如果忘记手动 interrupt,Codex 也应在 300 秒空闲超时后自动失败并释放并发槽位。
+- 重启到 Round 114 之后,如果忘记手动 interrupt,Codex 默认会在 1800 秒空闲超时后自动失败并释放并发槽位;若启动时把 timeout 设为 `0`,需要靠 `/interrupt` 或进程重启收口。
 - 新增任何长任务入口时,必须确认 IM 侧有中断路径,不能只在 Adapter 接口里有 interrupt。
 - 排查 Codex 卡住时,优先 grep task id,看是否有 `Stream output` 或 `Adapter process exited`。
 
@@ -570,6 +577,280 @@ Round 57 真实复测再次卡在 `Task accepted ... [reviewer]`,此时 `/interr
 - ROUNDS Round 53
 - ROUNDS Round 98
 - ROUNDS Round 57
+
+### [P-025] 长沉默 Adapter 任务被误判为 IM 挂死
+
+**状态**:🟡 MITIGATED
+**首次踩中**:Round 115
+**最后更新**:2026-05-26
+**影响范围**:`src/aico/adapter/claude_code.py`, `src/aico/core/orchestrator.py`, `src/aico/core/task_bus.py`, `src/aico/core/inbox.py`
+
+**症状**
+真实 IM 中提交 reviewer 长任务后,Telegram 只看到任务 accepted / running。日志显示 task `01ddaa36` 已被 Codex 接收、进程已启动并进入 `Stream start`,但 14 分钟以上没有 stdout chunk,也没有退出事件。用户视角无法区分“任务真的在跑”“IM handler 挂住”还是“路由没提交出去”。
+
+**根因**
+Adapter 流式读取只在 stdout 产生一行时才向上游 yield。Round 114 把 no-output idle timeout 放宽到 1800 秒后,避免了 5 分钟误杀,但也暴露出一个新缺口:长时间静默 provider 会让 IM 没有中间状态。Absence-first 场景下,老板离开电脑后不能靠猜测判断任务是否还活着。
+
+**解决方案 / 缓解措施**
+- `ClaudeCodeAdapter` 家族新增 quiet heartbeat:进程仍存活但长时间没有 stdout 时,周期性产出 `OutputType.STATUS`。
+- `TaskBus` 收到 `OutputType.STATUS` 后保持 task `running`,并把 status 写入 running reason。
+- `Orchestrator` 会把 status 推到 IM,但不会把它写入普通任务结果、lead decision memo 或 Goal Brief captured output。
+- 新增 `/inbox` 当前项目入口,集中展示 running 静默任务、待审批、失败/中断、离线托管和决策/目标 follow-up。
+
+**如何避免再次踩中**
+- 看到 `Task accepted` 后长时间无输出,先查 `/inbox` 或 `/task <id>`;如果出现 `Still running...`,说明是 provider 静默而不是 IM 提交失败。
+- 不要靠缩短 no-output timeout 来解决可见性问题;长任务应该可观察、可中断,而不是被过早误杀。
+- 新增任何长任务 Adapter 时,必须确认静默状态不会污染最终任务结果,也不会绕过 `/interrupt` 和 idle timeout。
+
+**相关链接**
+- ROUNDS Round 115
+
+### [P-026] 非交互 CLI 子进程继承 stdin 导致 Codex 长期等待额外输入
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 116
+**最后更新**:2026-05-26
+**影响范围**:`src/aico/adapter/claude_code.py`, `tests/unit/test_claude_code_adapter.py`
+
+**症状**
+Round 115 quiet heartbeat 生效后,真实 IM 中 reviewer/Codex 任务持续显示:
+
+```text
+Still running: no adapter output for 120s...
+...
+Still running: no adapter output for 1680s...
+```
+
+日志显示 task `0e72ac63` 已被 Codex adapter 接收并进入 `Stream start`,但没有任何 `type=text` 输出。状态库中任务 payload 约 1996 字符,不是异常巨大的 prompt。
+
+**根因**
+`create_subprocess_exec()` 启动 CLI adapter 时没有显式设置 `stdin`,导致子进程继承 AICO 进程的 stdin。Codex 0.125 在 `exec` 模式会尝试读取 stdin 作为 additional input;如果继承到一个不会立刻 EOF 的 stdin,就会一直等待额外输入,从而没有 stdout。最小 Codex smoke 在相同用户权限下可正常返回,说明不是账号、网络或 Codex CLI 整体不可用。
+
+**解决方案 / 缓解措施**
+- `_create_process()` 改为 `stdin=DEVNULL`,让 Claude/Codex/optional CLI adapter 都以真正非交互模式启动。
+- 新增单测确认 adapter 子进程创建时关闭 stdin,同时保留 stdout/stderr pipe。
+- 当前已 running 的旧任务不会自动继承修复,需要 `/interrupt <task_id>` 后重启 AICO 再提交。
+
+**如何避免再次踩中**
+- 所有非交互 CLI adapter 都必须显式处理 stdin;不要依赖父进程当前 stdin 状态。
+- 看到连续 heartbeat 且没有 stdout 时,先做最小 CLI smoke;若 smoke 正常,再查子进程启动契约、stdin/stderr 和 prompt 注入。
+- 不要把这种问题误判为“任务太难”或“需要继续加长 idle timeout”。
+
+**相关链接**
+- ROUNDS Round 116
+
+### [P-027] CLI 子进程 stderr 不读取导致 Codex stdout 被 pipe 反压卡住
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 117
+**最后更新**:2026-05-26
+**影响范围**:`src/aico/adapter/claude_code.py`, `tests/unit/test_claude_code_adapter.py`
+
+**症状**
+Round 116 修复 stdin 后,真实 IM 再次提交 reviewer/Codex 任务 `3be492f3`,任务已 accepted 并进入 `Stream start`,但 120 / 240 / 360 秒仍只有 heartbeat,没有任何 `type=text` 输出。`ps` 可见 Codex 子进程仍在运行,命令参数中包含完整 reviewer prompt,说明不是 `/ask` 没交给 Codex。
+
+**根因**
+AICO 过去只读取子进程 stdout,stderr 要等进程退出后才读。Codex CLI 会把运行头、hook、工具日志、警告等大量信息写到 stderr;当 stderr pipe 写满后,子进程会被 OS 反压阻塞,导致最终 stdout 也无法产出。这个现象会被误看成“模型思考很久”。
+
+**解决方案 / 缓解措施**
+- 启动 CLI 子进程后立即创建后台任务持续 drain stderr,只保留 tail 用于失败时生成错误信息。
+- 成功任务不会把 stderr 诊断日志推给 IM;失败任务仍使用 stderr tail 作为错误内容。
+- 新增单测构造“stderr 不被读取则 process.wait 不返回”的场景,确认 adapter 会并发 drain stderr。
+- 人类真实 IM 复验确认改动有效,该问题已关闭。
+
+**如何避免再次踩中**
+- 所有 subprocess adapter 都必须同时处理 stdout 和 stderr;不能只在进程结束后读 stderr。
+- 看到连续 heartbeat 且 `ps` 里子进程仍在,不要只判断“模型太慢”;要检查 stderr pipe 是否被 drain。
+- 如果未来要展示 provider 诊断,应单独做 debug/audit 入口,不要把 stderr 噪音混进用户任务结果。
+
+**相关链接**
+- ROUNDS Round 117
+
+### [P-028] 内置命令绕过 rich text renderer 导致真实 IM 不解析标题和列表
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 120
+**最后更新**:2026-05-27(Round 124)
+**影响范围**:`src/aico/core/goal_brief.py`, `src/aico/core/outcome_grader.py`, `src/aico/core/dream.py`, `src/aico/core/memory_commands.py`, `src/aico/core/message_rendering.py`
+
+**症状**
+真实 dogfood 中,`/goal` 和 `/recall` 的返回内容在 IM 里没有正确 Markdown/富文本效果:
+标题、无序列表和命令提示看起来只是普通文本。`/dream` 虽然返回了 candidate memory,
+但逐条列出旧 task id 和失败原因,人类难以判断“这是正确反思”还是“系统乱记旧错误”。
+
+**根因**
+流式 adapter 输出已经通过 `StreamedMessageWriter` 调用 `rich_text_message()`,
+但部分内置命令消息直接构造 `MessageContent(text=...)`,没有生成 `MessageTextSpan`。
+同时 Dream 第一版把每个异常 task 直接变成 memory candidate,缺少面向老板的 Meaning / Effect 解释,
+也没有按相同失败原因聚合成可复用 lesson。
+
+**解决方案 / 缓解措施**
+- Goal Brief、Outcome Grader、Dream review 和 memory recall/remember/forget 输出统一走 `rich_text_message()`。
+- `message_rendering` 增补 Phase 8 常见 label keys,包括 `owner`、`tracking`、`goal`、`grader`、`graded_task`、`query`、`purpose`、`evidence`。
+- Dream review 改为按 waiting/running/idle-timeout/interrupted/rejected/generic failed 聚合 candidate lesson。
+- Dream 输出新增 Meaning / Effect / Next,明确 candidate memory 不会自动注入 prompt,只有人类认可后才用 `/remember <accepted lesson>` 晋升。
+
+**如何避免再次踩中**
+- 新增任何 IM-facing 内置命令时,默认使用 `rich_text_message()` 或专门的 render helper,不要直接返回裸 `MessageContent(text=...)`。
+- 单测不要只看 `.text`,还要在关键命令上断言 `.spans` 非空或命令被 code span 标记。
+- Dream / self-improving 输出必须解释“为什么这是候选经验”和“会不会影响后续 prompt”,不能只暴露内部 task/memory id。
+
+**相关链接**
+- ROUNDS Round 120
+
+### [P-029] Prompt 注入提示词包含风险关键词会让普通任务误触发审批
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 121
+**最后更新**:2026-05-27
+**影响范围**:`src/aico/core/language.py`, `src/aico/core/risk.py`
+
+**症状**
+实现 `/language zh` 后,普通只读任务 `please inspect` 没有被 adapter 接收。排查发现任务在 submit 前被语言提示词包装,
+而提示词里包含 `shell commands`,命中了 `TextRiskAssessor` 的 `command` / `shell` 风险关键词,
+导致普通任务进入 approval gate。
+
+**根因**
+AICO 的风险识别是对最终 task payload 做文本扫描。任何系统级 prompt wrapper 如果包含 `run`、`write`、`shell`、
+`command` 等词,都会被当成用户任务风险的一部分。语言偏好本来只想限制回复语言,不应改变任务风险等级。
+
+**解决方案 / 缓解措施**
+- 语言提示词改用 `CLI snippets`,避免包含风险规则关键词。
+- 保留“代码块、路径、日志、标识符、协议关键字、严格 JSON/schema 不翻译”的约束。
+- 新增端到端单测,确认 `/language zh` 后普通任务能直接进入 adapter,不会误触发审批。
+
+**如何避免再次踩中**
+- 新增任何 task payload wrapper 前,先检查文案是否包含 `TextRiskAssessor.RISK_RULES` 里的关键词。
+- 风险识别应继续基于最终 payload,但系统 wrapper 文案必须保持风险中性。
+- 不要为了一个 wrapper 把整类 metadata 标成 read-only,否则会掩盖真实用户任务风险。
+
+**相关链接**
+- ROUNDS Round 121
+
+### [P-030] Renderer 只逐行加 spans 无法处理真实 agent Markdown
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 122
+**最后更新**:2026-05-27
+**影响范围**:`src/aico/core/message_rendering.py`, `src/aico/channel/telegram.py`, `src/aico/core/orchestrator.py`
+
+**症状**
+真实 Telegram dogfood 中,agent / memory 输出里出现粘连 Markdown:
+
+```text
+Decision Memo — Phase 8 Operator Inbox Kickoff## DecisionYes ...## Why1. ...
+```
+
+Telegram 侧没有把标题、列表、表格等结构渲染清楚;`Collaboration requested: implementer -> reviewer`
+也只是普通文本。用户看到的是一大段难读内容,无法快速判断记忆和 agent 输出。
+
+**根因**
+项目的正确架构是 core 产生平台无关 `MessageTextSpan`,Telegram Channel 再映射为 HTML parse mode。
+但 `rich_text_message()` 过去只对“已经分好行”的轻量 Markdown 做逐行处理;真实 agent 输出经常会出现 heading
+与正文粘连、Markdown table、fenced code block、大小写 label 等更复杂结构。逐命令补 `MessageContent`
+无法覆盖这些情况。
+
+**解决方案 / 缓解措施**
+- 在 `rich_text_message()` 前增加 IM Markdown normalization:
+  - 拆分粘连 `## Heading`。
+  - 对已知 heading 做标题 / 正文拆分。
+  - Markdown table 转等宽 IM table,用 code span 保持对齐。
+  - fenced code block 转 code span。
+  - label span 大小写无关。
+- `Collaboration requested` 改为结构化 rich text message。
+- Telegram 仍只负责把 spans 映射为 HTML,不把 Telegram Markdown 方言泄漏到 core。
+
+**如何避免再次踩中**
+- 新增输出格式能力时先改 `message_rendering.py`,不要在单个 command handler 里手搓 HTML 或 Markdown。
+- 真实 IM 验收应包含 agent markdown 样例:heading、list、table、code block、粘连 heading。
+- Telegram 没有真实 table;表格应降级为等宽 text table + code span。
+
+**相关链接**
+- ROUNDS Round 122
+
+### [P-031] 无限扩 Markdown 兼容 case 会让 IM 输出层失控
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 123
+**最后更新**:2026-05-27
+**影响范围**:`src/aico/core/native_output.py`, `src/aico/core/streaming.py`, `src/aico/channel/telegram.py`
+
+**症状**
+真实 Telegram dogfood 中,即使 Round 122 已经把 agent Markdown 走 rich text normalization,
+模型仍可能返回非标准但常见的格式,例如单行 fenced code:
+
+````text
+```uv run pytest```
+````
+
+如果继续把所有情况都塞进 `rich_text_message()`,renderer 会变成无限 case 集合,每接入一个 IM
+Channel 都要重新补一批规则。
+
+**根因**
+`rich_text_message()` 适合作为保底归一化层,但不应该承担“理解所有模型 Markdown 方言”的全部责任。
+更合理的链路是:按目标 Channel 给 agent 明确输出契约,让模型直接输出该 Channel 支持的 native format;
+系统只做白名单 sanitize / validate,失败再回退到 rich text fallback。
+
+**解决方案 / 缓解措施**
+- 新增 opt-in native output contract:`AICO_PREFER_NATIVE_CHANNEL_FORMAT=true` 时,Telegram 任务 prompt
+  会要求 agent 输出 Telegram Bot API HTML 子集。
+- 新增 Telegram HTML 白名单 sanitizer;只允许 `<b>`、`<i>`、`<u>`、`<s>`、`<code>`、`<pre>`、
+  `<blockquote>` 等安全标签,不允许属性和 unsupported tag。
+- `StreamedMessageWriter` 优先尝试 native Telegram HTML;验证失败时自动回退到 `rich_text_message()`。
+- 同时补齐单行 fenced code fallback,避免 native 失败后内容被吞。
+- Round 124 修正:在 `<pre>` / `<code>` literal block 内,`<id>` / `<task_id>` 这类占位符应安全转义为文本,
+  不能让整条 native HTML 被打回 fallback;literal block 外的 unsupported HTML 仍保持失败回退。
+
+**如何避免再次踩中**
+- 新 Channel 优先定义自己的 output contract 和 validator,不要复制 Telegram Markdown 规则。
+- native format 永远不能直接信任模型原样输出;必须 sanitize / validate 后才允许带 parse mode 发送。
+- rich text renderer 是 fallback,不是无限制兼容所有模型输出格式的主战场。
+- Telegram HTML validator 要区分“真正 unsupported tag”和“`<pre>` / `<code>` 里的文本占位符”。
+
+**相关链接**
+- ROUNDS Round 123
+- ROUNDS Round 124
+
+### [P-032] quiet heartbeat 进入结果缓冲导致 native HTML 回退裸露
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 125
+**最后更新**:2026-05-27
+**影响范围**:`src/aico/core/streaming.py`, `src/aico/core/orchestrator.py`
+
+**症状**
+真实 Telegram dogfood 中,先出现 quiet heartbeat:
+
+```text
+Still running: no adapter output for 120s. Use /task <id> for details or /interrupt <id> to stop.
+```
+
+随后 agent 的 native Telegram HTML 结果被拼在后面,并以裸标签形式显示:
+
+```text
+... to stop.<b>1. verdict:</b> pass- list actionable items...
+```
+
+**根因**
+`OutputType.STATUS` 是状态提示,但过去通过 `StreamedMessageWriter.append()` 写入同一个
+`_current_text` 缓冲。后续 agent 输出到达时,状态行和 native HTML 混在一起;状态行中的
+`/task <id>` 会让 native HTML validator 看到 literal block 外的 unknown tag,最终回退到
+`rich_text_message()`,于是 `<b>` / `<code>` 等标签作为普通文本裸露。
+
+**解决方案 / 缓解措施**
+- 新增 `StreamedMessageWriter.show_status()`:只临时编辑 IM 消息展示 heartbeat,不写入结果缓冲。
+- `Orchestrator` 对 `OutputType.STATUS` 调用 `show_status()` 后直接 `continue`,不进入 captured output、
+  native HTML validator 或最终 IM 内容。
+- 如果已经有真实输出,late status 不覆盖结果;老板仍可通过 `/task <id>` / `/inbox` 看 running reason。
+- Telegram native output prompt 增补:标题、段落、列表项要分行,bullet 用 `•`,不要用 Markdown `- `。
+
+**如何避免再次踩中**
+- `OutputType.STATUS` 永远是 transient UI hint,不是 agent result。
+- 所有 writer / renderer 新增状态类输出时,先问“它是否会进入最终结果缓冲”;答案应为否。
+- native HTML validator 不应承担清理 AICO 自己的 status 行;status 行应在进入 validator 之前被隔离。
+
+**相关链接**
+- ROUNDS Round 125
 
 ### [P-016] Appointment prompt 脚手架导致普通项目咨询误触发审批
 
@@ -774,7 +1055,7 @@ Codex read-only sandbox 适合静态分析和文件读取,但不保证 Python / 
 
 **状态**:🟢 RESOLVED
 **首次踩中**:Round 98
-**最后更新**:2026-05-20
+**最后更新**:2026-05-25
 **影响范围**:`src/aico/app/phase1.py`, `src/aico/core/project_assignment.py`
 
 **症状**
@@ -820,7 +1101,7 @@ CodeFlicker 的第一个 alias 是 `flicker`,而用户自然输入的是 provide
 - CLI adapter 新增 `max_concurrent_tasks`,默认 5;只有运行中任务达到上限才返回 busy。
 - `AdapterSnapshot` 记录 `running_tasks` / `max_concurrent_tasks`。
 - `/agents` / `/agent` 展示当前运行数、最大并发和建议任命上限;`/appoint` 成功回执也展示同样约束。
-- Codex / optional CLI adapter 默认 output idle timeout 从 90 秒放宽到 300 秒,减少长思考任务被误杀。
+- Codex / optional CLI adapter 默认 output idle timeout 从 90 秒逐步放宽到 1800 秒,减少长思考任务被误杀;启动配置可设为 `0` 禁用自动 idle timeout。
 
 **如何避免再次踩中**
 - 不要把 `AdapterStatus.BUSY` 理解成“有任何任务在跑”;用户关心的是还能不能接新任务。
@@ -829,3 +1110,82 @@ CodeFlicker 的第一个 alias 是 `flicker`,而用户自然输入的是 provide
 
 **相关链接**
 - ROUNDS Round 98
+
+### [P-023] 验收 prompt 把 lead 概念和 role id 混用
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 111
+**最后更新**:2026-05-24
+**影响范围**:`src/aico/core/project_assignment.py`, `src/aico/core/collaboration.py`, `src/aico/core/orchestrator.py`
+
+**症状**
+真实 IM 中执行:
+
+```text
+/ask lead decide whether we should start Phase 8 operator inbox now...
+/ask lead propose a tiny Phase 8 inbox implementation plan, then ask @reviewer: ...
+```
+
+Telegram 只显示任务仍在运行,例如:
+
+```text
+4697ce83-d7bc-4e7a-8863-09f43998d009 [codex]: running
+4c31d567-f9cf-48de-a232-8dfe74af5cef [codex]: running
+```
+
+日志显示两条任务被 Codex 接收后 300 秒没有 stdout,最后触发 idle timeout。
+
+**根因**
+`lead` 是老板视角的项目概念,但 `/ask <role> <task>` 过去只按真实 role id 查 appointment。
+验收 prompt 使用 `/ask lead ...` 时容易落不到预期的 lead/default role 语义。
+同时,协作解析只看 Adapter 输出的第一条非空行;如果模型先输出计划,再在后续行写
+`@reviewer: ...`,不会触发 reviewer child task。即使识别到后续行,旧流式处理也会把同一段输出的
+非指令正文吞掉。
+
+**解决方案 / 缓解措施**
+- `ProjectAssignmentDirectory.appointment_for_role()` 支持 `lead` / `default` 作为当前项目 default assignment 别名。
+- 协作解析改为扫描任意一行以 `@persona` 开头的指令。
+- 流式输出处理会保留非协作指令正文,同时触发 child task。
+- 新增单测覆盖 `/ask lead ...` 触发 lead decision workflow,以及“计划正文 + 后续 `@reviewer:` 行”的协作触发。
+
+**如何避免再次踩中**
+- 面向老板的真实 IM 验收问题可以使用 `lead`,但代码必须把它解析为项目 default assignment。
+- 验证 Phase 5 协作时,不要假设模型第一行一定就是 `@reviewer:`;应支持模型先给计划再发协作指令。
+- 如果 Telegram 只看到 `running`,先查 `logs/aico.log` 里的 task id;区分命令路由问题和 provider 无 stdout timeout。
+
+**相关链接**
+- ROUNDS Round 111
+
+### [P-024] 协作短指令引用父输出编号但 child task 丢失上下文
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 113
+**最后更新**:2026-05-25
+**影响范围**:`src/aico/core/collaboration.py`, `src/aico/core/orchestrator.py`, `src/aico/core/task_bus.py`
+
+**症状**
+真实 IM dogfood 中,人类让 reviewer 检查 Phase 8 inbox plan。reviewer 成功输出 findings 后,
+又发出 `@implementer: please reflect (a)-(d) in the inbox PR plan and the new ADR before coding starts.`
+系统显示 `Collaboration requested: implementer -> implementer`,随后 implementer 回答自己不知道
+`(a)-(d)` 是什么、PR plan 在哪里、ADR 是哪一篇。
+
+**根因**
+Round 111 修复了“后续行 `@reviewer` 能触发 child task,且保留父输出展示”,但 child task payload
+仍只包含协作指令后的短句。真实 reviewer 常用 `(a)-(d)`、`above`、`these findings` 这类引用父输出的短指令;
+如果不把父输出上下文一并交给 child,二次协作会出现上下文断层。另一个体感问题是 project appointment
+任务底层 target persona 可能仍是 `implementer` / `claude`,导致 reviewer 发起协作时 IM 显示为
+`implementer -> implementer`。
+
+**解决方案 / 缓解措施**
+- `collaboration_payload()` 支持可选 `source_context`,会把父任务截至协作指令前的可见输出注入 child payload。
+- `Orchestrator._stream_outputs_for_task()` 在触发协作时传入已捕获父输出和当前 chunk 的非指令正文。
+- 协作来源优先使用 task metadata 中的 `aico.assignment_role`,IM 提示和 audit actor 会显示 reviewer 等项目岗位,
+  不再只显示底层 persona。
+
+**如何避免再次踩中**
+- 真实协作 smoke 不能只看 child task 是否创建;还要看 child task 是否有足够上下文理解短引用。
+- 后续新增协作协议字段时,保留“短指令 + 父输出上下文”的交接契约,不要只传 directive payload。
+- 排查 project appointment 协作时,优先看 metadata 中的 assignment role,不要把底层 agent persona 当作老板视角 role。
+
+**相关链接**
+- ROUNDS Round 113

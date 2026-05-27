@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from aico.core import (
     AckStatus,
@@ -12,6 +13,7 @@ from aico.core import (
     PersonaRegistry,
     RequesterOrListedApproverPolicy,
     RiskLevel,
+    SQLiteTaskStateStore,
     Task,
     TaskAck,
     TaskBus,
@@ -383,6 +385,48 @@ async def test_task_bus_rejects_waiting_approval_without_dispatching() -> None:
     assert bus.task_snapshots()[0].status is TaskStatus.REJECTED
     assert bus.task_snapshots()[0].reason == "too broad"
     assert bus.audit_events()[-1].event_type is AuditEventType.TASK_REJECTED
+
+
+async def test_task_bus_restores_pending_approval_from_sqlite_store(tmp_path: Path) -> None:
+    store = SQLiteTaskStateStore(tmp_path / "aico-state.db")
+    first_adapter = RecordingAdapter("claude-code")
+    first_bus = TaskBus(AdapterRegistry([first_adapter]), task_store=store)
+    task = Task(
+        task_id="task-approval",
+        payload="run pytest",
+        requester_id="user-1",
+        target_persona="claude-code",
+    )
+
+    await first_bus.submit(task)
+
+    second_adapter = RecordingAdapter("claude-code")
+    second_bus = TaskBus(AdapterRegistry([second_adapter]), task_store=store)
+    ack = await second_bus.approve(None, reviewer_id="user-1")
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert second_adapter.received_tasks == [task]
+    assert second_bus.task_snapshots()[0].status is TaskStatus.RUNNING
+
+
+async def test_task_bus_restores_task_snapshots_from_sqlite_store(tmp_path: Path) -> None:
+    store = SQLiteTaskStateStore(tmp_path / "aico-state.db")
+    first_bus = TaskBus(RecordingAdapter(), task_store=store)
+    task = Task(
+        task_id="task-1",
+        payload="do work",
+        requester_id="user-1",
+        target_persona="default",
+    )
+
+    await first_bus.submit(task)
+    _ = [output async for output in first_bus.stream_output(task.task_id)]
+
+    second_bus = TaskBus(RecordingAdapter(), task_store=store)
+
+    assert second_bus.task_record("task-1") == task
+    assert second_bus.task_snapshots()[0].task_id == "task-1"
+    assert second_bus.task_snapshots()[0].status is TaskStatus.RUNNING
 
 
 async def test_task_bus_denies_rejection_from_unlisted_reviewer() -> None:

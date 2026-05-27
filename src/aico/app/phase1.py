@@ -18,7 +18,10 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aico.adapter import AIAdapter
-from aico.adapter.claude_code import ClaudeCodeAdapter
+from aico.adapter.claude_code import (
+    DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS,
+    ClaudeCodeAdapter,
+)
 from aico.adapter.codeflicker import CodeFlickerAdapter
 from aico.adapter.codex import CodexAdapter
 from aico.adapter.cursor import CursorAdapter
@@ -50,6 +53,8 @@ from aico.core import (
     RequesterOrListedApproverPolicy,
     RoleProfile,
     RoleScope,
+    SQLiteOfflineDelegationStore,
+    SQLiteTaskStateStore,
     TaskBus,
     agent_cards_from_personas,
     read_jsonl_audit_events,
@@ -62,6 +67,7 @@ class Phase1Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AICO_", env_file=".env", extra="ignore")
 
     channel: Literal["telegram", "feishu"] = "telegram"
+    prefer_native_channel_format: bool = False
     telegram_bot_token: str | None = Field(default=None, min_length=1)
     default_persona: str = Field(default="claude-code", min_length=1)
     telegram_poll_timeout_seconds: int = Field(default=30, gt=0)
@@ -83,38 +89,49 @@ class Phase1Settings(BaseSettings):
         default="codex --ask-for-approval never exec --sandbox read-only --color never",
         min_length=1,
     )
-    codex_output_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    codex_output_idle_timeout_seconds: float = Field(
+        default=DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS, ge=0
+    )
     codex_max_concurrent_tasks: int = Field(default=5, gt=0)
     enable_cursor_adapter: bool = False
     cursor_command: str = Field(
         default="cursor-agent -p --force --output-format text",
         min_length=1,
     )
-    cursor_output_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    cursor_output_idle_timeout_seconds: float = Field(
+        default=DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS, ge=0
+    )
     cursor_max_concurrent_tasks: int = Field(default=5, gt=0)
     enable_codeflicker_adapter: bool = False
     codeflicker_command: str = Field(
         default="flickcli -q --approval-mode yolo --output-format text",
         min_length=1,
     )
-    codeflicker_output_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    codeflicker_output_idle_timeout_seconds: float = Field(
+        default=DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS, ge=0
+    )
     codeflicker_max_concurrent_tasks: int = Field(default=5, gt=0)
     enable_trae_adapter: bool = False
     trae_command: str = Field(default="trae-cli --print --yolo", min_length=1)
-    trae_output_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    trae_output_idle_timeout_seconds: float = Field(
+        default=DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS, ge=0
+    )
     trae_max_concurrent_tasks: int = Field(default=5, gt=0)
     enable_gemini_adapter: bool = False
     gemini_command: str = Field(
         default="gemini --approval-mode yolo --output-format text",
         min_length=1,
     )
-    gemini_output_idle_timeout_seconds: float = Field(default=300.0, gt=0)
+    gemini_output_idle_timeout_seconds: float = Field(
+        default=DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS, ge=0
+    )
     gemini_max_concurrent_tasks: int = Field(default=5, gt=0)
     persona_config_path: Path | None = None
     project_config_path: Path | None = None
     approval_reviewer_ids: str = ""
     audit_log_path: Path | None = None
     memory_path: Path | None = None
+    state_db_path: Path | None = None
     log_level: str = "INFO"
     log_path: Path | None = Path("logs/aico.log")
 
@@ -122,6 +139,21 @@ class Phase1Settings(BaseSettings):
     @classmethod
     def empty_log_path_disables_file_logging(cls, value: object) -> object:
         return None if value == "" else value
+
+    @field_validator("state_db_path", mode="before")
+    @classmethod
+    def normalize_state_db_path(cls, value: object) -> object:
+        if value is None or value == "":
+            return None
+        if isinstance(value, bool):
+            return Path(".aico/state.db") if value else None
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"0", "false", "no", "off"}:
+                return None
+            if normalized in {"1", "true", "yes", "on"}:
+                return Path(".aico/state.db")
+        return value
 
     def claude_command_tuple(self) -> tuple[str, ...]:
         return _split_command(self.claude_command)
@@ -154,6 +186,10 @@ def _split_command(command_text: str) -> tuple[str, ...]:
     if not command:
         raise ValueError("command must not be empty")
     return command
+
+
+def _optional_idle_timeout(seconds: float) -> float | None:
+    return None if seconds <= 0 else seconds
 
 
 @dataclass
@@ -191,7 +227,9 @@ def build_phase1_runtime(
             CodexAdapter(
                 command=settings.codex_command_tuple(),
                 cwd=settings.claude_working_directory,
-                output_idle_timeout_seconds=settings.codex_output_idle_timeout_seconds,
+                output_idle_timeout_seconds=_optional_idle_timeout(
+                    settings.codex_output_idle_timeout_seconds
+                ),
                 max_concurrent_tasks=settings.codex_max_concurrent_tasks,
             )
         )
@@ -200,7 +238,9 @@ def build_phase1_runtime(
             CursorAdapter(
                 command=settings.cursor_command_tuple(),
                 cwd=settings.claude_working_directory,
-                output_idle_timeout_seconds=settings.cursor_output_idle_timeout_seconds,
+                output_idle_timeout_seconds=_optional_idle_timeout(
+                    settings.cursor_output_idle_timeout_seconds
+                ),
                 max_concurrent_tasks=settings.cursor_max_concurrent_tasks,
             )
         )
@@ -209,7 +249,9 @@ def build_phase1_runtime(
             CodeFlickerAdapter(
                 command=settings.codeflicker_command_tuple(),
                 cwd=settings.claude_working_directory,
-                output_idle_timeout_seconds=settings.codeflicker_output_idle_timeout_seconds,
+                output_idle_timeout_seconds=_optional_idle_timeout(
+                    settings.codeflicker_output_idle_timeout_seconds
+                ),
                 max_concurrent_tasks=settings.codeflicker_max_concurrent_tasks,
             )
         )
@@ -218,7 +260,9 @@ def build_phase1_runtime(
             TraeAdapter(
                 command=settings.trae_command_tuple(),
                 cwd=settings.claude_working_directory,
-                output_idle_timeout_seconds=settings.trae_output_idle_timeout_seconds,
+                output_idle_timeout_seconds=_optional_idle_timeout(
+                    settings.trae_output_idle_timeout_seconds
+                ),
                 max_concurrent_tasks=settings.trae_max_concurrent_tasks,
             )
         )
@@ -227,7 +271,9 @@ def build_phase1_runtime(
             GeminiAdapter(
                 command=settings.gemini_command_tuple(),
                 cwd=settings.claude_working_directory,
-                output_idle_timeout_seconds=settings.gemini_output_idle_timeout_seconds,
+                output_idle_timeout_seconds=_optional_idle_timeout(
+                    settings.gemini_output_idle_timeout_seconds
+                ),
                 max_concurrent_tasks=settings.gemini_max_concurrent_tasks,
             )
         )
@@ -250,12 +296,15 @@ def build_phase1_runtime(
             persona_registry=persona_registry,
             audit_log=_build_audit_log(settings),
             approval_policy=RequesterOrListedApproverPolicy(settings.approval_reviewer_id_tuple()),
+            task_store=_task_state_store(settings),
         ),
         session_store=session_store,
         provider_session_factory=_provider_session_factory(persona_registry),
         agent_directory=agent_directory,
         project_directory=project_directory,
         memory_store=JsonlMemoryStore(settings.memory_path) if settings.memory_path else None,
+        offline_delegation_store=_offline_delegation_store(settings),
+        prefer_native_channel_format=settings.prefer_native_channel_format,
     )
     return Phase1Runtime(
         channel=channel,
@@ -266,6 +315,18 @@ def build_phase1_runtime(
         project_directory=project_directory,
         orchestrator=orchestrator,
     )
+
+
+def _task_state_store(settings: Phase1Settings) -> SQLiteTaskStateStore | None:
+    if settings.state_db_path is None:
+        return None
+    return SQLiteTaskStateStore(settings.state_db_path)
+
+
+def _offline_delegation_store(settings: Phase1Settings) -> SQLiteOfflineDelegationStore | None:
+    if settings.state_db_path is None:
+        return None
+    return SQLiteOfflineDelegationStore(settings.state_db_path)
 
 
 def _build_channel(
@@ -481,6 +542,23 @@ def _default_project_assignment_config(
                 risk_policy=_default_assignment_risk_policy(card.adapter_name),
             )
         )
+    challenger_agent = _default_challenger_agent(agents)
+    if challenger_agent is not None and not any(
+        assignment.role == "challenger" for assignment in assignments
+    ):
+        assignments.append(
+            AssignmentProfile(
+                project="aico",
+                agent=challenger_agent,
+                role="challenger",
+                seat="aico-challenger",
+                permissions=roles["challenger"].default_permissions,
+                session_policy=_default_assignment_session_policy(
+                    agents[challenger_agent].provider
+                ),
+                risk_policy=_default_assignment_risk_policy(agents[challenger_agent].provider),
+            )
+        )
     default_assignment = assignments[0].seat if assignments else None
     return ProjectAssignmentConfig(
         agents=agents,
@@ -517,6 +595,14 @@ def _default_agent_id(card: AgentCard) -> str:
     if card.name in {"implementer", "reviewer"} and card.aliases:
         return card.aliases[0]
     return card.name
+
+
+def _default_challenger_agent(agents: dict[str, CompanyAgentProfile]) -> str | None:
+    if not agents:
+        return None
+    if "codex" in agents:
+        return "codex"
+    return next(iter(agents))
 
 
 def _delivery_roles() -> dict[str, RoleProfile]:
@@ -580,6 +666,21 @@ def _delivery_roles() -> dict[str, RoleProfile]:
 
 def _governance_roles() -> dict[str, RoleProfile]:
     return {
+        "challenger": RoleProfile(
+            id="challenger",
+            title="Critical Philosopher",
+            summary=(
+                "Challenge project decisions, hidden assumptions, tradeoffs, opportunity "
+                "cost, and long-term risk before the lead commits."
+            ),
+            inline_prompt=(
+                "Act as the lead's independent critic. Do not optimize for agreement. "
+                "Identify flawed assumptions, missing evidence, second-order effects, and "
+                "the strongest opposing argument. End with oppose, conditional support, or "
+                "support, plus what evidence would change your judgment."
+            ),
+            default_permissions=(RoleScope.DOCS, RoleScope.AUDIT),
+        ),
         "senior-architect": RoleProfile(
             id="senior-architect",
             title="Senior Architect",

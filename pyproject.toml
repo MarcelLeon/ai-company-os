@@ -17,6 +17,8 @@ aico-feishu-webhook = "aico.app.feishu_webhook:main"
 aico-glance = "aico.app.glance_cli:main"
 aico-metrics = "aico.app.metrics_cli:main"
 aico-phase1 = "aico.app.phase1:main"
+aico-release-room-demo = "aico.app.release_room_demo:main"
+aico-state = "aico.app.state_cli:main"
 
 [dependency-groups]
 dev = [

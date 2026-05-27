@@ -24,11 +24,12 @@ from aico.core.models import (
     TaskOutput,
     TaskSnapshot,
     TaskStatus,
-    utc_now,
 )
 from aico.core.persona_registry import PersonaRegistry
 from aico.core.risk import TextRiskAssessor
 from aico.core.risk_capability import unsupported_risk_reason
+from aico.core.task_state import TaskStateRepository
+from aico.core.task_store import TaskStateStore
 
 
 class TaskBus:
@@ -41,6 +42,7 @@ class TaskBus:
         risk_assessor: TextRiskAssessor | None = None,
         audit_log: InMemoryAuditLog | None = None,
         approval_policy: ApprovalPolicy | None = None,
+        task_store: TaskStateStore | None = None,
     ) -> None:
         self._single_adapter_mode = not isinstance(adapter, AdapterRegistry)
         self._registry = (
@@ -50,10 +52,8 @@ class TaskBus:
         self._risk_assessor = risk_assessor or TextRiskAssessor()
         self._audit_log = audit_log or InMemoryAuditLog()
         self._approval_policy = approval_policy or RequesterOrListedApproverPolicy()
-        self._task_adapters: dict[str, str] = {}
-        self._tasks: dict[str, TaskSnapshot] = {}
-        self._task_records: dict[str, Task] = {}
-        self._approvals: dict[str, ApprovalRequest] = {}
+        self._task_store = task_store
+        self._state = TaskStateRepository(task_store)
 
     async def submit(self, task: Task) -> TaskAck:
         adapter_name = self._adapter_name_for_task(task)
@@ -77,7 +77,7 @@ class TaskBus:
                 reason=f"unknown adapter or persona: {adapter_name}",
             )
 
-        self._task_records[task.task_id] = task
+        self._state.record_task(task)
         risk = self._risk_assessor.assess(task)
         self._audit_log.record(
             AuditEventType.TASK_SUBMITTED,
@@ -107,7 +107,7 @@ class TaskBus:
                 reason=unsupported_reason,
             )
         if risk.requires_approval:
-            self._approvals[task.task_id] = ApprovalRequest(task=task, risk=risk)
+            self._state.save_approval(ApprovalRequest(task=task, risk=risk))
             self._record_task(
                 task,
                 adapter_name=adapter.name,
@@ -131,7 +131,7 @@ class TaskBus:
         return await self._dispatch(task, adapter, risk)
 
     async def approve(self, task_id: str | None, reviewer_id: str) -> TaskAck:
-        approval = self._resolve_pending_approval(task_id)
+        approval = self._state.resolve_pending_approval(task_id)
         if isinstance(approval, TaskAck):
             return approval
 
@@ -168,12 +168,13 @@ class TaskBus:
                 reason="adapter unavailable",
             )
 
-        self._approvals[task_id] = approval.model_copy(
-            update={
-                "status": ApprovalStatus.APPROVED,
-                "reviewer_id": reviewer_id,
-                "updated_at": utc_now(),
-            }
+        self._state.save_approval(
+            approval.model_copy(
+                update={
+                    "status": ApprovalStatus.APPROVED,
+                    "reviewer_id": reviewer_id,
+                }
+            )
         )
         self._audit_log.record(
             AuditEventType.APPROVAL_APPROVED,
@@ -191,7 +192,7 @@ class TaskBus:
         *,
         reason: str | None = None,
     ) -> TaskAck:
-        approval = self._resolve_pending_approval(task_id)
+        approval = self._state.resolve_pending_approval(task_id)
         if isinstance(approval, TaskAck):
             return approval
 
@@ -220,13 +221,14 @@ class TaskBus:
             )
 
         reject_reason = reason or "approval rejected"
-        self._approvals[task_id] = approval.model_copy(
-            update={
-                "status": ApprovalStatus.REJECTED,
-                "reviewer_id": reviewer_id,
-                "reason": reject_reason,
-                "updated_at": utc_now(),
-            }
+        self._state.save_approval(
+            approval.model_copy(
+                update={
+                    "status": ApprovalStatus.REJECTED,
+                    "reviewer_id": reviewer_id,
+                    "reason": reject_reason,
+                }
+            )
         )
         self._update_task(task_id, TaskStatus.REJECTED, reason=reject_reason)
         self._audit_log.record(
@@ -254,7 +256,7 @@ class TaskBus:
         effective_task = self._effective_task(task)
         ack = await adapter.receive_task(effective_task)
         if ack.status is AckStatus.ACCEPTED:
-            self._task_adapters[task.task_id] = adapter.name
+            self._state.task_adapters[task.task_id] = adapter.name
             self._record_task(
                 task,
                 adapter_name=adapter.name,
@@ -296,7 +298,7 @@ class TaskBus:
             yield output
 
     async def interrupt(self, task_ref: str) -> TaskAck:
-        task = self._resolve_known_task(task_ref)
+        task = self._state.resolve_known_task(task_ref)
         if isinstance(task, TaskAck):
             return task
 
@@ -318,7 +320,7 @@ class TaskBus:
         adapter = self._adapter_for_task(task_id)
         if adapter is not None:
             await adapter.interrupt(task_id)
-            if self._task_status(task_id) is TaskStatus.RUNNING:
+            if self._state.task_status(task_id) is TaskStatus.RUNNING:
                 self._update_task(task_id, TaskStatus.INTERRUPTED)
                 self._record_audit_for_task(task_id, AuditEventType.TASK_INTERRUPTED)
             return TaskAck(task_id=task_id, status=AckStatus.ACCEPTED)
@@ -328,44 +330,54 @@ class TaskBus:
         return self._registry.snapshots()
 
     def task_snapshots(self, *, limit: int | None = 5) -> tuple[TaskSnapshot, ...]:
-        snapshots = sorted(
-            self._tasks.values(),
-            key=lambda snapshot: snapshot.updated_at,
-            reverse=True,
-        )
-        if limit is None:
-            return tuple(reversed(snapshots))
-        return tuple(reversed(snapshots[:limit]))
+        return self._state.task_snapshots(limit=limit)
 
     def task_snapshot(self, task_ref: str) -> TaskSnapshot | TaskAck:
-        return self._resolve_known_task(task_ref)
+        return self._state.resolve_known_task(task_ref)
 
     def audit_events(self, *, limit: int | None = 10) -> tuple[AuditEvent, ...]:
         return self._audit_log.events(limit=limit)
 
-    def record_collaboration_requested(self, source_task: Task, child_task: Task) -> None:
+    def record_collaboration_requested(
+        self,
+        source_task: Task,
+        child_task: Task,
+        *,
+        actor_id: str | None = None,
+    ) -> None:
         self._audit_log.record(
             AuditEventType.COLLABORATION_REQUESTED,
             child_task,
-            actor_id=source_task.target_persona,
+            actor_id=actor_id or source_task.target_persona,
             detail=f"parent_task={source_task.task_id}",
         )
 
+    def record_lead_decision(self, task: Task, *, detail: str) -> AuditEvent:
+        snapshot = self._state.tasks.get(task.task_id)
+        return self._audit_log.record(
+            AuditEventType.LEAD_DECISION_RECORDED,
+            task,
+            adapter_name=None if snapshot is None else snapshot.adapter_name,
+            risk_level=RiskLevel.READ_ONLY if snapshot is None else snapshot.risk_level,
+            detail=detail,
+        )
+
     def task_record(self, task_id: str) -> Task | None:
-        return self._task_records.get(task_id)
+        return self._state.task_records.get(task_id)
 
     def pending_approvals(self) -> tuple[ApprovalRequest, ...]:
-        return tuple(a for a in self._approvals.values() if a.status is ApprovalStatus.PENDING)
+        return self._state.pending_approvals()
 
     def _cancel_waiting_approval(self, task_id: str) -> None:
-        approval = self._approvals.get(task_id)
+        approval = self._state.approvals.get(task_id)
         if approval is not None and approval.status is ApprovalStatus.PENDING:
-            self._approvals[task_id] = approval.model_copy(
-                update={
-                    "status": ApprovalStatus.REJECTED,
-                    "reason": "interrupted before approval",
-                    "updated_at": utc_now(),
-                }
+            self._state.save_approval(
+                approval.model_copy(
+                    update={
+                        "status": ApprovalStatus.REJECTED,
+                        "reason": "interrupted before approval",
+                    }
+                )
             )
             self._audit_log.record(
                 AuditEventType.APPROVAL_REJECTED,
@@ -386,30 +398,10 @@ class TaskBus:
         return tuple(snapshot.name for snapshot in self._registry.snapshots())
 
     def _adapter_for_task(self, task_id: str) -> AIAdapter | None:
-        adapter_name = self._task_adapters.get(task_id)
+        adapter_name = self._state.task_adapters.get(task_id)
         if adapter_name is None:
             return None
         return self._registry.get(adapter_name)
-
-    def _resolve_known_task(self, task_ref: str) -> TaskSnapshot | TaskAck:
-        if task_ref in self._tasks:
-            return self._tasks[task_ref]
-        matches = tuple(
-            snapshot for task_id, snapshot in self._tasks.items() if task_id.startswith(task_ref)
-        )
-        if len(matches) == 1:
-            return matches[0]
-        if matches:
-            return TaskAck(
-                task_id=task_ref,
-                status=AckStatus.REJECTED,
-                reason=f"multiple matching tasks: {_task_refs(matches)}",
-            )
-        return TaskAck(
-            task_id=task_ref,
-            status=AckStatus.REJECTED,
-            reason=f"unknown task: {task_ref}",
-        )
 
     def _adapter_name_for_task(self, task: Task) -> str:
         persona = self._resolve_persona(task.target_persona)
@@ -445,18 +437,16 @@ class TaskBus:
         reason: str | None = None,
         risk_level: RiskLevel = RiskLevel.READ_ONLY,
     ) -> None:
-        self._tasks[task.task_id] = TaskSnapshot(
-            task_id=task.task_id,
-            target_persona=task.target_persona,
+        self._state.record_snapshot(
+            task,
             adapter_name=adapter_name,
             status=status,
             reason=reason,
             risk_level=risk_level,
-            created_at=task.created_at,
         )
 
     def _update_from_output(self, task_id: str, output: TaskOutput) -> None:
-        if self._task_status(task_id) is TaskStatus.INTERRUPTED:
+        if self._state.task_status(task_id) is TaskStatus.INTERRUPTED:
             return
         if output.type is OutputType.ERROR:
             self._update_task(task_id, TaskStatus.FAILED, reason=output.content)
@@ -465,13 +455,13 @@ class TaskBus:
                 AuditEventType.TASK_FAILED,
                 detail=output.content,
             )
+        elif output.type is OutputType.STATUS:
+            self._update_task(task_id, TaskStatus.RUNNING, reason=output.content)
+        elif output.type is OutputType.TEXT:
+            self._update_task(task_id, TaskStatus.RUNNING)
         elif output.type is OutputType.DONE:
             self._update_task(task_id, TaskStatus.DONE)
             self._record_audit_for_task(task_id, AuditEventType.TASK_COMPLETED)
-
-    def _task_status(self, task_id: str) -> TaskStatus | None:
-        snapshot = self._tasks.get(task_id)
-        return None if snapshot is None else snapshot.status
 
     def _update_task(
         self,
@@ -480,16 +470,7 @@ class TaskBus:
         *,
         reason: str | None = None,
     ) -> None:
-        snapshot = self._tasks.get(task_id)
-        if snapshot is None:
-            return
-        self._tasks[task_id] = snapshot.model_copy(
-            update={
-                "status": status,
-                "reason": reason,
-                "updated_at": utc_now(),
-            }
-        )
+        self._state.update_task(task_id, status, reason=reason)
 
     def _record_audit_for_task(
         self,
@@ -498,8 +479,8 @@ class TaskBus:
         *,
         detail: str | None = None,
     ) -> None:
-        task = self._task_records.get(task_id)
-        snapshot = self._tasks.get(task_id)
+        task = self._state.task_records.get(task_id)
+        snapshot = self._state.tasks.get(task_id)
         if task is None or snapshot is None:
             return
         self._audit_log.record(
@@ -508,38 +489,6 @@ class TaskBus:
             adapter_name=snapshot.adapter_name,
             risk_level=snapshot.risk_level,
             detail=detail,
-        )
-
-    def _resolve_pending_approval(self, task_ref: str | None) -> ApprovalRequest | TaskAck:
-        pending = self.pending_approvals()
-        if not task_ref:
-            if len(pending) == 1:
-                return pending[0]
-            if not pending:
-                return TaskAck(
-                    task_id="approval",
-                    status=AckStatus.REJECTED,
-                    reason="no pending approvals",
-                )
-            return TaskAck(
-                task_id="approval",
-                status=AckStatus.REJECTED,
-                reason=f"multiple pending approvals: {_pending_task_refs(pending)}",
-            )
-
-        matches = [approval for approval in pending if approval.task.task_id.startswith(task_ref)]
-        if len(matches) == 1:
-            return matches[0]
-        if len(matches) > 1:
-            return TaskAck(
-                task_id=task_ref,
-                status=AckStatus.REJECTED,
-                reason=f"multiple pending approvals match: {_pending_task_refs(matches)}",
-            )
-        return TaskAck(
-            task_id=task_ref,
-            status=AckStatus.REJECTED,
-            reason="unknown pending approval",
         )
 
 
@@ -555,15 +504,3 @@ async def _unknown_task_output(task_id: str) -> AsyncIterator[TaskOutput]:
 def _approval_reason(risk: RiskAssessment) -> str:
     reasons = ", ".join(risk.reasons) if risk.reasons else "risk requires approval"
     return f"approval required: {risk.risk_level.value} - {reasons}"
-
-
-def _pending_task_refs(approvals: tuple[ApprovalRequest, ...] | list[ApprovalRequest]) -> str:
-    return ", ".join(_short_task_id(approval.task.task_id) for approval in approvals)
-
-
-def _task_refs(tasks: tuple[TaskSnapshot, ...]) -> str:
-    return ", ".join(_short_task_id(task.task_id) for task in tasks)
-
-
-def _short_task_id(task_id: str) -> str:
-    return task_id[:8]

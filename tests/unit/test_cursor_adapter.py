@@ -1,3 +1,4 @@
+from aico.adapter.claude_code import DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
 from aico.adapter.cursor import DEFAULT_CURSOR_COMMAND, CursorAdapter
 from aico.core import (
     Capability,
@@ -12,7 +13,9 @@ def test_cursor_adapter_uses_non_interactive_print_defaults() -> None:
     adapter = CursorAdapter()
 
     assert adapter.name == "cursor"
-    assert adapter._output_idle_timeout_seconds == 300.0  # noqa: SLF001
+    assert (  # noqa: SLF001
+        adapter._output_idle_timeout_seconds == DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
+    )
     assert DEFAULT_CURSOR_COMMAND == (
         "cursor-agent",
         "-p",

@@ -1,3 +1,4 @@
+from aico.adapter.claude_code import DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
 from aico.adapter.gemini import DEFAULT_GEMINI_COMMAND, GeminiAdapter
 from aico.core import (
     Capability,
@@ -12,6 +13,9 @@ def test_gemini_adapter_uses_non_interactive_defaults() -> None:
     adapter = GeminiAdapter()
 
     assert adapter.name == "gemini"
+    assert (  # noqa: SLF001
+        adapter._output_idle_timeout_seconds == DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
+    )
     assert DEFAULT_GEMINI_COMMAND == (
         "gemini",
         "--approval-mode",

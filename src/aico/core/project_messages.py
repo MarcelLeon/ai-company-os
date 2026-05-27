@@ -25,7 +25,7 @@ from aico.core.project_assignment import (
 )
 from aico.core.project_docs import ProjectDocumentSnippet
 
-_CORE_ROLE_IDS = ("pm", "implementer", "reviewer", "golden-tester")
+_CORE_ROLE_IDS = ("pm", "implementer", "reviewer", "challenger", "golden-tester")
 _SPECIALIST_ROLE_IDS = ("senior-architect", "security", "legal-compliance", "market-risk")
 _SUPPORT_ROLE_IDS = ("tester", "docs", "ops", "analyst", "designer")
 _ROLE_GROUPS = (
@@ -61,7 +61,7 @@ def project_office_message(
     lines = [
         f"Project active: {project.id} [{project.name}]",
         f"repo: {project.repo}",
-        f"default role: {default_text}",
+        f"lead: {default_text}",
     ]
     if project.current_phase:
         lines.append(f"phase: {project.current_phase}")
@@ -71,6 +71,7 @@ def project_office_message(
         lines.extend(f"- {_appointment_ref(appointment)}" for appointment in appointments)
     else:
         lines.append("- none")
+    lines.extend(("", *_team_readiness_lines(appointments, default_appointment)))
     lines.extend(_next_lines(("/brief", "/team", "/next", "/daily", "/weekly")))
     return _heading_message(lines)
 
@@ -376,6 +377,7 @@ def team_message(
         scope = ", ".join(appointment.permissions) or appointment.risk_policy
         lead_marker = " [lead]" if _same_appointment(appointment, default_appointment) else ""
         lines.append(f"- {appointment.role} -> {appointment.agent} ({scope}){lead_marker}")
+    lines.extend(("", *_team_readiness_lines(appointments, default_appointment)))
     if default_appointment is None:
         lines.extend(_next_lines(("/roles", "/who <role>", "/appoint <agent> as <role>")))
     else:
@@ -390,6 +392,24 @@ def team_message(
             )
         )
     return _heading_message(lines)
+
+
+def _team_readiness_lines(
+    appointments: tuple[AssignmentProfile, ...],
+    default_appointment: AssignmentProfile | None,
+) -> tuple[str, ...]:
+    missing = []
+    if default_appointment is None:
+        missing.append("lead")
+    if not any(appointment.role == "challenger" for appointment in appointments):
+        missing.append("challenger")
+    if not missing:
+        return ("team readiness: complete",)
+    return (
+        "team readiness: incomplete",
+        f"missing: {', '.join(missing)}",
+        "required: lead + challenger",
+    )
 
 
 def who_message(
@@ -606,6 +626,8 @@ def _project_structural_spans(
                 style=MessageTextStyle.BOLD,
             )
         )
+    elif label_span := _label_value_span(line):
+        spans.append(label_span)
     if not linkable_commands:
         for start, end in _slash_command_ranges(line):
             spans.append(
@@ -624,10 +646,51 @@ def _is_section_heading(stripped: str) -> bool:
     return stripped.endswith(":")
 
 
+def _label_value_span(line: str) -> MessageTextSpan | None:
+    stripped = line.lstrip()
+    if not stripped or stripped.startswith(("- ", "* ", "• ")):
+        return None
+    colon_index = stripped.find(":")
+    if colon_index <= 0 or colon_index > 32:
+        return None
+    label = stripped[:colon_index]
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_ -]*", label):
+        return None
+    if label not in _LABEL_KEYS:
+        return None
+    leading_spaces = len(line) - len(stripped)
+    return MessageTextSpan(
+        offset=leading_spaces,
+        length=colon_index,
+        style=MessageTextStyle.BOLD,
+    )
+
+
 def _slash_command_ranges(line: str) -> tuple[tuple[int, int], ...]:
     return tuple(
         (match.start(), match.end()) for match in re.finditer(r"(?<!\S)/[A-Za-z][\w-]*", line)
     )
+
+
+_LABEL_KEYS = {
+    "agent",
+    "agent_max_concurrent",
+    "agent_title",
+    "missing",
+    "project",
+    "provider",
+    "recommended_appointments",
+    "risk_policy",
+    "role",
+    "role_title",
+    "scope",
+    "seat",
+    "session_policy",
+    "status",
+    "team readiness",
+    "title",
+    "workspace",
+}
 
 
 def _is_bulleted_command_line(line: str) -> bool:

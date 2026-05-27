@@ -7,8 +7,19 @@
 
 ## [Unreleased]
 
+### Fixed
+- `/goal` / Outcome Grader / `/dream` / `/recall` 等 Phase 8 内置命令消息现在统一走 IM rich text renderer,标题、列表、字段 label 和 slash command 能正确格式化。
+- `/dream` 输出从逐条任务日志改为按阻塞/失败原因聚合的 reusable lesson candidates,并显式说明 candidate memory 不会自动注入 prompt。
+- IM rich text renderer 现在会统一规范化模型 Markdown 输出:拆分粘连 heading、渲染 Markdown table 为等宽表格、保留 fenced code block,并通过 Telegram HTML parse mode 展示。
+- `Collaboration requested` 提示改为结构化富文本输出,显示 source / target。
+- IM rich text fallback 现在能正确处理单行 fenced code,例如 ```uv run pytest``` 不再被吞。
+- Telegram native HTML sanitizer 现在会保留 `<pre>` / `<code>` 中的 `<id>` / `<task_id>` 文本占位符,不再因此把整条 native HTML 回退成裸标签文本。
+- quiet heartbeat(`Still running...`)现在只作为临时状态提示展示,不会进入最终 agent 输出缓冲,避免污染 Telegram native HTML 结果。
+
 ### Added
 - 项目立项,北极星三句话确立
+- `/language [en|zh]` agent 回复语言命令:默认英文,可按 IM chat 作用域限制后续 agent 回复语言,不改变内置命令语言。
+- `AICO_PREFER_NATIVE_CHANNEL_FORMAT=true` Telegram native output pilot:agent 可优先输出 Telegram HTML,通过白名单验证后直接发送;验证失败自动回退 rich text。
 - 完整文档体系骨架(README / AGENTS / NORTH_STAR / STATUS / journal 等)
 - Agent 接手协议(AGENTS.md 强制阅读路径)
 - 踩坑录、轮次记录、卡点跟踪三大演化文档
@@ -110,10 +121,33 @@
 - Phase 7 记忆召回升级为可插拔 `MemorySemanticScorer`,默认支持中文长句复述和常见中英项目管理术语别名
 - Phase 7 记忆检索升级为可解释 retrieval contract:新增 `MemoryRetrievalQuery` / `MemoryRetrievalHit`,保留 semantic、scope、recency、confidence、evidence、graph 和 final score。
 - Phase 7 记忆检索支持保守 graph expansion 和 role/task-aware query hints,`/recall` 会展示 final / semantic / scope / graph score 分项。
+- Phase 8 lead 决策记忆基础:新增 `MemoryPurpose` / `MemoryAtom.purpose_tags`,支持 `general_context`、`public_broadcast`、`task_key_progress`、`task_private` 和 `decision_review`;普通检索默认排除 `task_private`,`/recall` 和 Prompt Stack 会展示 purpose。
+- Phase 8 lead decision workflow:决策类 lead/default role 任务会优先召回 `public_broadcast` / `task_key_progress` / `decision_review` 记忆,自动咨询 challenger 和 reviewer,要求 lead 输出固定 decision memo,并写入 `lead_decision_recorded` audit 与 `decision_review` memory。
+- Phase 8 Goal Brief v0:新增 `/goal [role] <objective>` 轻量目标契约;带明确验收/停止/证据 marker 的 `/ask` 会保守附加 `AICO Goal Brief`,并在 `/task` 中展示 goal id、objective 和 acceptance。
+- `AICO_STATE_DB_PATH` / `SQLiteTaskStateStore` 第一切片:task records、task snapshots 和 pending approvals 可写入 SQLite,重启后继续支持 `/tasks`、`/task` 和 `/approve` 的 AICO 业务状态恢复。
+- ADR-0029 Phase 8 Absence Loop:把 actionable inbox、morning handoff、outcome grader、Dream/runbook memory 和 hybrid retrieval 固定为可逐轮验收的老板缺席闭环 sprint 队列。
+- Phase 8 Absence Loop playbook:新增每个 sprint 的直接 IM 验收脚本和防跑偏护栏。
+- `/inbox` actionable 化:新增 `First action`,并把审批、running、失败恢复、handoff、Goal/decision、协作 follow-up 都渲染为可直接执行的下一步命令。
+- `/morning` 手动早报命令:按 active project 汇总 done、blocked、risks、overnight handoffs 和 next actions。
+- Outcome Grader 第一切片:Goal Brief 完成后自动派 tester / reviewer 验收,grader task 会进入 `/task` 和 `/inbox` follow-up。
+- `/dream` Dream/runbook memory 第一切片:从近期项目任务信号生成 reviewable candidate memory,默认不注入 prompt。
+- 本地 hybrid memory scorer:MemoryStore / MemoryRetriever 默认支持 exact phrase、phrase overlap 和 semantic alias fallback。
+- `aico-release-room-demo` 无 token 本地 demo:使用 deterministic fake adapters 跑 Release Room 管理链路,不需要 Telegram Bot Token 或真实 LLM/CLI provider。
+- GitHub PR template 和 good-first-issue issue template,降低公开后外部贡献者参与门槛。
+- Telegram / IM rich text 输出继续打磨:`/agents` 等普通列表会渲染为 `•` 列表,`agent_title:` / `role:` / `adapter:` 等字段 label 左侧会加粗。
+- Core structure cleanup:新增 `OrchestratorTaskFactory` 和 `TaskStateRepository`,让 `Orchestrator` / `TaskBus` 重新低于项目单类尺寸硬约束。
+- 长静默 Adapter 任务 quiet heartbeat:底层 CLI 真实运行但长时间没有 stdout 时,IM 会周期性显示 `Still running...`,并继续保留 `/interrupt` 和 no-output idle timeout 兜底。
+- `/inbox` 当前项目老板收件箱第一切片:聚合待审批、running/failed/interrupted、离线托管、Goal Brief / lead decision 和协作 follow-up,作为老板回来看项目的 IM 入口。
+- CLI Adapter 子进程启动时显式关闭 stdin,避免 Codex 0.125 在非交互任务里等待 inherited stdin 的额外输入而长期无 stdout。
+- CLI Adapter 子进程 stderr 持续后台 drain,避免 Codex 运行日志/进度写满 stderr pipe 后反压阻塞 stdout。
+- `/overnight` 托管工单持久化:配置 `AICO_STATE_DB_PATH` 后,最近托管工单可跨重启恢复。
+- `aico-state` 本地状态库工具:可查看 SQLite schema version / 表行数,也可显式 reset 已知状态表;`AICO_STATE_DB_PATH=true` 会映射到 `.aico/state.db`。
 - Claude/Codex/Cursor/CodeFlicker/Trae/Gemini CLI adapter 支持可配置并发,默认最多 5 个运行中任务;`/agents` 和 `/appoint` 会展示并发与建议任命上限。
 - Feishu webhook runtime:新增 `AICO_CHANNEL=feishu`、`aico-feishu-webhook`、`/healthz` 和默认 `/feishu/events` 事件回调入口,飞书文本事件可进入现有 Orchestrator。
 - Feishu webhook 事件幂等:按 v2 `header.event_id` 或 v1 `uuid` 做本地 TTL 去重,避免平台重试重复触发 AICO 任务。
 - Phase 8 离线托管第一切片:新增 `/overnight <goal>` project-scoped 托管工单,派给当前 lead/default role,并固定早报验收入口 `/daily`、`/tasks`、`/task`。
+- Lead decision team contract 第一阶段:默认角色库新增 `challenger` / Critical Philosopher,项目办公室和 `/team` 展示 team readiness,project lead prompt 增强为可在授权范围内替 boss 做低风险决策。
+- `/overnight` 现在要求当前项目团队至少有 appointed lead 和 challenger;缺 challenger 时会提示 `/appoint <agent> as challenger`,不会派发托管任务。
 - Release Room 主 demo 第一阶段:新增 `examples/release-room` 示例项目、AICO project/team 配置、demo script、录屏 storyboard、`docs/examples/release-room.md` 和 release-room playbook,用于展示 project/team/role/memory/approval/audit/overnight handoff 的完整协作路径。
 - Release Room 主 demo 第二阶段:新增本地 acceptance test 和 `examples/release-room/transcript.md`,用 fake adapters 验证 `/team`、`/remember`、`/ask`、`/approve`、`/overnight`、`/daily`、`/tasks`、`/metrics`、`/audit` 管理链路。
 - Release Room Stage 3 录屏准备:新增 `shot-rhythm.md` 和 `make-gif.sh`,把 Stage 2 transcript 压成 30-60 秒 README GIF 镜头节奏,并用本机 `ffmpeg` 完成 GIF 转换。
@@ -133,6 +167,7 @@
 - Boss summary 中的轻量 Markdown 会转换为 render spans,避免 `**bold**`、反引号和列表标记在 Telegram 中裸露
 - 项目状态命令的 Facts 区域现在会为小节标题和 slash command 生成 render spans,`/blockers` 即使没有 summary 也能展示基础格式
 - 项目状态命令的 Facts 区域现在会把 `- ` / `* ` 规范化为 `• `,并将 `**bold**`、反引号和斜体 Markdown 转为 render spans
+- 流式 provider 输出和内置命令输出会先经过平台无关 rich text renderer,将轻量 Markdown 标题、小节标题、加粗/斜体/代码和 slash command 转成 spans;Telegram 渲染为 HTML,标题前自动留出结构空行。
 - 项目状态命令的 Facts 文档片段现在会把 Markdown heading `#` / `##` / `###` 转为加粗标题,不再裸露井号
 - `/status` 现在会展示 Adapter 状态和最近任务状态
 - 危险任务现在会先进入 `waiting_approval`,批准后才派发给 Adapter
@@ -159,6 +194,7 @@
 - `MemoryRetriever` 现在会沿 `supports` / `derived_from` / `broadcast_to` 扩展一跳同 scope graph 邻居,并把 `role_id` / `agent_id` / `task_kind` 作为检索提示参与排序。
 - `MemoryBroadcastService` 现在可接入 audit log,每次 team broadcast 会记录 `memory_broadcasted` 审计事件和 receipt 详情。
 - 默认 project agent id 现在优先使用 persona 名;同时 project appointment 可在唯一匹配时按 provider 名解析 agent,避免 `codeflicker` / `flicker` 这类 alias 漂移。
+- Codex / Cursor / CodeFlicker / Trae / Gemini optional CLI adapter 默认 no-output idle timeout 从 300 秒放宽到 1800 秒;`AICO_*_OUTPUT_IDLE_TIMEOUT_SECONDS=0` 可禁用自动 idle timeout。
 
 ### Deprecated
 - (无)
@@ -179,6 +215,9 @@
 - 修复 reviewer/Codex 子任务 accepted 后无 stdout 导致 `codex: busy` 无限占用的问题
 - 修复 `/appoint codeflicker as tester` 因默认 agent alias 与 provider/persona 名不一致而返回 `Cannot appoint` 的问题
 - 修复同一 CLI adapter 只能同时执行 1 个任务,导致同一 agent 被任命为 reviewer / tester 后第二个 `/ask` 立即 `Task busy` 的问题
+- 修复 `/ask lead ...` 不能稳定按当前项目 lead/default role 解析的问题。
+- 修复 Adapter 输出先给计划、后续行再写 `@reviewer: ...` 时不能触发 reviewer 子任务的问题,并保留非指令正文展示。
+- 修复 reviewer 输出 `@implementer: reflect (a)-(d) ...` 这类二次协作时 child task 只收到短指令、丢失父输出上下文的问题;协作提示也会优先显示 project assignment role。
 
 ### Security
 - 默认只有任务发起人或配置的额外审批人可以批准 / 拒绝危险任务,未授权尝试会记录 `approval_denied` 审计事件

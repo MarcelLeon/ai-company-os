@@ -10,6 +10,7 @@ from aico.core import (
     InMemoryAuditLog,
     JsonlAuditSink,
     JsonlMemoryStore,
+    LocalHybridMemoryScorer,
     MemoryAtom,
     MemoryBroadcastReceipt,
     MemoryBroadcastService,
@@ -20,6 +21,7 @@ from aico.core import (
     MemoryGovernor,
     MemoryPacket,
     MemoryPacketItem,
+    MemoryPurpose,
     MemoryRetrievalQuery,
     MemoryRetriever,
     MemoryScope,
@@ -52,6 +54,7 @@ def test_memory_atom_requires_evidence_and_scoped_project_context() -> None:
     assert atom.scope.project_id == "aico"
     assert atom.status is MemoryStatus.ACTIVE
     assert atom.sensitivity is MemorySensitivity.INTERNAL
+    assert atom.purpose_tags == (MemoryPurpose.GENERAL_CONTEXT,)
     assert atom.created_at.tzinfo == UTC
 
     with pytest.raises(ValidationError):
@@ -108,6 +111,24 @@ def test_jsonl_memory_store_persists_searches_and_archives(tmp_path: Path) -> No
         MemoryScope.project("aico"),
         include_archived=True,
     ) == (archived,)
+
+
+def test_jsonl_memory_store_persists_memory_purpose_tags(tmp_path: Path) -> None:
+    memory_path = tmp_path / "memory.jsonl"
+    store = JsonlMemoryStore(memory_path)
+    atom = _memory_atom(
+        memory_id="mem-decision-review",
+        claim="Challenger conditionally supports the release plan.",
+        purpose_tags=(MemoryPurpose.DECISION_REVIEW, MemoryPurpose.TASK_KEY_PROGRESS),
+    )
+
+    store.append_atom(atom)
+
+    restored = JsonlMemoryStore(memory_path)
+    assert restored.list_atoms(MemoryScope.project("aico"))[0].purpose_tags == (
+        MemoryPurpose.DECISION_REVIEW,
+        MemoryPurpose.TASK_KEY_PROGRESS,
+    )
 
 
 def test_jsonl_memory_store_persists_edges(tmp_path: Path) -> None:
@@ -278,6 +299,43 @@ def test_memory_retriever_respects_token_budget(tmp_path: Path) -> None:
     )
 
 
+def test_memory_retriever_excludes_task_private_by_default(tmp_path: Path) -> None:
+    store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    public = store.append_atom(
+        _memory_atom(
+            memory_id="mem-public",
+            claim="Lead should reuse public progress memory.",
+            purpose_tags=(MemoryPurpose.TASK_KEY_PROGRESS,),
+        )
+    )
+    private = store.append_atom(
+        _memory_atom(
+            memory_id="mem-private",
+            claim="Private scratchpad for one task.",
+            purpose_tags=(MemoryPurpose.TASK_PRIVATE,),
+        )
+    )
+
+    default_hits = MemoryRetriever(store).retrieve(
+        MemoryRetrievalQuery(
+            scopes=(MemoryScope.project("aico"),),
+            query="memory",
+            top_k=5,
+        )
+    )
+    private_hits = MemoryRetriever(store).retrieve(
+        MemoryRetrievalQuery(
+            scopes=(MemoryScope.project("aico"),),
+            query="scratchpad",
+            allowed_purposes=(MemoryPurpose.TASK_PRIVATE,),
+            top_k=5,
+        )
+    )
+
+    assert [hit.atom for hit in default_hits] == [public]
+    assert [hit.atom for hit in private_hits] == [private]
+
+
 def test_memory_retriever_expands_allowed_graph_neighbors(tmp_path: Path) -> None:
     store = JsonlMemoryStore(tmp_path / "memory.jsonl")
     source = store.append_atom(
@@ -415,6 +473,36 @@ def test_memory_search_supports_bilingual_semantic_aliases(tmp_path: Path) -> No
     assert store.search(MemoryScope.project("aico"), "法务检查") == (atom,)
 
 
+def test_hybrid_memory_scorer_boosts_exact_and_absence_loop_aliases(tmp_path: Path) -> None:
+    store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    handoff = store.append_atom(
+        _memory_atom(
+            memory_id="mem-morning-handoff",
+            claim="Morning handoff must include done, blocked, risks, and next actions.",
+            tags=("absence-loop",),
+        )
+    )
+    dream = store.append_atom(
+        _memory_atom(
+            memory_id="mem-dream-runbook",
+            claim="Dream review records runbook candidates after blocked tasks.",
+            tags=("self-improving",),
+        )
+    )
+
+    assert store.search(MemoryScope.project("aico"), "morning handoff") == (handoff,)
+    hits = MemoryRetriever(store).retrieve(
+        MemoryRetrievalQuery(
+            scopes=(MemoryScope.project("aico"),),
+            query="早报接手",
+            top_k=2,
+        )
+    )
+
+    assert hits[0].atom == handoff
+    assert LocalHybridMemoryScorer().score("记忆复盘", dream) > 0
+
+
 def test_memory_packet_renders_compact_prompt_section() -> None:
     packet = MemoryPacket(
         items=(
@@ -433,7 +521,8 @@ def test_memory_packet_renders_compact_prompt_section() -> None:
     assert packet.render_prompt_section() == "\n".join(
         (
             "Shared memory:",
-            "- [mem-1] Boss prefers agent-driven memory. (confidence: 0.92; scope: boss:wang)",
+            "- [mem-1] Boss prefers agent-driven memory. "
+            "(confidence: 0.92; scope: boss:wang; purpose: general_context)",
             "Citations: mem-1",
         )
     )
@@ -467,6 +556,7 @@ def test_memory_broadcast_creates_team_memory_edge_and_receipt(tmp_path: Path) -
     assert team_atoms[0].source == "memory_broadcast"
     assert team_atoms[0].created_by == "lead-agent"
     assert "broadcast" in team_atoms[0].tags
+    assert MemoryPurpose.PUBLIC_BROADCAST in team_atoms[0].purpose_tags
     assert len(edges) == 1
     assert edges[0].edge_type is MemoryEdgeType.BROADCAST_TO
     assert edges[0].source_memory_id == source.memory_id
@@ -553,6 +643,7 @@ def _memory_atom(
     sensitivity: MemorySensitivity = MemorySensitivity.INTERNAL,
     status: MemoryStatus = MemoryStatus.ACTIVE,
     tags: tuple[str, ...] = (),
+    purpose_tags: tuple[MemoryPurpose, ...] = (MemoryPurpose.GENERAL_CONTEXT,),
 ) -> MemoryAtom:
     return MemoryAtom(
         memory_id=memory_id,
@@ -571,4 +662,5 @@ def _memory_atom(
         sensitivity=sensitivity,
         status=status,
         tags=tags,
+        purpose_tags=purpose_tags,
     )

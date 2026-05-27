@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 
 from aico.channel import IMChannel
-from aico.core.models import ChannelTarget, MessageContent, SentMessage
+from aico.core.message_rendering import rich_text_message
+from aico.core.models import ChannelTarget, MessageNativeFormat, SentMessage
+from aico.core.native_output import agent_output_message
 
 STREAM_MESSAGE_TEXT_LIMIT = 3900
 log = logging.getLogger(__name__)
@@ -21,6 +23,7 @@ class StreamedMessageWriter:
         sent_message: SentMessage,
         *,
         max_text_length: int = STREAM_MESSAGE_TEXT_LIMIT,
+        preferred_format: MessageNativeFormat | None = None,
     ) -> None:
         if max_text_length <= 0:
             raise ValueError("max_text_length must be positive")
@@ -29,6 +32,7 @@ class StreamedMessageWriter:
         self._sent_message = sent_message
         self._max_text_length = max_text_length
         self._current_text = ""
+        self._preferred_format = preferred_format
 
     async def append(self, text: str) -> None:
         remaining = text
@@ -48,16 +52,27 @@ class StreamedMessageWriter:
             remaining = remaining[available:]
             await self._edit_current_message()
 
+    async def show_status(self, text: str) -> None:
+        """Show a transient progress hint without adding it to final output."""
+
+        if self._current_text:
+            return
+        await self._channel.edit_message(
+            self._target,
+            self._sent_message.message_id,
+            rich_text_message(text),
+        )
+
     async def _edit_current_message(self) -> None:
         await self._channel.edit_message(
             self._target,
             self._sent_message.message_id,
-            MessageContent(text=self._current_text),
+            agent_output_message(self._current_text, preferred_format=self._preferred_format),
         )
 
     async def _send_next_message(self, text: str) -> None:
         self._current_text = text
         self._sent_message = await self._channel.send_message(
             self._target,
-            MessageContent(text=text),
+            agent_output_message(text, preferred_format=self._preferred_format),
         )

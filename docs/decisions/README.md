@@ -43,6 +43,11 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0022 | A2A Memory Fabric | Accepted | 2026-05-15 |
 | ADR-0023 | Memory Semantic Retrieval | Accepted | 2026-05-18 |
 | ADR-0024 | Phase 8 Offline Delegation Scope | Accepted | 2026-05-18 |
+| ADR-0025 | Goal Mode Orchestration | Accepted | 2026-05-21 |
+| ADR-0026 | Lead Decision Team Contract | Accepted | 2026-05-21 |
+| ADR-0027 | Memory Purpose Tags | Accepted | 2026-05-21 |
+| ADR-0028 | SQLite Task State Store | Accepted | 2026-05-21 |
+| ADR-0029 | Phase 8 Absence Loop | Accepted | 2026-05-26 |
 
 **状态图例**:
 - `Proposed`(提议中)

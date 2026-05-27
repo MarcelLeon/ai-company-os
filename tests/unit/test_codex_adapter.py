@@ -1,3 +1,4 @@
+from aico.adapter.claude_code import DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
 from aico.adapter.codex import DEFAULT_CODEX_COMMAND, CodexAdapter
 from aico.core import (
     Capability,
@@ -47,7 +48,9 @@ def test_codex_adapter_uses_safe_non_interactive_defaults() -> None:
     adapter = CodexAdapter()
 
     assert adapter.name == "codex"
-    assert adapter._output_idle_timeout_seconds == 300.0  # noqa: SLF001
+    assert (  # noqa: SLF001
+        adapter._output_idle_timeout_seconds == DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
+    )
     assert DEFAULT_CODEX_COMMAND == (
         "codex",
         "--ask-for-approval",

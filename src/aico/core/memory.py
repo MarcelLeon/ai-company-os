@@ -35,6 +35,14 @@ class MemoryStatus(StrEnum):
     SUPERSEDED = "superseded"
 
 
+class MemoryPurpose(StrEnum):
+    GENERAL_CONTEXT = "general_context"
+    PUBLIC_BROADCAST = "public_broadcast"
+    TASK_KEY_PROGRESS = "task_key_progress"
+    TASK_PRIVATE = "task_private"
+    DECISION_REVIEW = "decision_review"
+
+
 class MemoryEdgeType(StrEnum):
     SUPPORTS = "supports"
     CONTRADICTS = "contradicts"
@@ -145,8 +153,15 @@ class MemoryAtom(FrozenModel):
     sensitivity: MemorySensitivity = MemorySensitivity.INTERNAL
     status: MemoryStatus = MemoryStatus.ACTIVE
     tags: tuple[str, ...] = ()
+    purpose_tags: tuple[MemoryPurpose, ...] = (MemoryPurpose.GENERAL_CONTEXT,)
     archived_at: datetime | None = None
     reason: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_purpose_tags(self) -> MemoryAtom:
+        if not self.purpose_tags:
+            raise ValueError("purpose_tags must not be empty")
+        return self
 
     def archived(self, *, reason: str | None = None) -> MemoryAtom:
         return self.model_copy(
@@ -172,6 +187,7 @@ class MemoryPacketItem(FrozenModel):
     confidence: float = Field(ge=0.0, le=1.0)
     scope: MemoryScope
     tags: tuple[str, ...] = ()
+    purpose_tags: tuple[MemoryPurpose, ...] = (MemoryPurpose.GENERAL_CONTEXT,)
 
 
 class MemoryCitation(FrozenModel):
@@ -185,6 +201,7 @@ class MemoryRetrievalQuery(FrozenModel):
     role_id: str | None = None
     agent_id: str | None = None
     task_kind: str | None = None
+    allowed_purposes: tuple[MemoryPurpose, ...] = ()
     top_k: int = Field(default=5, ge=1, le=20)
     max_tokens: int = Field(default=480, ge=32)
 
@@ -217,9 +234,11 @@ class MemoryPacket(FrozenModel):
             return ""
         lines = ["Shared memory:"]
         for item in self.items:
+            purposes = ", ".join(purpose.value for purpose in item.purpose_tags)
             lines.append(
                 f"- [{item.memory_id}] {item.claim} "
-                f"(confidence: {item.confidence:.2f}; scope: {_scope_label(item.scope)})"
+                f"(confidence: {item.confidence:.2f}; scope: {_scope_label(item.scope)}; "
+                f"purpose: {purposes})"
             )
         if self.citations:
             lines.append(
@@ -265,7 +284,7 @@ class JsonlMemoryStore:
         semantic_scorer: MemorySemanticScorer | None = None,
     ) -> None:
         self._path = path
-        self._semantic_scorer = semantic_scorer or LocalSemanticMemoryScorer()
+        self._semantic_scorer = semantic_scorer or LocalHybridMemoryScorer()
         self._atoms: dict[str, MemoryAtom] = {}
         self._edges: list[MemoryEdge] = []
         self._load()
@@ -386,6 +405,7 @@ class MemoryGovernor:
                     confidence=atom.confidence,
                     scope=atom.scope,
                     tags=atom.tags,
+                    purpose_tags=atom.purpose_tags,
                 )
             )
             citations.append(MemoryCitation(memory_id=atom.memory_id, reason="scope=query match"))
@@ -406,7 +426,7 @@ class MemoryRetriever:
         semantic_scorer: MemorySemanticScorer | None = None,
     ) -> None:
         self._store = store
-        self._semantic_scorer = semantic_scorer or LocalSemanticMemoryScorer()
+        self._semantic_scorer = semantic_scorer or LocalHybridMemoryScorer()
 
     def retrieve(
         self,
@@ -445,12 +465,14 @@ class MemoryRetriever:
         governor: MemoryGovernor | None = None,
         top_k: int = 5,
         max_tokens: int = 480,
+        allowed_purposes: tuple[MemoryPurpose, ...] = (),
     ) -> MemoryPacket:
         active_governor = governor or MemoryGovernor()
         hits = self.retrieve(
             MemoryRetrievalQuery(
                 scopes=scopes,
                 query=query,
+                allowed_purposes=allowed_purposes,
                 top_k=top_k,
                 max_tokens=max_tokens,
             ),
@@ -477,6 +499,8 @@ class MemoryRetriever:
                     continue
                 seen.add(atom.memory_id)
                 if not governor.allows(atom):
+                    continue
+                if not _purpose_allowed(atom, retrieval_query.allowed_purposes):
                     continue
                 scoped_atoms[atom.memory_id] = atom
                 if (
@@ -557,6 +581,24 @@ class LocalSemanticMemoryScorer:
         return (query_coverage * 0.75) + (memory_coverage * 0.25)
 
 
+class LocalHybridMemoryScorer:
+    """Local exact-plus-semantic scorer for operator recall commands."""
+
+    def __init__(self, semantic_scorer: MemorySemanticScorer | None = None) -> None:
+        self._semantic_scorer = semantic_scorer or LocalSemanticMemoryScorer()
+
+    def score(self, query: str, atom: MemoryAtom) -> float:
+        normalized_query = _normalize_search(query)
+        if not normalized_query:
+            return 0.0
+        normalized_memory = _normalize_search(_search_text(atom))
+        if normalized_query in normalized_memory:
+            return 1.0
+        phrase_score = _phrase_overlap_score(normalized_query, normalized_memory)
+        semantic_score = self._semantic_scorer.score(query, atom)
+        return min(1.0, max(phrase_score, semantic_score * 0.92))
+
+
 def _packet_from_hits(
     hits: tuple[MemoryRetrievalHit, ...],
     *,
@@ -570,6 +612,7 @@ def _packet_from_hits(
                 confidence=hit.atom.confidence,
                 scope=hit.atom.scope,
                 tags=hit.atom.tags,
+                purpose_tags=hit.atom.purpose_tags,
             )
             for hit in hits
         ),
@@ -712,7 +755,29 @@ def _require_fields(*field_pairs: object) -> None:
 
 
 def _search_text(atom: MemoryAtom) -> str:
-    return f"{atom.claim} {' '.join(atom.tags)} {atom.source}".casefold()
+    purposes = " ".join(purpose.value for purpose in atom.purpose_tags)
+    return f"{atom.claim} {' '.join(atom.tags)} {purposes} {atom.source}".casefold()
+
+
+def _normalize_search(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+def _phrase_overlap_score(query: str, memory_text: str) -> float:
+    query_units = _semantic_units(query)
+    if not query_units:
+        return 0.0
+    memory_units = _semantic_units(memory_text)
+    overlap = query_units & memory_units
+    if not overlap:
+        return 0.0
+    return min(0.95, len(overlap) / len(query_units))
+
+
+def _purpose_allowed(atom: MemoryAtom, allowed_purposes: tuple[MemoryPurpose, ...]) -> bool:
+    if allowed_purposes:
+        return any(purpose in allowed_purposes for purpose in atom.purpose_tags)
+    return MemoryPurpose.TASK_PRIVATE not in atom.purpose_tags
 
 
 def _sensitivity_rank(sensitivity: MemorySensitivity) -> int:
@@ -846,11 +911,17 @@ _SEMANTIC_ALIASES: dict[str, tuple[str, ...]] = {
     "memorypacket": ("memory", "packet", "citation"),
     "progress": ("进度", "阶段", "汇报", "report"),
     "report": ("汇报", "报告", "进度"),
+    "runbook": ("剧本", "手册", "复盘", "dream"),
     "review": ("检查", "评审", "审查", "法务"),
     "risk": ("风险", "卡点", "blocker"),
     "sharing": ("分享", "共享", "对外"),
     "stage": ("阶段", "进度"),
     "status": ("状态", "进度", "汇报"),
+    "dream": ("复盘", "反思", "记忆", "runbook"),
+    "grader": ("验收", "评分", "检查", "outcome"),
+    "handoff": ("交接", "早报", "morning", "接手"),
+    "morning": ("早报", "交接", "handoff", "接手"),
+    "outcome": ("结果", "验收", "评分", "grader"),
     "阶段": ("progress", "stage", "status"),
     "合同": ("contract", "legal", "review"),
     "外部": ("external", "sharing"),
@@ -861,6 +932,14 @@ _SEMANTIC_ALIASES: dict[str, tuple[str, ...]] = {
     "法务": ("legal", "review", "contract"),
     "汇报": ("report", "status", "progress"),
     "状态": ("status", "report"),
+    "结果": ("outcome", "grader", "acceptance"),
+    "记忆": ("memory", "dream", "runbook"),
+    "评分": ("grader", "outcome", "review"),
     "进度": ("progress", "status", "stage"),
+    "交接": ("handoff", "morning", "status"),
+    "反思": ("dream", "runbook", "memory"),
+    "复盘": ("dream", "runbook", "memory"),
+    "接手": ("handoff", "morning"),
+    "早报": ("morning", "handoff", "report"),
     "风险": ("risk", "blocker"),
 }

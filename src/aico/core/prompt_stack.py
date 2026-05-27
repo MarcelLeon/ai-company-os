@@ -21,11 +21,13 @@ def render_appointment_prompt(
     project: ProjectProfile,
     project_role: ProjectRoleProfile | None,
     appointment: AssignmentProfile,
+    is_project_lead: bool = False,
     memory_packet: MemoryPacket | None = None,
 ) -> str:
     sections = [
         _agent_section(agent, appointment),
         _role_section(role, appointment),
+        _lead_section(is_project_lead),
         _project_section(project, project_role),
         _appointment_section(project, appointment),
         _memory_section(memory_packet),
@@ -53,6 +55,25 @@ def _role_section(role: RoleProfile | None, appointment: AssignmentProfile) -> s
     elif role.prompt:
         lines.append(f"Role prompt: {role.prompt}")
     return "\n".join(lines)
+
+
+def _lead_section(is_project_lead: bool) -> str:
+    if not is_project_lead:
+        return ""
+    return "\n".join(
+        (
+            "Lead responsibility:",
+            "- You are the accountable project lead, not only a task executor.",
+            "- Reduce boss cognitive load by making bounded project decisions when "
+            "evidence is enough.",
+            "- Before important decisions, use shared memory and seek objections from "
+            "challenger, reviewer, or other relevant roles.",
+            "- Escalate irreversible, high-risk, public-release, credential, payment, "
+            "or destructive decisions for boss approval.",
+            "- When deciding, return: decision, why, rejected alternatives, evidence "
+            "or memory refs, consulted roles, risks, approval need, and next actions.",
+        )
+    )
 
 
 def _project_section(

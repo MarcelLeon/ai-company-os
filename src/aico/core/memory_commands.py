@@ -8,11 +8,13 @@ from aico.channel import IMChannel
 from aico.core.memory import (
     MemoryAtom,
     MemoryEvidence,
+    MemoryPurpose,
     MemoryRetrievalQuery,
     MemoryRetriever,
     MemoryScope,
     MemoryStore,
 )
+from aico.core.message_rendering import rich_text_message
 from aico.core.models import IncomingMessage, MessageContent
 from aico.core.project_assignment import ProjectAssignmentDirectory, ProjectProfile
 from aico.core.session_commands import session_scope
@@ -63,20 +65,24 @@ class MemoryCommandHandler:
                 confidence=1.0,
                 created_by=message.sender_id,
                 tags=("manual", "project"),
+                purpose_tags=(MemoryPurpose.GENERAL_CONTEXT,),
                 reason="Manual /remember command",
             )
         )
         await self._channel.send_message(
             message.source,
-            MessageContent(
-                text=(
-                    "Memory remembered\n"
-                    f"id: {atom.memory_id}\n"
-                    f"scope: {_scope_label(atom.scope)}\n"
-                    f"project: {project.id}\n\n"
-                    "Next:\n"
-                    "- /recall <query>\n"
-                    f"- /forget {atom.memory_id}"
+            rich_text_message(
+                "\n".join(
+                    (
+                        "# Memory remembered",
+                        f"id: {atom.memory_id}",
+                        f"scope: {_scope_label(atom.scope)}",
+                        f"project: {project.id}",
+                        "",
+                        "Next:",
+                        "- /recall <query>",
+                        f"- /forget {atom.memory_id}",
+                    )
                 )
             ),
         )
@@ -100,13 +106,13 @@ class MemoryCommandHandler:
         if not hits:
             await self._channel.send_message(
                 message.source,
-                MessageContent(
-                    text=f"No memories found for {project.id}.\n\nNext:\n- /remember <fact>"
+                rich_text_message(
+                    f"# No memories found for {project.id}\n\nNext:\n- /remember <fact>"
                 ),
             )
             return
 
-        lines = [f"Memories: {project.id}"]
+        lines = [f"# Memories: {project.id}"]
         if query.strip():
             lines.append(f"query: {query.strip()}")
         for hit in hits:
@@ -115,7 +121,8 @@ class MemoryCommandHandler:
             lines.extend(
                 (
                     f"- {atom.memory_id} | confidence: {atom.confidence:.2f} "
-                    f"| scope: {_scope_label(atom.scope)}",
+                    f"| scope: {_scope_label(atom.scope)} "
+                    f"| purpose: {_purpose_label(atom.purpose_tags)}",
                     f"  {atom.claim}",
                     f"  reason: {hit.reason}",
                     "  score: "
@@ -127,7 +134,7 @@ class MemoryCommandHandler:
                 )
             )
         lines.extend(("", "Next:", "- /remember <fact>", "- /forget <memory_id>"))
-        await self._channel.send_message(message.source, MessageContent(text="\n".join(lines)))
+        await self._channel.send_message(message.source, rich_text_message("\n".join(lines)))
 
     async def handle_forget(self, message: IncomingMessage, memory_id: str) -> None:
         project = await self._active_project_or_reply(message)
@@ -167,8 +174,8 @@ class MemoryCommandHandler:
             return
         await self._channel.send_message(
             message.source,
-            MessageContent(
-                text=f"Memory archived\nid: {atom.memory_id}\nscope: {_scope_label(atom.scope)}"
+            rich_text_message(
+                f"# Memory archived\nid: {atom.memory_id}\nscope: {_scope_label(atom.scope)}"
             ),
         )
 
@@ -200,3 +207,7 @@ class MemoryCommandHandler:
 
 def _scope_label(scope: MemoryScope) -> str:
     return f"{scope.owner_type.value}:{scope.owner_id}"
+
+
+def _purpose_label(purpose_tags: tuple[MemoryPurpose, ...]) -> str:
+    return ",".join(purpose.value for purpose in purpose_tags)

@@ -101,8 +101,10 @@ Current status is tracked in [STATUS.md](STATUS.md). As of the current public pa
   `/metrics`, `/audit`.
 - Shared memory: `/remember`, `/recall`, `/forget`, JSONL persistence, and controlled
   project prompt injection.
-- Offline delegation: `/overnight` work orders exist, but persistence and restart
-  recovery are still in progress.
+- Offline delegation: `/overnight` work orders persist across restart when
+  `AICO_STATE_DB_PATH` is configured.
+- Local state tooling: `aico-state --db <path>` prints SQLite schema version and
+  table counts; `reset --yes` clears known AICO state tables for fast iteration.
 
 ## Security Model
 
@@ -127,6 +129,15 @@ or high-privilege local environments.
 
 ## Quickstart
 
+Want to see the product shape before creating a bot token?
+
+```bash
+env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo
+```
+
+This runs the Release Room flow with deterministic fake adapters, so it does not call
+Telegram, Claude, Codex, or any paid provider.
+
 Requirements:
 
 - macOS or Linux
@@ -146,6 +157,7 @@ export AICO_PERSONA_CONFIG_PATH="config/personas.example.json"
 export AICO_PROJECT_CONFIG_PATH="config/projects.example.json"
 export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
 export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
+export AICO_STATE_DB_PATH="/tmp/aico-state.db"
 
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
@@ -219,9 +231,9 @@ probably too much.
 Near-term work:
 
 - Polish the public Release Room GIF and first-run story.
-- Persist `/overnight` work orders across restart.
+- Add an operator inbox for offline delegation handoff and pending human actions.
 - Finish Feishu production callback smoke testing.
-- Add cleaner public setup docs, PR template, and good first issue list.
+- Add cleaner public setup docs and starter issues for external contributors.
 - Add adapter authoring docs and a no-token local demo path.
 
 See [STATUS.md](STATUS.md) for the live roadmap.

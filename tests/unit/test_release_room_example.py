@@ -27,8 +27,10 @@ def test_release_room_project_config_loads_and_points_to_demo_repo() -> None:
         "implementer",
         "tester",
         "reviewer",
+        "challenger",
         "release-manager",
     }
+    assert directory.missing_required_team_roles("release-room") == ()
 
 
 def test_release_room_demo_repo_contains_project_office_docs() -> None:

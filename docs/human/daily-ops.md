@@ -28,8 +28,10 @@ export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
 export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
 export AICO_LOG_LEVEL="INFO"
 export AICO_LOG_PATH="logs/aico.log"
-# 可选:默认 300 秒。Codex accepted 后无 stdout 会自动失败并释放 busy。
-export AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS=90
+# 可选:默认 1800 秒。设为 0 可禁用 no-output idle timeout。
+export AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS=1800
+# 可选:验证 Telegram native HTML 输出链路,失败会回退 rich text。
+export AICO_PREFER_NATIVE_CHANNEL_FORMAT=false
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11 aico-phase1
 ```
 
@@ -41,12 +43,19 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 
 默认 `AICO_CLAUDE_COMMAND` 使用 `claude -p --output-format text --permission-mode bypassPermissions`。远程场景由 AICO 的 `/approve` 负责审批,避免 Claude Code 在本机再弹出无法通过 Telegram 处理的授权提示。
 
-`AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 默认 300 秒;Codex CLI 进程已 accepted 但一直没有 stdout 时,AICO 会终止该进程并返回 `adapter output idle timeout after 300s`,避免任务长期占用并发槽位。
+`AICO_CODEX_OUTPUT_IDLE_TIMEOUT_SECONDS` 默认 1800 秒。它是 no-output idle guard,不是任务总时长限制;Codex CLI 进程已 accepted 但一直没有 stdout 且超过该阈值时,AICO 会终止该进程并返回 `adapter output idle timeout after <Ns>`,避免任务长期占用并发槽位。设为 `0` 可禁用自动 idle timeout,适合老板不在时允许 agent 长时间工作;仍可用 `/interrupt <task_id>` 远程叫停。
+
+长沉默任务不会再只停留在 `Task accepted`:AICO 会周期性编辑 IM 消息,提示 `Still running: no adapter output for <Ns>` 和 `/task` / `/interrupt` 路径。这个 quiet heartbeat 只是可观察信号,不会算作模型结果,也不会写进 lead decision memo 或 Goal Brief 输出。
 
 `AICO_AUDIT_LOG_PATH` 可省略;指定后,每条审计事件会追加写入 JSONL 文件,同时 `/audit` 仍展示进程内最近事件。
 Round 62 起,启动时也会读取这个 JSONL 文件里的历史审计事件;`/metrics` 会用这些事件重建历史任务指标,因此重启后 24h / 7d 的 done / failed / interrupted 等统计不会直接清空。`/tasks` 仍只展示当前进程内任务。
 
 `AICO_MEMORY_PATH` 可省略;指定后,Phase 7 shared memory 会写入 append-only JSONL,并在 project-scoped task prompt 中自动召回当前项目少量高置信记忆。`/remember` / `/recall` / `/forget` 是纠错、补充、排障和验收入口,不是要求老板日常手动维护记忆。
+
+`AICO_STATE_DB_PATH` 可省略;指定后,task records、task snapshots、pending approval 和 `/overnight` 托管工单会写入本地 SQLite。它用于恢复 AICO 的业务状态,例如重启后继续查看 `/tasks`、`/task <id>`、`/overnight` 或处理仍 pending 的 `/approve`;它不等于恢复已经退出的底层 CLI 子进程。
+开发期可设置 `AICO_STATE_DB_PATH=true`,AICO 会使用 `.aico/state.db`;`false` / `0` / `off` 会视为关闭。使用 `aico-state --db <path>` 查看 schema version 和表行数;需要清空开发期业务状态时,使用 `aico-state --db <path> reset --yes`。
+
+`AICO_PREFER_NATIVE_CHANNEL_FORMAT` 默认关闭。设为 `true` 后,Telegram task 会要求 agent 优先输出 Telegram Bot API HTML 子集;AICO 会先白名单验证 HTML,验证失败自动回退到 rich text renderer。该开关用于 dogfood 模型是否能稳定输出 Channel-native 格式,不要把未经验证的模型 HTML 原样发送给 IM。
 
 ### 启用 Cursor / CodeFlicker / Trae / Gemini 可选 Adapter
 
@@ -57,10 +66,10 @@ export AICO_ENABLE_CURSOR_ADAPTER=true
 export AICO_ENABLE_CODEFLICKER_ADAPTER=true
 export AICO_ENABLE_TRAE_ADAPTER=true
 export AICO_ENABLE_GEMINI_ADAPTER=true
-export AICO_CURSOR_OUTPUT_IDLE_TIMEOUT_SECONDS=90
-export AICO_CODEFLICKER_OUTPUT_IDLE_TIMEOUT_SECONDS=90
-export AICO_TRAE_OUTPUT_IDLE_TIMEOUT_SECONDS=90
-export AICO_GEMINI_OUTPUT_IDLE_TIMEOUT_SECONDS=90
+export AICO_CURSOR_OUTPUT_IDLE_TIMEOUT_SECONDS=1800
+export AICO_CODEFLICKER_OUTPUT_IDLE_TIMEOUT_SECONDS=1800
+export AICO_TRAE_OUTPUT_IDLE_TIMEOUT_SECONDS=1800
+export AICO_GEMINI_OUTPUT_IDLE_TIMEOUT_SECONDS=1800
 ```
 
 默认命令:
@@ -139,6 +148,7 @@ tail -f logs/aico.log
 /help
 /status
 /metrics
+/inbox
 /tasks
 /task <short_task_id>
 /audit
@@ -200,7 +210,9 @@ Adapter 未来若能稳定提供 usage,应记录 `task_usage_recorded` 审计事
 
 没有真实 usage 时不要估算或手填 token/cost;`/metrics` 和 `aico-metrics` 会继续显示 unavailable。
 
-长任务卡住或 Adapter 长时间 busy 时,可先用 `/tasks` 找到最近任务,再用 `/task <short_task_id>` 查看状态和可用动作。running 任务会提示 `/interrupt <short_task_id>`,待审批任务会提示 `/approve <short_task_id>` / `/reject <short_task_id>`。协作任务还会在 `/task` 详情里展示 parent / child trace,可从 implementer 父任务跳到 reviewer 子任务,也可从子任务回看是谁发起。中断示例:`/interrupt 31e559c3`。中断会调用底层 Adapter 的 interrupt 能力,任务状态变为 `interrupted`,并记录审计事件。
+老板回来看当前项目时优先用 `/inbox`。它只读聚合当前 active project 的 pending approvals、running quiet tasks、failed/interrupted tasks、`/overnight` handoff、Goal Brief 和 lead decision follow-up,并给出 `/approve`、`/reject`、`/task`、`/interrupt`、`/daily`、`/audit` 等下一步入口。
+
+长任务卡住或 Adapter 长时间 busy 时,可先用 `/inbox` 或 `/tasks` 找到最近任务,再用 `/task <short_task_id>` 查看状态和可用动作。running 任务会提示 `/interrupt <short_task_id>`,待审批任务会提示 `/approve <short_task_id>` / `/reject <short_task_id>`。协作任务还会在 `/task` 详情里展示 parent / child trace,可从 implementer 父任务跳到 reviewer 子任务,也可从子任务回看是谁发起。中断示例:`/interrupt 31e559c3`。中断会调用底层 Adapter 的 interrupt 能力,任务状态变为 `interrupted`,并记录审计事件。
 
 Codex 默认是 read-only reviewer,不承接写文件 / shell / destructive 任务。这类任务请用 `/claude`;如果误发给 `/codex`,系统会在核心层直接拒绝,不会再进入无效审批。
 
@@ -238,7 +250,7 @@ Project Team / Appointment 命令用于项目办公室语义:
 - `/daily [project]` 查看日报式项目报告,聚合最近 24 小时本地 AICO 状态里的团队、完成项、未完成项、风险和项目文档短片段。顶部会尝试生成 `Boss summary`,下方 `Facts` 保留原始事实并渲染小节标题 / slash command 样式。
 - `/weekly [project]` 查看周报式项目报告,聚合最近 7 天本地 AICO 状态里的团队、完成项、未完成项、风险和项目文档短片段。顶部会尝试生成 `Boss summary`,下方 `Facts` 保留原始事实并渲染小节标题 / slash command 样式。
 - `/overnight <goal>` 创建 Phase 8 离线托管工单,把目标派给当前项目 lead/default role。它不是自动越权执行器;写文件、执行命令或破坏性动作仍会进入 `/approve`。早上用 `/daily <project>`、`/tasks`、`/task <id>` 验收。
-- `/overnight` 不带目标时,展示当前 active project 在本进程内最近的托管工单和早报入口。
+- `/overnight` 不带目标时,展示当前 active project 最近的托管工单和早报入口;配置 `AICO_STATE_DB_PATH` 后,这些工单可跨重启恢复。
 - `/project`、`/team`、`/roles`、`/role <id>` 这类查看命令末尾会给出简短 `Next` 指导命令,帮助顺手进入 brief/team/next/daily/weekly、appoint、ask、lead 等下一步。
 - `/roles [project]` 查看紧凑项目岗位板,默认只展示核心/专家岗位;`/roles all` 展示支持岗位和全部 role。
 - `/role <id>` 查看单个岗位详情,包括 owner、scope、approval 和 risk ladder;若该 role 已任命,可按 Next 提示用 `/appoint <agent> as <role> <scope>` 覆盖 scope。

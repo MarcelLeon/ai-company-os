@@ -16,7 +16,42 @@
 
 ---
 
-## 当前活跃卡点
+## 当前活跃与近期归档卡点
+
+### [B-004] Core orchestration classes exceed project size hard limit
+
+**状态**:🟢 RESOLVED
+**提出于**:Round 106
+**最后更新**:2026-05-21(Round 107)
+**影响**:已不再阻塞公开前工程质量收口;保留归档给后续结构演进参考。
+
+**问题描述**
+项目规范要求单类 < 500 行、单方法 < 100 行。Round 106 扫描结果曾是:
+- `src/aico/core/orchestrator.py`: `Orchestrator` 约 646 行,`_handle_command` 约 103 行。
+- `src/aico/core/task_bus.py`: `TaskBus` 约 566 行。
+
+Round 106 为了落地 SQLite task state store 第一切片,在 `TaskBus` 中接入了可选
+`TaskStateStore`,让该类尺寸进一步超过硬限制。功能已由测试覆盖,但结构上需要后续拆分。
+
+**已尝试的方向**
+- 过去已将 project commands、role commands、status commands、goal brief、lead decision、
+  offline delegation 等流程逐步拆出 `Orchestrator`。
+- Round 106 先选择最小持久化切片,未同时进行大规模 `TaskBus` 拆分,避免把状态恢复和结构重构混在一轮。
+
+**解决结果**
+- Round 107 新增 `OrchestratorTaskFactory`,把 project/session/memory task 构造从 `Orchestrator` 移出。
+- Round 107 新增 `TaskStateRepository`,把 task records、snapshots、approvals 和 adapter mapping 从 `TaskBus` 移出。
+- 模块级命令分发拆成 project / role / directory / memory helper,单函数不再超过 100 行。
+- 结构扫描结果:`Orchestrator` 480 行,`TaskBus` 448 行,无单类 >=500 行或单函数 >=100 行。
+- 验证通过:`pytest` 289 passed / 1 skipped,`ruff check .`,`ruff format --check .`,`mypy src tests`,`git diff --check`。
+
+**当前 workaround**
+- 无。后续若继续扩展 TaskBus,优先拆 approval coordinator / adapter dispatch service,不要再把状态恢复逻辑塞回 TaskBus。
+
+**相关链接**
+- ROUNDS Round 106
+- ROUNDS Round 107
+- ADR-0028
 
 ### [B-003] Release Room Stage 3 真实 provider 输出不适合作为 public GIF
 

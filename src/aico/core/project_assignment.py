@@ -18,6 +18,9 @@ class RoleScope(StrEnum):
     AUDIT = "audit"
 
 
+REQUIRED_CHALLENGER_ROLE_ID = "challenger"
+
+
 class CompanyAgentProfile(FrozenModel):
     id: str = Field(min_length=1)
     provider: str = Field(min_length=1)
@@ -188,6 +191,19 @@ class ProjectAssignmentDirectory:
         project_id: str,
         role_id: str,
     ) -> AssignmentProfile | None:
+        appointment = self._appointment_for_role_exact(project_id, role_id)
+        if appointment is not None:
+            return appointment
+        normalized_role = _normalize(role_id)
+        if normalized_role in {"lead", "default"}:
+            return self.default_assignment(project_id)
+        return None
+
+    def _appointment_for_role_exact(
+        self,
+        project_id: str,
+        role_id: str,
+    ) -> AssignmentProfile | None:
         normalized_role = _normalize(role_id)
         for appointment in self.appointments(project_id):
             if _normalize(appointment.role) == normalized_role:
@@ -200,13 +216,24 @@ class ProjectAssignmentDirectory:
             return None
         default_role = self._default_roles.get(project.id)
         if default_role:
-            appointment = self.appointment_for_role(project.id, default_role)
+            appointment = self._appointment_for_role_exact(project.id, default_role)
             if appointment is not None:
                 return appointment
         if project.default_assignment:
             return self.assignment(project.default_assignment)
         appointments = self.appointments(project_id)
         return appointments[0] if appointments else None
+
+    def missing_required_team_roles(self, project_id: str) -> tuple[str, ...]:
+        project = self.project(project_id)
+        if project is None:
+            return ()
+        missing: list[str] = []
+        if self.default_assignment(project.id) is None:
+            missing.append("lead")
+        if self.appointment_for_role(project.id, REQUIRED_CHALLENGER_ROLE_ID) is None:
+            missing.append(REQUIRED_CHALLENGER_ROLE_ID)
+        return tuple(missing)
 
     def set_default_role(self, project_id: str, role_id: str) -> AssignmentProfile | None:
         project = self.project(project_id)
@@ -344,7 +371,7 @@ class ProjectAssignmentDirectory:
         return None
 
     def _store_unique_appointment(self, appointment: AssignmentProfile) -> None:
-        existing = self.appointment_for_role(appointment.project, appointment.role)
+        existing = self._appointment_for_role_exact(appointment.project, appointment.role)
         if existing is not None and existing.seat != appointment.seat:
             self._appointments_by_seat.pop(existing.seat, None)
             self._appointment_order = [
