@@ -18,6 +18,7 @@
 
 ### Added
 - 项目立项,北极星三句话确立
+- `/experience review|list|promote|archive` lead 内务命令:管理 Dream 生成的 candidate experience 晋升 / 列表 / 失效;active experience 会按 role 自动注入 role system prompt。
 - `/language [en|zh]` agent 回复语言命令:默认英文,可按 IM chat 作用域限制后续 agent 回复语言,不改变内置命令语言。
 - `AICO_PREFER_NATIVE_CHANNEL_FORMAT=true` Telegram native output pilot:agent 可优先输出 Telegram HTML,通过白名单验证后直接发送;验证失败自动回退 rich text。
 - 完整文档体系骨架(README / AGENTS / NORTH_STAR / STATUS / journal 等)

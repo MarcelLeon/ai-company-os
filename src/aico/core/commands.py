@@ -53,6 +53,7 @@ class CommandName(StrEnum):
     APPROVE = "approve"
     REJECT = "reject"
     INTERRUPT = "interrupt"
+    EXPERIENCE = "experience"
 
 
 @dataclass(frozen=True)
@@ -130,6 +131,7 @@ def help_text() -> str:
         "/weekly [project] - show a weekly local project report\n"
         "/overnight <goal> - delegate an offline project goal to the current lead\n"
         "/dream - record reviewable runbook memory candidates from recent project signals\n"
+        "/experience review|list|promote|archive - lead-internal experience lifecycle\n"
         "/goal [role] <objective> - attach a verifiable goal brief to project work\n"
         "/roles [project|all] - show compact role board; add all for hidden roles\n"
         "/role <id> - show one role's scope and approval policy\n"

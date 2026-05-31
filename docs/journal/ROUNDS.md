@@ -6225,3 +6225,54 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - 新增 `docs/decisions/0030-unified-event-index.md`(Accepted)。
 - 新增 PITFALL P-033。
 - 不动 BLOCKERS / CHANGELOG(用户暂时看不见 trace_id;A2 `/why` 落地后再更 CHANGELOG)。
+
+---
+
+## Round 130 — 2026-05-31 — Claude
+
+### 输入
+- 接 Round 129 A1 完成。用户授权"连续跑剩余 7 sprint"。
+- 本轮聚焦 Sprint M2:`/experience` 命令 + PromptStack 加 ExperienceLayer。
+
+### 思考与讨论
+- 候选 A:experience 另起独立 `ExperienceStore` → ❌ 复用现有 scope / sensitivity / audit 治理代价过高,违反 §3.1 "最小扩展" 原则。
+- 候选 B:experience 通过 `MemoryGovernor` 自动召回升权 → ❌ retrieval 语义和 experience 注入语义完全不同(experience 按 role + lesson,fact 按 query semantic match),揉一起会让 debug 和治理混乱。
+- 候选 C:experience 共用 MemoryAtom + 走独立 `_experience_section` 注入 → ✅ **选定**:存储复用 + 注入解耦 + 两段在 prompt_stack 分明渲染。
+- experience 召回是否要带 trigger 文本匹配 → ❌ 本 sprint 不做,只按 role 过滤(trigger 字段已存但暂不参与召回);留作精细化未来。
+- 是否在 M2 顺手做 `/undo promote` → ❌ 留 A2 sprint。
+- M3 grader 反向回写要的 task metadata `aico.injected_experience_ids` → ✅ **M2 必须写**(prompt 装配时把注入的 memory_ids 落到 task metadata),这是 M3 的硬前置,不算扩范围。
+
+### 产出
+- `src/aico/core/memory.py`:`MemoryStore` Protocol + `JsonlMemoryStore` 加 `promote_experience` / `list_experiences`;promote 把 status 改为 ACTIVE,merge 老 applies_to/triggers 与新值。
+- `src/aico/core/prompt_stack.py`:`render_appointment_prompt` 新增 `experiences=()` 参数 + `_experience_section`;放在 memory section 后、runtime section 前。
+- `src/aico/core/orchestrator_task_factory.py`:`task_for_assignment` 装配前调 `_experiences_for_assignment`,装配后调 `_task_with_injected_experiences` 把 memory_ids 写到 metadata `aico.injected_experience_ids`;新增公开常量 `INJECTED_EXPERIENCE_IDS_KEY` 供 M3 使用。
+- 新增 `src/aico/core/experience_commands.py`(< 280 行):`ExperienceCommandHandler` 处理 review/list/promote/archive 四种 subcommand。
+- `src/aico/core/commands.py`:CommandName 加 EXPERIENCE,help 加一行。
+- `src/aico/core/orchestrator.py`:导入 ExperienceCommandHandler 并在 dream_commands 之后实例化,命令分发加一行(Orchestrator 主体仅 +5 行)。
+- 新增 `docs/decisions/0031-experience-as-injectable-memory.md`(Accepted)。
+- 新增测试:`tests/unit/test_experience_commands.py`(5 用例)、`tests/unit/test_prompt_stack_experience.py`(3 用例);`tests/unit/test_orchestrator.py` 加一个端到端 `test_orchestrator_promoted_experience_injects_into_role_prompt`(dream → promote → /ask → 验证 payload + metadata)。
+- CHANGELOG.md 加 `/experience` 命令说明。
+- `boss-first-grounding.md` §6 表格 M2 行打 ✅ Round 130。
+
+### 验证结果
+- `uv run pytest`:**347 passed / 1 skipped**(原 338 + 5 experience + 3 prompt + 1 orchestrator E2E = 347)。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:123 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 118 source files。
+
+### 关键决策
+- 🔒 **决策 1**:experience 共用 `MemoryAtom` 存储,仅通过 `kind` 字段区分;retrieval/governor 链路只看 fact,experience 注入走独立通道。
+- 🔒 **决策 2**:`/experience` 严格归 **lead 内务**,boss-only 6 个命令组不变。NORTH_STAR 第一句"像管理团队"——真实老板不审"经验晋升"。
+- 🔒 **决策 3**:M2 装配 prompt 时主动把 `aico.injected_experience_ids` 写到 task metadata。这是 M3 grader 反向回写的硬前置,不算扩范围。
+- 🔒 **决策 4**:experience 召回本 sprint **只按 role 过滤**,trigger keys 字段已存但暂不参与召回。这是 ADR-0031 明确边界,后续精细化再扩。
+
+### 留给下一轮
+- Sprint M3:Outcome Grader 输出解析 `verdict: pass|partial|fail` + 通过 `aico.injected_experience_ids` 反向回写 `confidence` / `verdict_hits` / `verdict_misses`。
+- M3 完成后可启动 A2(`/undo` + `/why`)和 V1(aico-view)。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 130;Phase 8 进度新增 Sprint M2 ✅ 行。
+- `docs/architecture/boss-first-grounding.md` §6 M2 行打 ✅ 引用 Round 130。
+- 新增 `docs/decisions/0031-experience-as-injectable-memory.md`(Accepted)。
+- CHANGELOG.md 加 `/experience` 说明。
+- 不动 PITFALLS / BLOCKERS。

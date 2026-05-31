@@ -1748,6 +1748,53 @@ async def test_orchestrator_dream_writes_reviewable_candidate_memory(tmp_path: P
     assert atoms[0].tags == ("dream", "runbook-candidate")
 
 
+async def test_orchestrator_promoted_experience_injects_into_role_prompt(tmp_path: Path) -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    bus = TaskBus(adapter)
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=bus,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await bus.submit(
+        _project_task(
+            "task-approval-promote",
+            target_persona="implementer",
+            payload="update docs",
+        )
+    )
+    await orchestrator.handle_incoming(_incoming_message(text="/dream", mentions=()))
+    candidate = memory_store.list_atoms(MemoryScope.project("aico"))[0]
+    await orchestrator.handle_incoming(
+        _incoming_message(
+            text=f"/experience promote {candidate.memory_id} as implementer",
+            mentions=(),
+        )
+    )
+    adapter.received_tasks.clear()
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/ask implementer ship it", mentions=())
+    )
+
+    assert adapter.received_tasks, "implementer task should have been dispatched"
+    payload = adapter.received_tasks[-1].payload
+    assert "Reusable experience (promoted lessons):" in payload
+    assert candidate.memory_id in payload
+    injected_ids = _metadata_value(
+        adapter.received_tasks[-1],
+        "aico.injected_experience_ids",
+    )
+    assert injected_ids is not None
+    assert candidate.memory_id in injected_ids
+
+
 async def test_orchestrator_restores_overnight_delegations_from_sqlite(
     tmp_path: Path,
 ) -> None:

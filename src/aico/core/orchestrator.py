@@ -24,6 +24,7 @@ from aico.core.command_messages import (
 )
 from aico.core.commands import Command, CommandName, help_text, parse_command, reject_parts
 from aico.core.dream import DreamCommandHandler
+from aico.core.experience_commands import ExperienceCommandHandler
 from aico.core.goal_brief_commands import GoalBriefCommandHandler
 from aico.core.inbox import inbox_message
 from aico.core.language import (
@@ -151,6 +152,11 @@ class Orchestrator:
             project_directory=self._project_directory,
             memory_store=self._memory_store,
             task_bus=self._task_bus,
+        )
+        self._experience_commands = ExperienceCommandHandler(
+            channel=self._channel,
+            project_directory=self._project_directory,
+            memory_store=self._memory_store,
         )
         self._offline_delegations = OfflineDelegationCommandHandler(
             channel=self._channel,
@@ -674,6 +680,8 @@ async def _handle_command(
         await orchestrator._offline_delegations.handle_overnight(message, command.payload)
     elif command.name is CommandName.DREAM:
         await orchestrator._dream_commands.handle_dream(message)
+    elif command.name is CommandName.EXPERIENCE:
+        await orchestrator._experience_commands.handle_experience(message, command.payload)
     elif command.name is CommandName.GOAL:
         await orchestrator._goal_briefs.handle_goal(message, command.payload)
     elif command.name in _PROJECT_ROLE_COMMANDS:

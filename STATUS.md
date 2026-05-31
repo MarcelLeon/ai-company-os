@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-05-31
-**当前轮次**:Round 129(Sprint A1 — Unified Event Index + trace_id)
+**当前轮次**:Round 130(Sprint M2 — Experience commands + prompt injection)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -294,6 +294,7 @@ AICO 的产品边界是 absence-first:
 - [ ] 早报自动生成或定时推送
 - [x] Sprint M1 — MemoryAtom 加 `kind=fact|experience` + `ExperienceMeta`;Dream 输出改为 candidate experience(Round 128)。
 - [x] Sprint A1 — AuditEvent/Task/MemoryAtom 增加 `trace_id`;新增 `UnifiedEventIndex` 派生只读层;ADR-0030(Round 129)。
+- [x] Sprint M2 — `/experience review|list|promote|archive` lead 内务命令;`prompt_stack` 加 ExperienceLayer;task metadata 写出 `aico.injected_experience_ids`;ADR-0031(Round 130)。
 
 ### 开源 Demo 进度
 
@@ -307,6 +308,18 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 130**(2026-05-31,Claude — Sprint M2):
+- 落地 boss-first-grounding §6 Sprint M2:`/experience` 命令 + ExperienceLayer prompt 注入。
+- `MemoryStore` Protocol 加 `promote_experience(memory_id, *, applies_to, triggers)` + `list_experiences(scope, *, role_id, trigger_keys, statuses)`;`JsonlMemoryStore` 实现完整。
+- `prompt_stack.py` 增加 `_experience_section`,在 `_memory_section` 后、`_runtime_section` 前;形成"事实 → 经验 → 任务"认知链。
+- `orchestrator_task_factory.py`:`task_for_assignment` 装配前调 `list_experiences(role_id=assignment.role)`,装配后把 memory_ids 写到 task metadata key `aico.injected_experience_ids`(M3 grader 反向回写的前置)。
+- 新增 `experience_commands.py` ExperienceCommandHandler:`review`(列 candidate)/`list [role]`(列 active)/`promote <id> [as <role,role>]`(candidate → active 并记录 applies_to)/`archive <id>`(active → archived)。
+- 关键边界:严格 lead 内务,boss-first 命令组不包含 `/experience`;experience 与 fact 共用存储但走独立注入通道(避免污染 retrieval governance)。
+- 新增 ADR-0031 `Experience as injectable memory`(Accepted)。
+- 验证通过:`uv run pytest` **347 passed / 1 skipped**;`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`。
+- CHANGELOG 加 `/experience` 命令说明。
+- 在 `docs/architecture/boss-first-grounding.md` §6 表格给 M2 标 ✅ 引用 Round 130。
 
 **Round 129**(2026-05-31,Claude — Sprint A1):
 - 落地 boss-first-grounding §6 路线图 Sprint A1:Audit + trace_id + Unified Event Index。

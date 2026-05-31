@@ -13,8 +13,8 @@ from aico.core.agent_session import (
     provider_session_from_task,
     task_with_provider_session,
 )
-from aico.core.memory import MemoryPacket, MemoryRetriever, MemoryScope, MemoryStore
-from aico.core.models import IncomingMessage, Task
+from aico.core.memory import MemoryAtom, MemoryPacket, MemoryRetriever, MemoryScope, MemoryStore
+from aico.core.models import IncomingMessage, MetadataEntry, Task
 from aico.core.project_assignment import (
     AssignmentProfile,
     ProjectAssignmentDirectory,
@@ -95,6 +95,11 @@ class OrchestratorTaskFactory:
             target_agent,
             message.content.text.strip() if payload is None else payload,
         )
+        experiences = self._experiences_for_assignment(
+            project_id=project.id,
+            assignment=assignment,
+            query=task.payload,
+        )
         task = task.model_copy(
             update={
                 "payload": render_appointment_prompt(
@@ -119,9 +124,12 @@ class OrchestratorTaskFactory:
                         assignment=assignment,
                         query=task.payload,
                     ),
+                    experiences=experiences,
                 )
             }
         )
+        if experiences:
+            task = _task_with_injected_experiences(task, experiences)
         task = task_with_assignment_context(task, project=project, assignment=assignment)
         session = self._ensure_assignment_session(assignment, target_agent, project.repo)
         if session.provider_ref is not None:
@@ -175,6 +183,21 @@ class OrchestratorTaskFactory:
         packet = MemoryRetriever(self._memory_store).retrieve_packet(scopes=scopes, query=query)
         return packet if packet.items else None
 
+    def _experiences_for_assignment(
+        self,
+        *,
+        project_id: str,
+        assignment: AssignmentProfile,
+        query: str,
+    ) -> tuple[MemoryAtom, ...]:
+        del query
+        if self._memory_store is None:
+            return ()
+        return self._memory_store.list_experiences(
+            MemoryScope.project(project_id),
+            role_id=assignment.role,
+        )
+
     def _ensure_assignment_session(
         self,
         assignment: AssignmentProfile,
@@ -215,3 +238,24 @@ def _is_same_assignment(
     right: AssignmentProfile | None,
 ) -> bool:
     return right is not None and left.seat == right.seat
+
+
+INJECTED_EXPERIENCE_IDS_KEY = "aico.injected_experience_ids"
+
+
+def _task_with_injected_experiences(
+    task: Task,
+    experiences: tuple[MemoryAtom, ...],
+) -> Task:
+    if not experiences:
+        return task
+    joined = ",".join(atom.memory_id for atom in experiences)
+    metadata = tuple(entry for entry in task.metadata if entry.key != INJECTED_EXPERIENCE_IDS_KEY)
+    return task.model_copy(
+        update={
+            "metadata": (
+                *metadata,
+                MetadataEntry(key=INJECTED_EXPERIENCE_IDS_KEY, value=joined),
+            )
+        }
+    )

@@ -291,6 +291,23 @@ class MemoryStore(Protocol):
 
     def archive(self, memory_id: str, *, reason: str | None = None) -> MemoryAtom: ...
 
+    def promote_experience(
+        self,
+        memory_id: str,
+        *,
+        applies_to: tuple[str, ...] = (),
+        triggers: tuple[str, ...] = (),
+    ) -> MemoryAtom: ...
+
+    def list_experiences(
+        self,
+        scope: MemoryScope,
+        *,
+        role_id: str | None = None,
+        trigger_keys: tuple[str, ...] = (),
+        statuses: tuple[MemoryStatus, ...] = (MemoryStatus.ACTIVE,),
+    ) -> tuple[MemoryAtom, ...]: ...
+
 
 class MemorySemanticScorer(Protocol):
     """Score whether a query is semantically relevant to a memory atom."""
@@ -360,6 +377,67 @@ class JsonlMemoryStore:
             raise KeyError(f"Unknown memory id: {memory_id}")
         archived = atom.archived(reason=reason)
         return self.append_atom(archived)
+
+    def promote_experience(
+        self,
+        memory_id: str,
+        *,
+        applies_to: tuple[str, ...] = (),
+        triggers: tuple[str, ...] = (),
+    ) -> MemoryAtom:
+        atom = self._atoms.get(memory_id)
+        if atom is None:
+            raise KeyError(f"Unknown memory id: {memory_id}")
+        if atom.kind is not MemoryKind.EXPERIENCE:
+            raise ValueError(
+                f"Cannot promote memory_id={memory_id}: kind={atom.kind.value}, expected experience"
+            )
+        existing = atom.experience or ExperienceMeta()
+        merged_applies = applies_to or existing.applies_to
+        merged_triggers = (
+            tuple(dict.fromkeys((*existing.triggers, *triggers))) if triggers else existing.triggers
+        )
+        promoted = atom.model_copy(
+            update={
+                "status": MemoryStatus.ACTIVE,
+                "experience": existing.model_copy(
+                    update={
+                        "applies_to": merged_applies,
+                        "triggers": merged_triggers,
+                    }
+                ),
+            }
+        )
+        return self.append_atom(promoted)
+
+    def list_experiences(
+        self,
+        scope: MemoryScope,
+        *,
+        role_id: str | None = None,
+        trigger_keys: tuple[str, ...] = (),
+        statuses: tuple[MemoryStatus, ...] = (MemoryStatus.ACTIVE,),
+    ) -> tuple[MemoryAtom, ...]:
+        triggers_set = set(trigger_keys)
+        status_set = set(statuses)
+        matches: list[MemoryAtom] = []
+        for atom in self._atoms.values():
+            if atom.kind is not MemoryKind.EXPERIENCE:
+                continue
+            if atom.experience is None:
+                continue
+            if atom.status not in status_set:
+                continue
+            if not atom.scope.matches(scope):
+                continue
+            if role_id is not None and atom.experience.applies_to:
+                if role_id not in atom.experience.applies_to:
+                    continue
+            if triggers_set and atom.experience.triggers:
+                if not (triggers_set & set(atom.experience.triggers)):
+                    continue
+            matches.append(atom)
+        return tuple(sorted(matches, key=lambda atom: (-atom.confidence, atom.created_at)))
 
     def list_edges(self, source_memory_id: str | None = None) -> tuple[MemoryEdge, ...]:
         if source_memory_id is None:

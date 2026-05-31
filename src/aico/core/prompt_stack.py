@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aico.core.memory import MemoryPacket
+from aico.core.memory import MemoryAtom, MemoryPacket
 from aico.core.models import Task
 from aico.core.project_assignment import (
     AssignmentProfile,
@@ -23,6 +23,7 @@ def render_appointment_prompt(
     appointment: AssignmentProfile,
     is_project_lead: bool = False,
     memory_packet: MemoryPacket | None = None,
+    experiences: tuple[MemoryAtom, ...] = (),
 ) -> str:
     sections = [
         _agent_section(agent, appointment),
@@ -31,6 +32,7 @@ def render_appointment_prompt(
         _project_section(project, project_role),
         _appointment_section(project, appointment),
         _memory_section(memory_packet),
+        _experience_section(experiences),
         _runtime_section(task),
     ]
     return "\n\n".join(section for section in sections if section)
@@ -122,6 +124,20 @@ def _memory_section(memory_packet: MemoryPacket | None) -> str:
     if memory_packet is None:
         return ""
     return memory_packet.render_prompt_section()
+
+
+def _experience_section(experiences: tuple[MemoryAtom, ...]) -> str:
+    if not experiences:
+        return ""
+    lines = ["Reusable experience (promoted lessons):"]
+    for atom in experiences:
+        triggers = ""
+        if atom.experience is not None and atom.experience.triggers:
+            triggers = f" [triggers: {', '.join(atom.experience.triggers)}]"
+        lines.append(
+            f"- [{atom.memory_id}] {atom.claim} (confidence: {atom.confidence:.2f}){triggers}"
+        )
+    return "\n".join(lines)
 
 
 def _runtime_section(task: Task) -> str:
