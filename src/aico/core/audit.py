@@ -65,6 +65,7 @@ class InMemoryAuditLog:
         adapter_name: str | None = None,
         risk_level: RiskLevel = RiskLevel.READ_ONLY,
         detail: str | None = None,
+        trace_id: str | None = None,
     ) -> AuditEvent:
         return self.record_event(
             event_type,
@@ -74,6 +75,7 @@ class InMemoryAuditLog:
             adapter_name=adapter_name,
             risk_level=risk_level,
             detail=detail,
+            trace_id=trace_id or task.trace_id or task.task_id,
         )
 
     def record_event(
@@ -86,6 +88,7 @@ class InMemoryAuditLog:
         adapter_name: str | None = None,
         risk_level: RiskLevel = RiskLevel.READ_ONLY,
         detail: str | None = None,
+        trace_id: str | None = None,
     ) -> AuditEvent:
         event = AuditEvent(
             event_id=self._event_id_factory(),
@@ -96,6 +99,7 @@ class InMemoryAuditLog:
             adapter_name=adapter_name,
             risk_level=risk_level,
             detail=detail,
+            trace_id=trace_id or task_id,
         )
         self._events.append(event)
         for sink in self._sinks:

@@ -6174,3 +6174,54 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - `STATUS.md` 当前轮次更新为 Round 128;Phase 8 进度新增 Sprint M1 ✅ 行。
 - `docs/architecture/boss-first-grounding.md` §6 M1 行打 ✅ 引用 Round 128。
 - 不动 PITFALLS / BLOCKERS / CHANGELOG / ADR。
+
+---
+
+## Round 129 — 2026-05-31 — Claude
+
+### 输入
+- 接 Round 128 M1 完成后,按用户在 Round 127 会话中确认的"本会话只跑 M1 + A1(数据层第一波)"安排,落地 boss-first-grounding §6 Sprint A1。
+- 设计来源:`docs/architecture/boss-first-grounding.md` §3.2 Audit + Rollback 与 §3.3 aico-view 共同依赖一个跨源 trace 视图。
+
+### 思考与讨论
+- 候选 A:把 audit / memory / task 三套真相合并到统一表 → ❌ **否决**:推翻 ADR-0008 / 0020-0023 / 0028 三套已稳定的持久化设计,改动面太大,违反"不动现有真相源"。
+- 候选 B:三源都加 `trace_id`,在每个查询调用方做 ad-hoc 跨源拼接 → ❌ **否决**:违反 DRY,后续 A2 `/why` 和 V1 aico-view 重复实现两遍;还会让边界悄悄漂移。
+- 候选 C:三源都加 `trace_id`,新增 `UnifiedEventIndex` 派生只读层 → ✅ **选定**:真相零迁移,聚合逻辑集中,A2/V1 直接复用。
+- audit 调用方是否要手动传 trace_id → ❌ **否决**:决定让 `audit.record(...)` 自动 `task.trace_id or task.task_id` fallback,**Task Bus 21 处 audit 调用一处都不用改**,极大降低 sprint 风险。
+- 子任务是否需要显式继承 trace_id → ❌ 不需要:全项目 12+ 处 `task.model_copy(update=...)` 已经自动保留所有字段,**继承是免费的**。例外是 Grader follow-up(它创建的是新 task,trace 不继承),记入 ADR-0030 留给 M3 处理。
+- JSONL 双向兼容 → ❌ **不做**:`FrozenModel` 是 `extra="forbid"`,强约束有意义;反向兼容代价大且会让协议层失去强约束,直接接受单向升级门并写入 PITFALL P-033。
+
+### 产出
+- `src/aico/core/models.py`:`AuditEvent`、`Task` 增加 `trace_id: str | None = None`。
+- `src/aico/core/memory.py`:`MemoryAtom` 增加 `trace_id: str | None = None`。
+- `src/aico/core/audit.py`:`record(...)` 与 `record_event(...)` 接受可选 `trace_id`,缺省时从 `task.trace_id || task.task_id` 兜底。
+- 新增 `src/aico/core/unified_event.py`:`UnifiedEvent` dataclass、`UnifiedEventSource` enum、`UnifiedEventIndex` Protocol、`InMemoryUnifiedEventIndex` 实现、`short_event_id` / `short_memory_id` / `short_trace_id`。
+- `src/aico/core/__init__.py`:导出新增符号并加入 `__all__`。
+- 新增 `tests/unit/test_unified_event.py`(3 用例)、`tests/unit/test_audit.py` 追加 3 用例、`tests/unit/test_task_bus.py` 追加 2 用例。
+- 新增 ADR-0030 `Unified Event Index — read-only cross-source trace view`,Accepted。
+- 新增 PITFALL P-033 "Memory/Audit JSONL 升级是单向门",PITFALLS 索引增加"持久化与 schema 兼容"分类。
+- `docs/architecture/boss-first-grounding.md` §6 表格 A1 行打 ✅ Round 129。
+
+### 验证结果
+- `uv run pytest`:**338 passed / 1 skipped**(预期 330 + 3 unified_event + 3 audit + 2 task_bus = 338,数对)。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:120 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 115 source files。
+
+### 关键决策
+- 🔒 **决策 1**:`UnifiedEventIndex` 永远是派生只读层,**不拥有真相**;真相仍归 audit JSONL / memory JSONL / SQLite task store。这条写进 ADR-0030 §"关键边界 #1",防止后人误把它当主存储。
+- 🔒 **决策 2**:`audit.record(...)` 自动做 trace_id fallback,避免在 21 处 audit 调用点逐个手动传参——**最小切面、最大效果**。
+- 🔒 **决策 3**:Grader follow-up 的 trace_id 暂不接到 graded_task,留 M3 处理;在 ADR-0030 显式标出,避免后人困惑。
+- 🔒 **决策 4**:不引入双向 JSONL 兼容,接受单向升级门,记入 P-033,提醒用户升级前备份。
+
+### 留给下一轮
+- 下一会话可启动 Sprint M2(`/experience` 命令 + PromptStack ExperienceLayer),或 Sprint A2(`/undo` + `/why` + inbox/morning timeline 摘要)。两者前置都已满足(M1+A1 完成)。
+- M2 实施时,要在装配 prompt 后把"实际注入的 experience memory_ids"写到 task metadata(`aico.injected_experience_ids`),为 M3 grader verdict 回写做准备(这是 M3 的必要前置,M2 计划里已经标了 ⚠️)。
+- A2 实施前,要先决定 grader follow-up 的 trace_id 是 sprint A2 顺手做,还是仍留 M3。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 129;Phase 8 进度新增 Sprint A1 ✅ 行。
+- `docs/architecture/boss-first-grounding.md` §6 A1 行打 ✅ 引用 Round 129。
+- 新增 `docs/decisions/0030-unified-event-index.md`(Accepted)。
+- 新增 PITFALL P-033。
+- 不动 BLOCKERS / CHANGELOG(用户暂时看不见 trace_id;A2 `/why` 落地后再更 CHANGELOG)。

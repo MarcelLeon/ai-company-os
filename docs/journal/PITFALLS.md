@@ -62,6 +62,9 @@
 - P-003:本机默认 Python / uv 缓存与项目基线不一致
 - P-004:`uv run` 本地 console script 触发构建依赖下载
 
+### 持久化与 schema 兼容
+- P-033:Memory/Audit JSONL 升级是单向门(`FrozenModel.extra="forbid"`)
+
 ### Adapter 层
 - P-005:Codex CLI 全局参数必须放在子命令前
 - P-015:Trae CLI help 先尝试 keyring token store 导致误判为不可用
@@ -1189,3 +1192,32 @@ Round 111 修复了“后续行 `@reviewer` 能触发 child task,且保留父输
 
 **相关链接**
 - ROUNDS Round 113
+
+---
+
+### [P-033] Memory/Audit JSONL 升级是单向门
+
+**状态**:🟡 ACTIVE
+**首次踩中**:Round 129(Sprint A1)
+**最后更新**:2026-05-31
+
+**症状**
+Sprint A1 给 `MemoryAtom` / `AuditEvent` / `Task` 都加了 `trace_id: str | None = None`,M1 还给 `MemoryAtom` 加了 `kind` / `experience`。新代码读老 JSONL 安全(老记录缺少新字段时,Pydantic 会用 default 填补);**反向不安全**——老代码读新 JSONL 时,因为 `FrozenModel` 配置是 `extra="forbid"`,会因为遇到陌生字段 `kind` / `trace_id` 直接报 `ValidationError` 拒绝整个 JSONL 行。
+
+**根因**
+`FrozenModel` 默认 `extra="forbid"` 是为了核心域强约束:任何未声明字段都视为协议错误。代价是:**JSONL 升级是单向门**——一旦运行过新代码并写过新记录,该 JSONL 文件就不能再被回滚后的老代码加载。
+
+**解决方案 / 缓解措施**
+- 接受单向语义。AICO 不支持降级运行。
+- 升级前如有顾虑,先备份 `AICO_MEMORY_PATH` 和 `AICO_AUDIT_LOG_PATH` 指向的 JSONL 文件。
+- 后续如果需要做 schema 大改(改字段名/删字段),先开新 ADR,设计迁移工具,不要靠 `extra="ignore"` 偷偷绕过。
+
+**如何避免再次踩中**
+- 给已存在的 JSONL 新增字段时,**字段必须带 default 值**(否则连前向兼容都做不到)。
+- 不要把 `FrozenModel` 默认改为 `extra="ignore"` 来"兼容老代码读新数据"——那会让协议层失去强约束,得不偿失。
+- 在 STATUS / CHANGELOG 里明确标注引入新 schema 字段的 round,提醒用户升级前备份。
+
+**相关链接**
+- ADR-0030 §"关键边界 #3"
+- ROUNDS Round 128 / Round 129
+- `src/aico/core/memory.py` MemoryAtom

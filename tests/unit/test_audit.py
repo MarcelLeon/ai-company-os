@@ -65,3 +65,44 @@ def test_read_jsonl_audit_events_loads_persisted_events(tmp_path: Path) -> None:
 
     restored = InMemoryAuditLog(initial_events=loaded)
     assert restored.events() == (event,)
+
+
+def test_audit_record_propagates_task_trace_id() -> None:
+    audit_log = InMemoryAuditLog(event_id_factory=lambda: "event-x")
+    task = Task(
+        task_id="task-7",
+        payload="run pytest",
+        requester_id="user-1",
+        target_persona="implementer",
+        trace_id="trace-42",
+    )
+
+    event = audit_log.record(AuditEventType.TASK_SUBMITTED, task)
+
+    assert event.trace_id == "trace-42"
+
+
+def test_audit_record_falls_back_trace_id_to_task_id() -> None:
+    audit_log = InMemoryAuditLog(event_id_factory=lambda: "event-y")
+    task = Task(
+        task_id="task-9",
+        payload="run pytest",
+        requester_id="user-1",
+        target_persona="implementer",
+    )
+
+    event = audit_log.record(AuditEventType.TASK_SUBMITTED, task)
+
+    assert event.trace_id == "task-9"
+
+
+def test_audit_record_event_falls_back_trace_id_to_task_id() -> None:
+    audit_log = InMemoryAuditLog(event_id_factory=lambda: "event-z")
+    event = audit_log.record_event(
+        AuditEventType.MEMORY_BROADCASTED,
+        task_id="memory:mem-42",
+        actor_id="lead-agent",
+        target_persona="team:aico/core",
+    )
+
+    assert event.trace_id == "memory:mem-42"

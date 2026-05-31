@@ -171,6 +171,7 @@ class MemoryAtom(FrozenModel):
     reason: str | None = None
     kind: MemoryKind = MemoryKind.FACT
     experience: ExperienceMeta | None = None
+    trace_id: str | None = None
 
     @model_validator(mode="after")
     def _validate_purpose_tags(self) -> MemoryAtom:

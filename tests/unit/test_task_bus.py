@@ -519,3 +519,38 @@ async def test_task_bus_marks_task_interrupted() -> None:
 
     assert adapter.interrupted_task_ids == ["task-1"]
     assert bus.task_snapshots()[0].status is TaskStatus.INTERRUPTED
+
+
+async def test_task_bus_propagates_trace_id_to_audit_event() -> None:
+    adapter = RecordingAdapter()
+    bus = TaskBus(adapter)
+    task = Task(
+        task_id="task-trace",
+        payload="do work",
+        requester_id="user-1",
+        target_persona="default",
+        trace_id="trace-orchestration-7",
+    )
+
+    await bus.submit(task)
+
+    events = bus.audit_events()
+    assert events
+    assert all(event.trace_id == "trace-orchestration-7" for event in events)
+
+
+async def test_task_bus_falls_back_trace_id_to_task_id() -> None:
+    adapter = RecordingAdapter()
+    bus = TaskBus(adapter)
+    task = Task(
+        task_id="task-no-trace",
+        payload="do work",
+        requester_id="user-1",
+        target_persona="default",
+    )
+
+    await bus.submit(task)
+
+    events = bus.audit_events()
+    assert events
+    assert all(event.trace_id == "task-no-trace" for event in events)

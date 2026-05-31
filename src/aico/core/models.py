@@ -132,6 +132,7 @@ class Task(FrozenModel):
     context_ref: str | None = None
     metadata: tuple[MetadataEntry, ...] = ()
     created_at: datetime = Field(default_factory=utc_now)
+    trace_id: str | None = None
 
 
 class TaskAck(FrozenModel):
@@ -194,6 +195,7 @@ class AuditEvent(FrozenModel):
     risk_level: RiskLevel = RiskLevel.READ_ONLY
     detail: str | None = None
     timestamp: datetime = Field(default_factory=utc_now)
+    trace_id: str | None = None
 
 
 class PersonaProfile(FrozenModel):

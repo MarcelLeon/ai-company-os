@@ -147,6 +147,15 @@ from aico.core.status_island import (
 from aico.core.streaming import STREAM_MESSAGE_TEXT_LIMIT, StreamedMessageWriter
 from aico.core.task_bus import TaskBus
 from aico.core.task_store import SQLiteTaskStateStore, TaskStateStore
+from aico.core.unified_event import (
+    InMemoryUnifiedEventIndex,
+    UnifiedEvent,
+    UnifiedEventIndex,
+    UnifiedEventSource,
+    short_event_id,
+    short_memory_id,
+    short_trace_id,
+)
 
 __all__ = [
     "AckStatus",
@@ -256,8 +265,15 @@ __all__ = [
     "TaskStateStore",
     "TaskStatus",
     "TokenCostSummary",
+    "UnifiedEvent",
+    "UnifiedEventIndex",
+    "UnifiedEventSource",
+    "InMemoryUnifiedEventIndex",
     "UsageRecord",
     "TextRiskAssessor",
+    "short_event_id",
+    "short_memory_id",
+    "short_trace_id",
     "agent_cards_from_personas",
     "agent_output_message",
     "build_metrics_report",

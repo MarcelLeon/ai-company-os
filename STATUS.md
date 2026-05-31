@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-05-31
-**当前轮次**:Round 128(Sprint M1 — Memory kind + ExperienceMeta)
+**当前轮次**:Round 129(Sprint A1 — Unified Event Index + trace_id)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -293,6 +293,7 @@ AICO 的产品边界是 absence-first:
 - [ ] 多 step / 多 agent 夜间自动编排
 - [ ] 早报自动生成或定时推送
 - [x] Sprint M1 — MemoryAtom 加 `kind=fact|experience` + `ExperienceMeta`;Dream 输出改为 candidate experience(Round 128)。
+- [x] Sprint A1 — AuditEvent/Task/MemoryAtom 增加 `trace_id`;新增 `UnifiedEventIndex` 派生只读层;ADR-0030(Round 129)。
 
 ### 开源 Demo 进度
 
@@ -306,6 +307,19 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 129**(2026-05-31,Claude — Sprint A1):
+- 落地 boss-first-grounding §6 路线图 Sprint A1:Audit + trace_id + Unified Event Index。
+- `src/aico/core/models.py`:`AuditEvent`、`Task` 都新增 `trace_id: str | None = None`(default None,向后兼容)。
+- `src/aico/core/memory.py`:`MemoryAtom` 新增 `trace_id: str | None = None`。
+- `src/aico/core/audit.py`:`record(...)` 和 `record_event(...)` 自动从 `task.trace_id || task.task_id` 取 trace_id,默认全链路传播;memory_broadcast 等 task-less 调用 fallback 到 `task_id` 参数本身。
+- 新增 `src/aico/core/unified_event.py`(< 150 行):`UnifiedEvent` / `UnifiedEventIndex` Protocol / `InMemoryUnifiedEventIndex`,把 audit / memory / task 三源按 trace_id 聚合;`short_event_id` / `short_memory_id` / `short_trace_id` 三个 IM 渲染辅助函数(复用现有 `short_id_text`)。
+- 关键边界(写进 ADR-0030):Index **派生只读、不拥有真相**;真相仍在 audit JSONL / memory JSONL / SQLite task store;一旦运行新代码,JSONL 升级是单向门(`FrozenModel.extra="forbid"` 阻止老代码读新字段)。
+- 新增 ADR-0030 `Unified Event Index — read-only cross-source trace view`,Accepted。
+- PITFALLS 新增 P-033 "Memory/Audit JSONL 升级是单向门",索引新增"持久化与 schema 兼容"分类。
+- 子任务 trace_id 通过 `task.model_copy(update=...)` 免费继承;**唯一例外是 Grader follow-up**,它是新顶层 task,trace 默认 = 自己 task_id,留 M3 把它接到 graded_task 的 trace。
+- 验证通过:`uv run pytest` **338 passed / 1 skipped**(330 + 3 unified_event + 3 audit + 2 task_bus);`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`。
+- 在 `docs/architecture/boss-first-grounding.md` §6 表格给 A1 标 ✅ 引用 Round 129。
 
 **Round 128**(2026-05-31,Claude — Sprint M1):
 - 落地 boss-first-grounding §6 路线图 Sprint M1:Memory + Experience 数据层分层。
