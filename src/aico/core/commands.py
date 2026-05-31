@@ -56,6 +56,8 @@ class CommandName(StrEnum):
     EXPERIENCE = "experience"
     UNDO = "undo"
     WHY = "why"
+    TIMELINE = "timeline"
+    ROLLBACK = "rollback"
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,7 @@ def parse_command(text: str) -> Command | None:
         CommandName.AGENTS,
         CommandName.SESSIONS,
         CommandName.UNDO,
+        CommandName.TIMELINE,
     }:
         return Command(CommandName(lowered))
 
@@ -137,6 +140,10 @@ def help_text() -> str:
         "/experience review|list|promote|archive - lead-internal experience lifecycle\n"
         "/undo - reverse the most recent AICO-internal mutation (memory/experience only)\n"
         "/why [short_id] - explain what produced an event (defaults to most recent)\n"
+        "/timeline [--since 24h --source memory|task|audit --limit 30 --trace <id>]"
+        " - lead-internal filtered timeline\n"
+        "/rollback memory|experience|task <id> - lead-internal precise reversal"
+        " (AICO state only, NOT git/shell/file)\n"
         "/goal [role] <objective> - attach a verifiable goal brief to project work\n"
         "/roles [project|all] - show compact role board; add all for hidden roles\n"
         "/role <id> - show one role's scope and approval policy\n"

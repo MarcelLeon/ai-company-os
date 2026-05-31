@@ -6480,3 +6480,56 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - `STATUS.md` 当前轮次更新为 Round 134;Phase 8 进度新增 Sprint V2 ✅ 行。
 - `docs/architecture/boss-first-grounding.md` §6 V2 行打 ✅ 引用 Round 134。
 - 不开 ADR、不动 PITFALLS / BLOCKERS / CHANGELOG。
+
+---
+
+## Round 135 — 2026-05-31 — Claude
+
+### 输入
+- 接 Round 134 V2 完成,继续推进 §6 A3。
+- 本轮聚焦 lead 内务 `/timeline` 和 `/rollback`,以及 `ROLLBACK_PERFORMED` AuditEventType。
+
+### 思考与讨论
+- `/rollback task <id>` 要不要级联撤 memory/experience 副作用 → ❌ 不做。理由:没有可靠的 task→memory_ids 反向索引;**而且永远不可能撤 git/shell/file**;让 lead 显式 `/rollback memory <id>` 比假装级联更诚实。
+- `/rollback` 谁能用 → lead 内务。老板继续用 `/undo`(撤最近一步)和 `/why`(看 trace),不需要记 ID。
+- `/timeline` 是写命令吗 → ❌ 只读过滤视图;暴露 `--source` / `--since` / `--trace` / `--limit` 四个旋钮。
+- audit 暴露给 RollbackCommandHandler 需要在 task_bus 加 accessor → ✅ 加 `audit_log()` 方法,不破坏现有 `audit_events(limit)` API。
+- 是否在 Orchestrator 主体扩展 → ❌ 严格遵守 B-005 workaround:Orchestrator 主体 +4 行(2 个 handler 实例化 + 2 个 elif 分发),新逻辑全部在 `timeline_rollback_commands.py`。
+
+### 产出
+- `src/aico/core/models.py`:`AuditEventType` 加 `ROLLBACK_PERFORMED`。
+- `src/aico/core/task_bus.py`:`audit_log()` accessor 暴露 InMemoryAuditLog 实例。
+- 新增 `src/aico/core/timeline_rollback_commands.py`(< 300 行):
+  - `_parse_timeline_options` 支持 `--since 24h|d|m`(后缀化时长解析)、`--source` 枚举校验、`--limit` clamp 到 [1,200]、`--trace` 前缀匹配。
+  - `RollbackCommandHandler` 4 个分支:memory(archive)、experience(active→CANDIDATE,archived 报错)、task(只写 audit)、unknown(Usage);每个分支都调 `_record_rollback_audit`。
+- `src/aico/core/commands.py`:`TIMELINE` / `ROLLBACK`;`TIMELINE` 加入 lowered 短命令集;help 加两行。
+- `src/aico/core/orchestrator.py`:`_setup_boss_and_lead_handlers` 加 `TimelineCommandHandler` + `RollbackCommandHandler`;命令分发加 2 行 elif。
+- 新增 ADR-0034 `Rollback granularity boundary`(Accepted)。
+- 新增测试 `tests/unit/test_timeline_rollback_commands.py`(9 用例):timeline 时窗 + 源/trace 过滤 + 未知 option 拒绝;rollback memory/experience/task 三类正例 + 错 kind 拒绝 + 未知 ID + 无参 Usage。
+- CHANGELOG 加 `/timeline` `/rollback` 说明;`docs/human/daily-ops.md` 加 "Lead 内务命令" 段。
+- `docs/architecture/boss-first-grounding.md` §6 表格 A3 行打 ✅ Round 135。
+
+### 验证结果
+- `uv run pytest`:**394 passed / 1 skipped**(385 + 9 A3 = 394)。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:135 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 130 source files。
+
+### 关键决策
+- 🔒 **决策 1**:`/rollback task <id>` 只写 ROLLBACK_PERFORMED audit,**不级联**撤 memory/experience。未来如要级联,需要先建 trace_id → produced_memory_ids 反向索引。
+- 🔒 **决策 2**:永远不撤 git/shell/file。这是 ADR-0032 边界的延续,ADR-0034 重申。
+- 🔒 **决策 3**:`/rollback` 和 `/timeline` 都是 **lead 内务**;boss-only 6 命令(/ask /approve /reject /interrupt /morning /inbox + /undo /why)不变。
+- 🔒 **决策 4**:每次 `/rollback` 都写一条 ROLLBACK_PERFORMED;rollback 自身**不可被 /undo 撤销**(rollback 是终态)。
+- 🔒 **决策 5**:严格遵守 B-005:Orchestrator 主体只 +4 行,新逻辑全部进新模块。
+
+### 留给下一轮
+- Sprint V3(最后一个 sprint):aico-view `AICO_VIEW_TOKEN` 强制鉴权 + 部署文档(localhost / ngrok / Cloudflare tunnel)+ 安全模型。
+- V3 完成后:Phase 8 dogfood 复盘(boss-first §3.5),决定 Phase 8 后续。
+- 独立 sprint:Orchestrator 类拆分(B-005)。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 135;Phase 8 进度新增 Sprint A3 ✅ 行。
+- `docs/architecture/boss-first-grounding.md` §6 A3 行打 ✅ 引用 Round 135。
+- 新增 `docs/decisions/0034-rollback-granularity-boundary.md`(Accepted)。
+- CHANGELOG / daily-ops 加 `/timeline` `/rollback` 文档。
+- 不动 PITFALLS / BLOCKERS(B-005 仍 DEFERRED)。

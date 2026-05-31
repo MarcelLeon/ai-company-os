@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-05-31
-**当前轮次**:Round 134(Sprint V2 — aico-view IM deep links)
+**当前轮次**:Round 135(Sprint A3 — /timeline + /rollback lead commands)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -299,6 +299,7 @@ AICO 的产品边界是 absence-first:
 - [x] Sprint A2 — boss-only `/undo` + `/why` + `/inbox` `/morning` 内嵌 Recent activity;ADR-0032(Round 132)。
 - [x] Sprint V1 — `aico-view` 只读 FastAPI 三视图 + `aico-view` entrypoint;ADR-0033(Round 133)。
 - [x] Sprint V2 — aico-view 三视图加 IM deep-link 按钮(Telegram `t.me/<bot>?text=`)+ Feishu cmd-copy 降级(Round 134)。
+- [x] Sprint A3 — lead 内务 `/timeline` + `/rollback memory|experience|task`;新增 `ROLLBACK_PERFORMED` AuditEventType;ADR-0034(Round 135)。
 
 ### 开源 Demo 进度
 
@@ -312,6 +313,20 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 135**(2026-05-31,Claude — Sprint A3):
+- 落地 boss-first-grounding §6 Sprint A3:lead 内务 `/timeline` 和 `/rollback memory|experience|task`,以及新增 `AuditEventType.ROLLBACK_PERFORMED`。
+- 新增 `src/aico/core/timeline_rollback_commands.py`(< 300 行):
+  - `TimelineCommandHandler` 支持 `--since 24h --source audit|memory|task --limit 30 --trace <prefix>`;解析失败给 Usage,过滤不到事件给 "no events in window"。
+  - `RollbackCommandHandler`:`/rollback memory <id>` archive fact;`/rollback experience <id>` active→CANDIDATE;`/rollback task <id>` 只写 ROLLBACK_PERFORMED audit,**不级联**撤 memory/experience(避免假装撤了 file/shell)。
+- `src/aico/core/models.py` AuditEventType 加 `ROLLBACK_PERFORMED`。
+- `src/aico/core/task_bus.py` 加 `audit_log()` accessor 暴露给 RollbackCommandHandler。
+- `src/aico/core/orchestrator.py`:`_setup_boss_and_lead_handlers` 加 2 个 handler 实例化,命令分发加 2 个 elif(遵守 B-005 workaround,主体 +4 行,新逻辑全部进新模块)。
+- `src/aico/core/commands.py`:`TIMELINE` / `ROLLBACK`;`TIMELINE` 进 lowered 短命令集;help 加两行。
+- 新增 ADR-0034 `Rollback granularity boundary`(Accepted):写死 `/rollback task` 只 audit、不级联;永远不撤 git/shell/file。
+- 验证通过:`uv run pytest` **394 passed / 1 skipped**(原 385 + 9 A3);ruff / format / mypy 全绿。
+- CHANGELOG 加 `/timeline` `/rollback` 说明;`docs/human/daily-ops.md` 新增 "Lead 内务命令" 段。
+- 在 `docs/architecture/boss-first-grounding.md` §6 表格给 A3 标 ✅ 引用 Round 135。
 
 **Round 134**(2026-05-31,Claude — Sprint V2):
 - 落地 boss-first-grounding §6 Sprint V2:aico-view 三视图末尾追加 IM deep-link 按钮。

@@ -338,6 +338,9 @@ class TaskBus:
     def audit_events(self, *, limit: int | None = 10) -> tuple[AuditEvent, ...]:
         return self._audit_log.events(limit=limit)
 
+    def audit_log(self) -> InMemoryAuditLog:
+        return self._audit_log
+
     def record_collaboration_requested(
         self,
         source_task: Task,

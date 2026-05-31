@@ -92,6 +92,7 @@ class AuditEventType(StrEnum):
     TASK_USAGE_RECORDED = "task_usage_recorded"
     MEMORY_BROADCASTED = "memory_broadcasted"
     LEAD_DECISION_RECORDED = "lead_decision_recorded"
+    ROLLBACK_PERFORMED = "rollback_performed"
 
 
 class MessageKind(StrEnum):

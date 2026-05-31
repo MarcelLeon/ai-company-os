@@ -69,6 +69,10 @@ from aico.core.session_commands import (
 )
 from aico.core.streaming import StreamedMessageWriter
 from aico.core.task_bus import TaskBus
+from aico.core.timeline_rollback_commands import (
+    RollbackCommandHandler,
+    TimelineCommandHandler,
+)
 from aico.core.undo_why_commands import UndoCommandHandler, WhyCommandHandler
 from aico.core.unified_event import InMemoryUnifiedEventIndex, UnifiedEventIndex
 
@@ -184,6 +188,15 @@ class Orchestrator:
         self._why_commands = WhyCommandHandler(
             channel=self._channel,
             event_index_factory=self._build_event_index,
+        )
+        self._timeline_commands = TimelineCommandHandler(
+            channel=self._channel,
+            event_index_factory=self._build_event_index,
+        )
+        self._rollback_commands = RollbackCommandHandler(
+            channel=self._channel,
+            memory_store=self._memory_store,
+            audit_log=self._task_bus.audit_log(),
         )
 
     def _setup_workflow_handlers(
@@ -745,6 +758,10 @@ async def _handle_command(
         await orchestrator._undo_commands.handle_undo(message, command.payload)
     elif command.name is CommandName.WHY:
         await orchestrator._why_commands.handle_why(message, command.payload)
+    elif command.name is CommandName.TIMELINE:
+        await orchestrator._timeline_commands.handle_timeline(message, command.payload)
+    elif command.name is CommandName.ROLLBACK:
+        await orchestrator._rollback_commands.handle_rollback(message, command.payload)
     elif command.name is CommandName.GOAL:
         await orchestrator._goal_briefs.handle_goal(message, command.payload)
     elif command.name in _PROJECT_ROLE_COMMANDS:

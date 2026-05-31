@@ -374,6 +374,32 @@ tail -n 20 /tmp/aico-audit.jsonl
 
 ---
 
+## Lead 内务命令(老板平时不碰)
+
+`/timeline` 和 `/rollback` 是 lead 的精细工具。老板继续用 `/undo`(撤最近一步)
+和 `/why <short_id>`(看一条 trace)。
+
+```text
+# 过滤时间线(过去 24h,默认)
+/timeline
+
+# 过滤源、限制条数、按 trace 前缀
+/timeline --since 6h --source memory --limit 20
+/timeline --trace task-abc
+
+# 精细回滚(只撤 AICO 内部状态,**不撤** git / shell / file)
+/rollback memory <id>         # fact memory -> archived
+/rollback experience <id>     # active experience -> candidate; archived 不变
+/rollback task <id>           # 写一条 ROLLBACK_PERFORMED audit 标记;不级联撤 memory
+```
+
+边界说明:每次 `/rollback` 都会写一条 `rollback_performed` audit。`/rollback task`
+本 sprint 只写 audit 标记,**不级联撤** memory/experience 副作用——如果要清理,需要
+显式 `/rollback memory <id>` 或 `/rollback experience <id>`。永远不撤已写文件、已跑
+shell、已发 IM 消息。详见 ADR-0034。
+
+---
+
 ## Adapter 管理
 
 ```bash
