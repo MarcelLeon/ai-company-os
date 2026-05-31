@@ -6437,3 +6437,46 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - 新增 `pyproject.toml` script `aico-view`。
 - CHANGELOG 加 aico-view;quickstart 加启动指引。
 - 不动 PITFALLS / BLOCKERS(B-005 仍 DEFERRED,V1 没有触碰 Orchestrator)。
+
+---
+
+## Round 134 — 2026-05-31 — Claude
+
+### 输入
+- 接 Round 133 V1 完成,连续推进 §6 V2。
+- 本轮聚焦 aico-view 三视图加 IM deep-link 按钮,让老板从 mobile web 一键跳回 IM 预填命令。
+
+### 思考与讨论
+- Telegram bot 用户名怎么取 → 候选 A:启动时调 getMe API 解析 → ❌ 增加视图进程对网络/Telegram API 的依赖;候选 B:让用户在 env 中显式给 `AICO_VIEW_TELEGRAM_BOT_USERNAME` → ✅ 选定,简单 + 零网络依赖。
+- Feishu 怎么处理 → Feishu 无标准 deep link;决定提供 `cmd-copy` 降级(显示命令文本,老板手动复制),不为 Feishu 单写假按钮。
+- deep link 形式 → `tg://resolve?domain=<bot>&text=` 在桌面不一定打开;选 `https://t.me/<bot>?text=` 更兼容,Telegram 客户端会接管。
+- 哪些命令该放 deep link → 按视图归类:Timeline 给老板高频(/inbox /morning /undo);Trace 给单 trace 直接问(/why /task);Memory 给 atom 状态对应的动作(active experience -> archive,candidate experience -> promote,active fact -> forget)。
+- 是否新开 ADR → ❌ V2 是 V1 + ADR-0033 在 deep link 层的延伸,不引入新决策,只在 ADR-0033 留作业里点出。
+
+### 产出
+- 新增 `src/aico/view/deep_link.py`(< 90 行):`DeepLinkSettings`、`load_deep_link_settings_from_env`、`render_command_link`、`render_command_links`。
+- `src/aico/view/app.py` 三视图都接 `deep_link_settings`(在 `build_view_app` 中可选注入);Timeline / Trace / Memory 末尾都追加按钮组。
+- CSS 加 `.cmd-links` / `.cmd-link.telegram` / `.cmd-copy` 三组 pill 样式。
+- 新增 `tests/unit/test_aico_view_deep_link.py`(8 用例):render_command_link(t.me + URL encode + 多 token 编码 + 无 bot 降级)+ render_command_links 分组 + Timeline/Trace/Memory 渲染 deep link + Memory 在无 bot 时退化为 copy。
+- `docs/architecture/boss-first-grounding.md` §6 表格 V2 行打 ✅ Round 134。
+
+### 验证结果
+- `uv run pytest`:**385 passed / 1 skipped**(377 + 8 V2 = 385)。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:133 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 128 source files。
+
+### 关键决策
+- 🔒 **决策 1**:Telegram bot 用户名通过 env `AICO_VIEW_TELEGRAM_BOT_USERNAME` 显式提供,不调 getMe。
+- 🔒 **决策 2**:Feishu 用 `cmd-copy` 降级(显示文本提示),不为 Feishu 写假按钮。
+- 🔒 **决策 3**:deep link 用 `https://t.me/<bot>?text=` 而非 `tg://resolve`,跨平台兼容性更好。
+- 🔒 **决策 4**:每个视图的 deep link 集合是写死的语义(Timeline=boss 高频,Trace=单 trace 追溯,Memory=atom 生命周期);后续根据 dogfood 再调。
+
+### 留给下一轮
+- Sprint A3:`/timeline` 细粒度过滤命令 + `/rollback memory|experience|task` 精细命令;新增 `ROLLBACK_PERFORMED` AuditEventType;ADR-0034 写死 rollback 边界(不撤 git / shell / file)。
+- Sprint V3:`AICO_VIEW_TOKEN` 强制鉴权 + 部署文档。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 134;Phase 8 进度新增 Sprint V2 ✅ 行。
+- `docs/architecture/boss-first-grounding.md` §6 V2 行打 ✅ 引用 Round 134。
+- 不开 ADR、不动 PITFALLS / BLOCKERS / CHANGELOG。

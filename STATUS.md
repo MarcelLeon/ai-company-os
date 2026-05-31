@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-05-31
-**当前轮次**:Round 133(Sprint V1 — aico-view 最小 FastAPI)
+**当前轮次**:Round 134(Sprint V2 — aico-view IM deep links)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -298,6 +298,7 @@ AICO 的产品边界是 absence-first:
 - [x] Sprint M3 — Outcome Grader `parse_verdict` + `apply_verdict_to_owner_experiences` 回写 confidence/hits/misses/injection_count;grader task trace_id 继承 owner trace_id(Round 131)。
 - [x] Sprint A2 — boss-only `/undo` + `/why` + `/inbox` `/morning` 内嵌 Recent activity;ADR-0032(Round 132)。
 - [x] Sprint V1 — `aico-view` 只读 FastAPI 三视图 + `aico-view` entrypoint;ADR-0033(Round 133)。
+- [x] Sprint V2 — aico-view 三视图加 IM deep-link 按钮(Telegram `t.me/<bot>?text=`)+ Feishu cmd-copy 降级(Round 134)。
 
 ### 开源 Demo 进度
 
@@ -311,6 +312,15 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 134**(2026-05-31,Claude — Sprint V2):
+- 落地 boss-first-grounding §6 Sprint V2:aico-view 三视图末尾追加 IM deep-link 按钮。
+- 新增 `src/aico/view/deep_link.py`(< 90 行):`DeepLinkSettings(telegram_bot_username)` + `load_deep_link_settings_from_env()` 读 `AICO_VIEW_TELEGRAM_BOT_USERNAME`(可选);`render_command_link` 在有 bot 时生成 `https://t.me/<bot>?text=<url-encoded>`,无 bot 时降级为 `cmd-copy` 文本提示(老板复制粘贴)。
+- `src/aico/view/app.py` 三视图都接 `deep_link_settings`:Timeline 末尾给 `/inbox` `/morning` `/undo`;Trace 末尾给 `/why <short>` `/task <short>`;Memory 每条 atom 给 promote / archive / forget(按 status + kind 选)。CSS 加 `.cmd-links` `.cmd-link` `.cmd-copy` 样式(pill 按钮 + 暗色)。
+- 关键边界:**仍然只读**。deep link 只是把命令预填到 IM 输入框,实际写入仍走 IM(Channel + 现有审批/审计)。Feishu 暂用 cmd-copy 降级(Feishu 无标准 deep link)。
+- 验证通过:`uv run pytest` **385 passed / 1 skipped**(原 377 + 8 V2);ruff / format / mypy 全绿。
+- 不开 ADR(V2 是 V1 + ADR-0033 的延伸,不引入新决策)。
+- 在 `docs/architecture/boss-first-grounding.md` §6 表格给 V2 标 ✅ 引用 Round 134。
 
 **Round 133**(2026-05-31,Claude — Sprint V1):
 - 落地 boss-first-grounding §6 Sprint V1:`aico-view` 只读 FastAPI Web,三视图 mobile-first。

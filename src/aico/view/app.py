@@ -37,6 +37,11 @@ from aico.core.unified_event import (
     UnifiedEvent,
     UnifiedEventIndex,
 )
+from aico.view.deep_link import (
+    DeepLinkSettings,
+    load_deep_link_settings_from_env,
+    render_command_links,
+)
 
 
 @dataclass(frozen=True)
@@ -74,12 +79,18 @@ def _resolved_state_db_path(raw: str | None) -> Path | None:
     return Path(raw)
 
 
-def build_view_app(settings: ViewSettings | None = None) -> FastAPI:
+def build_view_app(
+    settings: ViewSettings | None = None,
+    *,
+    deep_link_settings: DeepLinkSettings | None = None,
+) -> FastAPI:
     """Construct the read-only aico-view FastAPI application."""
     settings = settings or load_view_settings_from_env()
+    deep_link_settings = deep_link_settings or load_deep_link_settings_from_env()
 
     app = FastAPI(title="AI Company OS — View", docs_url=None, redoc_url=None)
     app.state.aico_view_settings = settings
+    app.state.aico_deep_link_settings = deep_link_settings
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -90,7 +101,7 @@ def build_view_app(settings: ViewSettings | None = None) -> FastAPI:
         del request
         index = _build_index(settings)
         recent = index.recent(limit=100)
-        return HTMLResponse(_render_timeline(recent))
+        return HTMLResponse(_render_timeline(recent, deep_link_settings))
 
     @app.get("/trace/{trace_id}", response_class=HTMLResponse)
     async def trace_view(trace_id: str) -> HTMLResponse:
@@ -103,12 +114,12 @@ def build_view_app(settings: ViewSettings | None = None) -> FastAPI:
                     break
         if not events:
             raise HTTPException(status_code=404, detail=f"trace not found: {trace_id}")
-        return HTMLResponse(_render_trace(trace_id, events))
+        return HTMLResponse(_render_trace(trace_id, events, deep_link_settings))
 
     @app.get("/memory", response_class=HTMLResponse)
     async def memory_view() -> HTMLResponse:
         atoms = _load_memory_atoms(settings)
-        return HTMLResponse(_render_memory(atoms))
+        return HTMLResponse(_render_memory(atoms, deep_link_settings))
 
     @app.get("/static/style.css", response_class=PlainTextResponse)
     async def style_css() -> PlainTextResponse:
@@ -178,7 +189,10 @@ def _render_layout(title: str, body: str) -> str:
 </html>"""
 
 
-def _render_timeline(events: tuple[UnifiedEvent, ...]) -> str:
+def _render_timeline(
+    events: tuple[UnifiedEvent, ...],
+    deep_link: DeepLinkSettings,
+) -> str:
     if not events:
         body = '<p class="empty">No events yet.</p>'
         return _render_layout("Timeline", body)
@@ -193,16 +207,25 @@ def _render_timeline(events: tuple[UnifiedEvent, ...]) -> str:
             f"{trace_link}"
             f"<span class='summary'>{escape(event.summary)}</span></li>"
         )
+    boss_links = render_command_links(
+        deep_link,
+        (("/inbox", "/inbox"), ("/morning", "/morning"), ("/undo", "/undo")),
+    )
     body = (
         '<ul class="timeline">'
         + "".join(rows)
         + "</ul>"
         + '<p class="hint">Tap a short id to open its trace.</p>'
+        + boss_links
     )
     return _render_layout("Timeline", body)
 
 
-def _render_trace(trace_id: str, events: tuple[UnifiedEvent, ...]) -> str:
+def _render_trace(
+    trace_id: str,
+    events: tuple[UnifiedEvent, ...],
+    deep_link: DeepLinkSettings,
+) -> str:
     rows: list[str] = []
     for event in events:
         ts = event.timestamp.strftime("%Y-%m-%d %H:%M:%S")
@@ -213,28 +236,47 @@ def _render_trace(trace_id: str, events: tuple[UnifiedEvent, ...]) -> str:
             f"<span class='id'>{escape(event.short_id)}</span>"
             f"<span class='summary'>{escape(event.summary)}</span></li>"
         )
+    short = short_id_text(trace_id)
+    boss_links = render_command_links(
+        deep_link,
+        (
+            (f"/why {short}", f"ask /why {short}"),
+            (f"/task {short}", f"open /task {short}"),
+        ),
+    )
     body = (
-        f"<h2>trace {escape(short_id_text(trace_id))}</h2>"
+        f"<h2>trace {escape(short)}</h2>"
         + '<ul class="trace">'
         + "".join(rows)
         + "</ul>"
+        + boss_links
     )
     return _render_layout("Task Trace", body)
 
 
-def _render_memory(atoms: tuple[MemoryAtom, ...]) -> str:
+def _render_memory(
+    atoms: tuple[MemoryAtom, ...],
+    deep_link: DeepLinkSettings,
+) -> str:
     if not atoms:
         return _render_layout("Memory Tree", '<p class="empty">No memory recorded.</p>')
     facts = [atom for atom in atoms if atom.kind is MemoryKind.FACT]
     experiences = [atom for atom in atoms if atom.kind is MemoryKind.EXPERIENCE]
     body_parts = ["<h2>experiences</h2>"]
-    body_parts.append(_render_memory_list(experiences, kind_label="experience"))
+    body_parts.append(
+        _render_memory_list(experiences, kind_label="experience", deep_link=deep_link)
+    )
     body_parts.append("<h2>facts</h2>")
-    body_parts.append(_render_memory_list(facts, kind_label="fact"))
+    body_parts.append(_render_memory_list(facts, kind_label="fact", deep_link=deep_link))
     return _render_layout("Memory Tree", "".join(body_parts))
 
 
-def _render_memory_list(atoms: list[MemoryAtom], *, kind_label: str) -> str:
+def _render_memory_list(
+    atoms: list[MemoryAtom],
+    *,
+    kind_label: str,
+    deep_link: DeepLinkSettings,
+) -> str:
     if not atoms:
         return f'<p class="empty">no {escape(kind_label)} memory.</p>'
     rows: list[str] = []
@@ -250,6 +292,7 @@ def _render_memory_list(atoms: list[MemoryAtom], *, kind_label: str) -> str:
                 f" · hits/misses: {atom.experience.verdict_hits}"
                 f"/{atom.experience.verdict_misses}</div>"
             )
+        actions = _memory_action_links(atom, deep_link)
         rows.append(
             f"<li class='atom {escape(status_class)}'>"
             f"<span class='id'>{escape(short_id_text(atom.memory_id))}</span>"
@@ -257,9 +300,24 @@ def _render_memory_list(atoms: list[MemoryAtom], *, kind_label: str) -> str:
             f"<span class='confidence'>conf: {atom.confidence:.2f}</span>"
             f"<div class='claim'>{escape(atom.claim)}</div>"
             f"{meta}"
+            f"{actions}"
             f"</li>"
         )
     return '<ul class="memory">' + "".join(rows) + "</ul>"
+
+
+def _memory_action_links(atom: MemoryAtom, deep_link: DeepLinkSettings) -> str:
+    pairs: list[tuple[str, str | None]] = []
+    if atom.kind is MemoryKind.EXPERIENCE:
+        if atom.status.value == "candidate":
+            pairs.append((f"/experience promote {atom.memory_id}", "promote"))
+        elif atom.status.value == "active":
+            pairs.append((f"/experience archive {atom.memory_id}", "archive"))
+    elif atom.kind is MemoryKind.FACT and atom.status.value == "active":
+        pairs.append((f"/forget {atom.memory_id}", "forget"))
+    if not pairs:
+        return ""
+    return render_command_links(deep_link, tuple(pairs))
 
 
 _VIEW_CSS = """
@@ -296,4 +354,11 @@ li time { color: var(--muted); font-size: .8em; grid-column: 1 / -1; }
 a { color: var(--accent); }
 .id { color: var(--accent); font-family: ui-monospace, monospace; }
 .trace .summary { color: var(--text); }
+.cmd-links { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0; }
+.cmd-link, .cmd-copy { display: inline-block; padding: .35rem .7rem; border-radius: 999px;
+  background: var(--card); border: 1px solid var(--accent); color: var(--accent);
+  text-decoration: none; font-size: .85em; font-family: ui-monospace, monospace; }
+.cmd-link.telegram::before { content: "→ "; }
+.cmd-copy::before { content: "⌘ "; }
+.cmd-copy { color: var(--muted); border-color: var(--muted); cursor: text; }
 """
