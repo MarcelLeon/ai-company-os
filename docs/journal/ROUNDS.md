@@ -6036,3 +6036,92 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 125。
 - 新增 P-032。
+
+## Round 126 — 2026-05-27 — Codex
+
+### 输入
+- 人类完成 Phase 8 Absence Loop 真实 IM dogfood,反馈效果不佳,不打算继续在这个方向投入时间,并改回 `export AICO_PREFER_NATIVE_CHANNEL_FORMAT=false`。
+- 人类确认 Phase 5 真实协作 smoke test 可以触发,要求关闭该待办。
+- 人类要求“开源首屏二次验收:AI agent 开发者 / 个人开发者视角”先不操作,但提高优先级。
+- 其他已列待办保持不变。
+
+### 思考与讨论
+- 候选 A:继续把 Phase 8 Absence Loop dogfood 留在下一轮高优队列 → ❌ **否决**:人类已经执行且明确不再继续投入,继续挂高优会让下一轮重复消耗。
+- 候选 B:把 Phase 8 dogfood 写成完全成功 → ❌ **否决**:真实反馈是“效果不佳”,状态文档必须记录真实产品判断,不能把关闭写成胜利。
+- 候选 C:做一次待办状态校准,关闭已验证/不再投入项,并把开源首屏二次验收提到最高优先级 → ✅ **选定**:符合 STATUS 作为下一轮队列源头的职责。
+
+### 产出
+- `STATUS.md` 当前轮次更新为 Round 126。
+- Phase 8 进度新增真实 IM dogfood 结论:已执行,效果不佳,暂不继续投入 native output 方向,当前 dogfood 使用 `AICO_PREFER_NATIVE_CHANNEL_FORMAT=false`。
+- Phase 5 进度中 `Telegram 真实协作 smoke test` 标记完成,说明人类确认真实 IM 下可触发,后续不再作为高优待办。
+- 下一轮建议移除 Phase 8 Absence Loop 真实 IM dogfood 和 Phase 5 协作 smoke test。
+- 下一轮建议将“开源首屏二次验收:AI agent 开发者 / 个人开发者视角”提升为第一优先级。
+- Lead decision workflow、Goal Brief v0、Release Room、Feishu、Codex bind / Claude resume、Adapter usage 上报等待办保持原内容。
+
+### 验证结果
+- 文档状态校准,未改运行代码。
+- 未跑测试。
+
+### 关键决策
+- 🔒 **决策 1**:真实 dogfood 反馈“效果不佳且不继续投入”也应关闭队列项,而不是把下一轮继续绑在低回报体验修补上。
+- 🔒 **决策 2**:Phase 5 协作 smoke 当前验收口径收敛为“真实 IM 下能触发”;更深的输出质量或恢复体验不再占用高优队列。
+- 🔒 **决策 3**:近期优先级转向开源首屏与外部开发者第一印象,服务于公开转化和项目可理解性。
+
+### 留给下一轮
+- 最高优先级改为开源首屏二次验收:从 AI agent 开发者 / 个人开发者视角检查 README 首屏和 Quickstart。
+- Lead decision workflow 与 Goal Brief v0 真实 IM 验收仍保留,但不覆盖开源首屏二次验收的第一优先级。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 126。
+
+---
+
+## Round 127 — 2026-05-29 — Claude
+
+### 输入
+- 人类两轮脑暴:
+  1. lead 在老板沉默时能否基于职责经验主动推动?
+  2. 接受"先稳基础再扩展",要求把 Memory+Experience / Audit+Rollback / Absence Loop 三块基础做强,且 memory 和经验要清晰分层、可审查;审核和回滚要可视化、要工作留痕。
+- 反馈意见:第一版方案中老板线命令仍然过多(共加了 6+ 个新命令),且 trace/timeline 在 IM 内必然糊成一团,要求引入 GUI 或其他办法。
+- 人类喜欢 aico-view 方案,要求把所有讨论沉淀为一份系统架构设计 markdown,使用 drawio xml 画分层架构(L1 LLM 在下、L6 boss 在上),并指引未来 agent 如何接手和迭代。
+
+### 思考与讨论
+- 候选 A:把"lead 主动推动"作为下一阶段产品方向直接开做 → ❌ **否决**:Phase 8 absence loop dogfood 已被人类判为效果不佳,在不稳之上叠不稳;Lead 主动也会撞 NORTH_STAR "YOLO 不能默认" 边界。
+- 候选 B:把三块基础设计写成多份 ADR 分散记录 → ❌ **否决**:本次产出跨"痛点 / 架构 / 路线图 / 命令分层 / Future 边界"五个切面,ADR 是决策快照不是活文档,会被切散后失去整体性。
+- 候选 C:在 `docs/architecture/` 下新增一份跨切面活文档,与 overview / a2a-memory-fabric / project-assignment-layer 同级,引用而不替代 ADR → ✅ **选定**:与已有文档分层一致,且 CLAUDE.md 必读链路无需修改,只在 STATUS 和 README 加入口指针即可。
+- 命令爆炸的处理:候选 A 是新增大量 lead 命令但分组显示 → ❌ 增加复杂度;候选 B 是只给老板 `/undo` + `/why` 两条新命令,深度查询走 aico-view,lead 内务命令独立分组,`/help` 默认只展示 boss-only → ✅ **选定**。
+- aico-view 是否破 absence-first:否。NORTH_STAR 原文是"无论身处何地""老板不在 Mac 前",没禁止可视化;手机网页正好契合 absence-first;严格守住"只读 + 写操作回 IM + deep link 跳 IM 预填命令"边界后,等价于把 IM 的输入面和 web 的展示面分工。
+
+### 产出
+- 新增 `docs/architecture/boss-first-grounding.md`(本轮主交付):
+  - §1 痛点 P1-P6(每条标注源码事实依据,基于实读 `commands.py` 46 命令 / `memory.py` 无 experience 字段 / `audit.py` 无 trace_id 串联等)。
+  - §2 解法总览表(痛点 → 分层 → 命令归属)。
+  - §3 三块基础详细设计:Memory + Experience 分层(M1/M2/M3)、Audit + Rollback(A1/A2/A3)、aico-view 移动只读 web(V1/V2/V3)、命令分层(/help 分组,零代码风险)。
+  - §4 Future 记录:F-1 Lead Standing Charter / F-2 Team Karpathy Loop,暂不实现,边界写明。
+  - §5 L1-L6 分层架构图(完整 drawio xml 嵌入,可复制到 diagrams.net 编辑)。
+  - §6 sprint 路线图表格(可勾选)。
+  - §7 文档生命周期:接手必读顺序、何时更新、新会话落地提示词模板。
+  - §8 引用与关联。
+- `STATUS.md`:轮次更新为 Round 127,顶部新增"当前路线图"行指向新文档;"上一轮做了什么"追加 Round 127 摘要。
+- `docs/architecture/overview.md`:末尾新增对 boss-first-grounding 的引用。
+- `README.md` / `README.zh-CN.md`:首屏导航补 `Boss-first roadmap` 链接。
+
+### 验证结果
+- 在落笔前通过源码核实痛点(commands.py / memory.py / audit.py / dream.py / outcome_grader.py / models.py),确认没有把 "经验已分层""trace_id 已串联"等当前并不存在的事实写进文档。
+- 仅新增 / 修改文档,未改运行代码,未跑测试,未改公共 API。
+
+### 关键决策
+- 🔒 **决策 1**:lead 主动机制 / Team Karpathy Loop 进 Future 而非当前 sprint;前置依赖是三块基础落地 + Phase 8 dogfood 跑通。
+- 🔒 **决策 2**:老板新命令只 2 个:`/undo`(智能撤销)和 `/why`(引用消息追溯);其余精细命令归 lead/role 内务,`/help` 按受众分组。
+- 🔒 **决策 3**:`/undo` 与 `/rollback` 的语义边界写死:只撤 AICO 内部状态(memory / experience / appointment),不撤 git / 已写文件 / 已跑 shell。
+- 🔒 **决策 4**:aico-view 是手机端只读 web,所有写操作回 IM;不破 absence-first,因为 NORTH_STAR 没禁止可视化,只禁止"绑定 Mac 桌面"。
+- 🔒 **决策 5**:Memory 和 Experience 同存储不同 `kind`,Experience 才会按 role + trigger 注入 system prompt;Grader verdict 反向回写 confidence。
+
+### 留给下一轮
+- 落地 Sprint M1 + A1(并行):MemoryAtom 增加 `kind` + `ExperienceMeta`、Dream 输出改 candidate experience;同时 audit 增加 unified event index + trace_id 串联 + 短 ID 改造。
+- 在 M1 进入实现前,新开会话使用 `boss-first-grounding.md §7.3` 的提示词模板。
+- 若实施中发现新痛点,追加到 §1 的 P7+;若架构图变化,同步修改 §5 的 drawio xml。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 127,顶部新增当前路线图指针。
+

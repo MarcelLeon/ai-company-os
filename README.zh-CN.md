@@ -2,7 +2,7 @@
 
 > 面向本机 AI coding agents 的远程项目作战室。
 
-[English](README.md) · [快速上手](docs/human/quickstart.md) · [Release Room Demo](docs/examples/release-room.md) · [路线图](STATUS.md) · [Agent 接手入口](AGENTS.md)
+[English](README.md) · [快速上手](docs/human/quickstart.md) · [Release Room Demo](docs/examples/release-room.md) · [路线图](STATUS.md) · [老板第一路线图](docs/architecture/boss-first-grounding.md) · [Agent 接手入口](AGENTS.md)
 
 AI Company OS 把你电脑上的 Claude Code、Codex、Cursor、Gemini、Trae、CodeFlicker、
 OpenClaw 或公司内部 AI CLI 收编成一个可以通过 Telegram / 飞书远程管理的项目团队。

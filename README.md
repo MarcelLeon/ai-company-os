@@ -2,7 +2,7 @@
 
 > Remote control room for your local AI coding agents.
 
-[中文说明](README.zh-CN.md) · [Quickstart](docs/human/quickstart.md) · [Release Room demo](docs/examples/release-room.md) · [Roadmap](STATUS.md) · [Agent handoff](AGENTS.md)
+[中文说明](README.zh-CN.md) · [Quickstart](docs/human/quickstart.md) · [Release Room demo](docs/examples/release-room.md) · [Roadmap](STATUS.md) · [Boss-first roadmap](docs/architecture/boss-first-grounding.md) · [Agent handoff](AGENTS.md)
 
 AI Company OS turns the AI tools already running on your machine, such as Claude Code,
 Codex, Cursor, Gemini, Trae, CodeFlicker, OpenClaw, or internal CLIs, into a remote

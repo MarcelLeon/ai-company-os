@@ -3,9 +3,11 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-05-27
-**当前轮次**:Round 125(Transient Quiet Heartbeat Rendering)
+**最后更新**:2026-05-29
+**当前轮次**:Round 127(Boss-First Grounding 设计文档落地)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
+**当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
+[`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
 
 ---
 
@@ -212,7 +214,7 @@ AICO 的产品边界是 absence-first:
 - [x] `/task` collaboration parent / child trace
 - [x] Agent reply language command(`/language [en|zh]`):默认英文,可按 IM chat 作用域限制后续 agent 回复语言,不改变内置命令语言。
 - [x] Phase 5 feature complete handoff
-- [ ] Telegram 真实协作 smoke test(作为 Phase 6 回归验收保留)
+- [x] Telegram 真实协作 smoke test(人类确认真实 IM 下可触发;后续不再作为高优待办)
 - [x] Prompt 分层渲染
 
 ### Phase 6 进度
@@ -287,6 +289,7 @@ AICO 的产品边界是 absence-first:
 - [x] `/dream` Dream/runbook memory 第一切片:从 waiting approval / running / failed / interrupted / rejected 任务生成 reviewable candidate memory,默认不注入 prompt。
 - [x] Hybrid Memory Retrieval 第一切片:默认本地 scorer 从纯 semantic 升级为 exact phrase + phrase overlap + semantic alias fallback,保留 MemoryGovernor 边界。
 - [x] Telegram native output pilot:`AICO_PREFER_NATIVE_CHANNEL_FORMAT=true` 时 agent 优先输出 Telegram HTML,验证失败自动回退 rich text。
+- [x] Phase 8 Absence Loop 真实 IM dogfood 已由人类执行;效果不佳且暂不继续投入 native output 方向,当前 dogfood 使用 `AICO_PREFER_NATIVE_CHANNEL_FORMAT=false`。
 - [ ] 多 step / 多 agent 夜间自动编排
 - [ ] 早报自动生成或定时推送
 
@@ -302,6 +305,22 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 127**(2026-05-29,Claude):
+- 与人类两轮脑暴 absence-first 边界、lead 主动机制、Memory/Experience 分层、Audit/Rollback 可视化和命令爆炸问题。
+- 决策:近期高优为三块基础能力——Memory + Experience 分层、Audit + Rollback(+ aico-view 移动只读 web)、之后再回 Absence Loop 加固。Lead 主动机制(Standing Charter / Proposal Queue)和 Team Karpathy Loop 标记为 Future,暂不实现。
+- 输出 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md):基于源码核实的痛点 P1-P6、解法 §3、L1-L6 分层架构图(drawio xml 嵌入)、sprint 路线图 M1/M2/M3/A1/A2/A3/V1/V2/V3 和新会话落地操作指引。
+- 关键 boss-first 决策:命令分层(老板只看 6 个核心动作);`/undo` 与 `/why` 替代多 ID 命令;trace 深度可视化走 aico-view(只读,写操作回 IM,符合 absence-first)。
+- 关键边界:`/undo` 与 `/rollback` 只撤 AICO 内部状态(memory / experience / appointment),不撤 git / shell / file。
+- 在 README 和 `docs/architecture/overview.md` 加入了对新设计文档的入口指针。
+- 本轮只新增设计文档与索引,未改运行代码,未跑测试。
+
+**Round 126**(2026-05-27,Codex):
+- 按人类真实 IM dogfood 反馈校准当前待办:Phase 8 Absence Loop 验收已执行,但效果不佳,暂不继续投入该方向;运行侧改回 `AICO_PREFER_NATIVE_CHANNEL_FORMAT=false`。
+- 关闭 Phase 5 真实协作 smoke test 高优待办:人类确认真实 IM 下协作能触发,后续不再把它作为下一轮回归项。
+- 保留 Lead decision workflow、Goal Brief v0、Release Room、Feishu、Codex bind / Claude resume 和 usage 上报等原待办。
+- 将“开源首屏二次验收:AI agent 开发者 / 个人开发者视角”提升为下一轮最高优先级。
+- 本轮只更新状态与交接文档,未改运行代码,未跑测试。
 
 **Round 125**(2026-05-27,Codex):
 - 人类反馈真实 Telegram 输出把 `Still running: no adapter output for 120s...` 和后续 native HTML 结果拼到同一条消息里,导致 `<b>` / `<code>` 等标签裸露,列表也粘成一段。
@@ -1244,18 +1263,9 @@ AICO 的产品边界是 absence-first:
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【高】Phase 8 Absence Loop 真实 IM dogfood,按顺序逐条问**:
-   - 直接可问的问题:
-     - `/project aico`
-     - `/inbox`
-     - `/morning`
-     - `/goal implementer inspect inbox handoff 验收: list actionable items; explain blocked risks`
-     - `/task <outcome_grader_task_id>`
-     - `/dream`
-     - `/remember Morning handoff must show done, blocked, risks, and next actions.`
-     - `/recall 早报接手`
-   - 预期效果:`/inbox` 顶部有 `First action`,每个待处理项都能直接看出下一步:审批用 `/approve` / `/reject`,running 用 `/task` / `/interrupt`,handoff 用 `/task` / `/daily`,Goal/decision/collaboration 都能跳转到对应 task。输出仍只包含 current active project。
-   - 补充预期:`/morning` 汇总 done/blocked/risks/next actions;`/goal` 完成后如 tester/reviewer 已任命会出现 Outcome Grader 任务;`/dream` 只生成 candidate memory;`/recall 早报接手` 能召回刚写入的 morning handoff 记忆。
+1. **【高】开源首屏二次验收:AI agent 开发者 / 个人开发者视角**:
+   - 检查 README 首屏是否在 30 秒内说清“远程指挥本机真实 AI 工具”。
+   - 用全新 clone + Telegram token 跑一次 Quickstart,记录外部开发者真实卡点。
 2. **【高】Lead decision workflow 真实 IM 验收**:
    - 直接可问的问题:
      - `/project aico`
@@ -1274,30 +1284,17 @@ AICO 的产品边界是 absence-first:
      - `/ask tester check the Phase 8 inbox acceptance path, 必须给出通过/失败证据`
      - `/ask tester what is the current project testing strategy?`
    - 预期效果:复杂任务的目标、验收、证据和停止条件前置到 prompt 与任务详情里;`/task` 能看到 goal id/objective/acceptance,`/inbox` 能在 current-project scope 下列出 Goal Brief follow-up。
-4. **【高】Phase 5 真实协作 smoke test 作为后续回归项**:
-   - 直接可问的问题:
-     - `/project aico`
-     - `/ask implementer propose a tiny Phase 8 inbox implementation plan, then ask @reviewer: review whether the plan violates approval or audit boundaries.`
-     - `/tasks`
-     - `/task <父任务 id>`
-     - `/task <reviewer 子任务 id>`
-     - `/inbox`
-     - `/status`
-   - 预期效果:Phase 5 的 A2A 协作在真实 Telegram 下不是“只创建任务”,而是有输出、可追踪、可恢复;即便 provider 静默,系统也能用 heartbeat、`/task`、`/inbox`、`/interrupt` 给出可操作状态。
-5. **【高】开源首屏二次验收:AI agent 开发者 / 个人开发者视角**:
-   - 检查 README 首屏是否在 30 秒内说清“远程指挥本机真实 AI 工具”。
-   - 用全新 clone + Telegram token 跑一次 Quickstart,记录外部开发者真实卡点。
-6. **【高】Release Room Stage 3 GIF 复剪 / README 体验复核**:
+4. **【高】Release Room Stage 3 GIF 复剪 / README 体验复核**:
    - 已生成真实 Telegram dogfooding GIF: `docs/assets/release-room-demo.gif`,并嵌入 README。
    - 当前 GIF 是 35 秒实录剪辑,覆盖 `/use`、`/team`、project memory、Codex PM/tester 输出、`/daily` 和 `/audit`。
    - 下一轮可做一次更精剪版本:减少旧消息露出,补更清晰的 approval gate 镜头,并避免 read-only pytest 临时目录失败入镜。
    - 若继续录真实 CLI,优先让 Codex tester 使用可写临时目录或只做静态检查,不要在 read-only sandbox 里直接跑 pytest。
-7. **【高】Feishu Channel 部署层与真实 smoke test**:
+5. **【高】Feishu Channel 部署层与真实 smoke test**:
    - 用 FastAPI route 或现有部署入口把飞书事件 callback 接到 `FeishuChannel.handle_event(payload)`。
    - 在飞书开放平台完成 URL verification,订阅 `im.message.receive_v1`。
    - 配置 App ID / App Secret / Verification Token,跑文本入站、回复、编辑/删除降级 smoke test。
-11. **【中】Codex bind / Claude resume / 长文本复测**:继续确认 session 和长文本分片不被 Phase 6 命令影响。
-12. **【低】Adapter usage 上报**:等 Claude/Codex Adapter 能稳定提供 usage 后,记录 `task_usage_recorded` 审计事件;当前只保留接入边界,不伪造数据。
+6. **【中】Codex bind / Claude resume / 长文本复测**:继续确认 session 和长文本分片不被 Phase 6 命令影响。
+7. **【低】Adapter usage 上报**:等 Claude/Codex Adapter 能稳定提供 usage 后,记录 `task_usage_recorded` 审计事件;当前只保留接入边界,不伪造数据。
 
 ---
 

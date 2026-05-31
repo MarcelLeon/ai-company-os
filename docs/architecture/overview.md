@@ -167,3 +167,9 @@
 2. **需求与北极星不符**:回到 NORTH_STAR,大概率应该砍需求
 
 **绝对不要**在不调整架构的情况下偷偷绕过架构(如直接在 Channel 里调 Adapter)。这是"normalization of deviance"的开始。
+
+---
+
+## 跨切面活文档(routing 指南)
+
+- [`boss-first-grounding.md`](boss-first-grounding.md) — 2026-05-29 新增。汇总当前真实痛点(P1-P6)、Memory + Experience 分层 / Audit + Rollback / aico-view 的近期高优设计、L1-L6 分层架构 drawio 图,以及未来 agent 接手与迭代该文档的操作指引。开始任何"基础能力加固类"任务前先读它。
