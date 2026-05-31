@@ -38,7 +38,7 @@ from aico.core.lead_decision import (
     LeadDecisionWorkflow,
     is_decision_task,
 )
-from aico.core.memory import MemoryStore
+from aico.core.memory import MemoryAtom, MemoryScope, MemoryStore
 from aico.core.memory_capture import MemoryCaptureService
 from aico.core.memory_commands import MemoryCommandHandler
 from aico.core.message_rendering import rich_text_message
@@ -69,6 +69,8 @@ from aico.core.session_commands import (
 )
 from aico.core.streaming import StreamedMessageWriter
 from aico.core.task_bus import TaskBus
+from aico.core.undo_why_commands import UndoCommandHandler, WhyCommandHandler
+from aico.core.unified_event import InMemoryUnifiedEventIndex, UnifiedEventIndex
 
 log = logging.getLogger(__name__)
 ProviderSessionRefFactory = Callable[[AgentSession], ProviderSessionRef | None]
@@ -109,6 +111,20 @@ class Orchestrator:
             memory_store=self._memory_store,
             provider_session_factory=self._provider_session_factory,
         )
+        self._memory_capture = (
+            MemoryCaptureService(self._memory_store) if self._memory_store is not None else None
+        )
+        self._setup_command_handlers(offline_delegation_store)
+
+    def _setup_command_handlers(
+        self,
+        offline_delegation_store: OfflineDelegationStore | None,
+    ) -> None:
+        self._setup_coordinators()
+        self._setup_boss_and_lead_handlers()
+        self._setup_workflow_handlers(offline_delegation_store)
+
+    def _setup_coordinators(self) -> None:
         self._role_proposals = RoleProposalCoordinator(
             task_bus=self._task_bus,
             session_store=self._session_store,
@@ -133,6 +149,8 @@ class Orchestrator:
             provider_session_factory=self._provider_session_factory,
             run_target_task=self._run_target_task,
         )
+
+    def _setup_boss_and_lead_handlers(self) -> None:
         self._project_commands = ProjectCommandHandler(
             channel=self._channel,
             task_bus=self._task_bus,
@@ -158,6 +176,20 @@ class Orchestrator:
             project_directory=self._project_directory,
             memory_store=self._memory_store,
         )
+        self._undo_commands = UndoCommandHandler(
+            channel=self._channel,
+            memory_store=self._memory_store,
+            event_index_factory=self._build_event_index,
+        )
+        self._why_commands = WhyCommandHandler(
+            channel=self._channel,
+            event_index_factory=self._build_event_index,
+        )
+
+    def _setup_workflow_handlers(
+        self,
+        offline_delegation_store: OfflineDelegationStore | None,
+    ) -> None:
         self._offline_delegations = OfflineDelegationCommandHandler(
             channel=self._channel,
             project_directory=self._project_directory,
@@ -181,12 +213,16 @@ class Orchestrator:
             task_for_assignment=self._task_factory.task_for_assignment_with_memory,
             run_decision_task=self._run_decision_task,
         )
-        self._memory_capture = (
-            MemoryCaptureService(self._memory_store) if self._memory_store is not None else None
-        )
 
     def bind(self) -> None:
         self._channel.on_incoming(self.handle_incoming)
+
+    def _build_event_index(self) -> UnifiedEventIndex:
+        return _build_orchestrator_event_index(
+            task_bus=self._task_bus,
+            memory_store=self._memory_store,
+            project_directory=self._project_directory,
+        )
 
     async def handle_incoming(self, message: IncomingMessage) -> None:
         log.info(
@@ -626,6 +662,28 @@ class Orchestrator:
 _ASSIGNMENT_ROLE_METADATA_KEY = "aico.assignment_role"
 
 
+def _build_orchestrator_event_index(
+    *,
+    task_bus: TaskBus,
+    memory_store: MemoryStore | None,
+    project_directory: ProjectAssignmentDirectory,
+) -> UnifiedEventIndex:
+    memory_atoms: list[MemoryAtom] = []
+    if memory_store is not None:
+        for project in project_directory.projects():
+            memory_atoms.extend(
+                memory_store.list_atoms(
+                    MemoryScope.project(project.id),
+                    include_archived=True,
+                )
+            )
+    return InMemoryUnifiedEventIndex(
+        audit_events=task_bus.audit_events(limit=None),
+        memory_atoms=tuple(memory_atoms),
+        task_snapshots=task_bus.task_snapshots(limit=None),
+    )
+
+
 def _collaboration_source_label(task: Task) -> str:
     for entry in task.metadata:
         if (
@@ -683,6 +741,10 @@ async def _handle_command(
         await orchestrator._dream_commands.handle_dream(message)
     elif command.name is CommandName.EXPERIENCE:
         await orchestrator._experience_commands.handle_experience(message, command.payload)
+    elif command.name is CommandName.UNDO:
+        await orchestrator._undo_commands.handle_undo(message, command.payload)
+    elif command.name is CommandName.WHY:
+        await orchestrator._why_commands.handle_why(message, command.payload)
     elif command.name is CommandName.GOAL:
         await orchestrator._goal_briefs.handle_goal(message, command.payload)
     elif command.name in _PROJECT_ROLE_COMMANDS:
@@ -749,6 +811,7 @@ async def _handle_inbox_command(orchestrator: Orchestrator, message: IncomingMes
             MessageContent(text="No active project. Use /project <project> first."),
         )
         return
+    index = orchestrator._build_event_index()
     await orchestrator._channel.send_message(
         message.source,
         inbox_message(
@@ -759,6 +822,7 @@ async def _handle_inbox_command(orchestrator: Orchestrator, message: IncomingMes
                 project_id=project.id,
             ),
             audit_events=orchestrator._task_bus.audit_events(limit=None),
+            recent_events=index.recent(limit=5),
         ),
     )
 
@@ -771,6 +835,7 @@ async def _handle_morning_command(orchestrator: Orchestrator, message: IncomingM
             MessageContent(text="No active project. Use /project <project> first."),
         )
         return
+    index = orchestrator._build_event_index()
     await orchestrator._channel.send_message(
         message.source,
         morning_message(
@@ -781,6 +846,7 @@ async def _handle_morning_command(orchestrator: Orchestrator, message: IncomingM
                 project_id=project.id,
             ),
             audit_events=orchestrator._task_bus.audit_events(limit=None),
+            recent_events=index.recent(limit=5),
         ),
     )
 

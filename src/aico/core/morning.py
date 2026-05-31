@@ -6,6 +6,7 @@ from aico.core.command_messages import short_id_text
 from aico.core.message_rendering import rich_text_message
 from aico.core.models import AuditEvent, MessageContent, RiskLevel, TaskSnapshot, TaskStatus
 from aico.core.offline_delegation import OfflineDelegationRecord
+from aico.core.unified_event import UnifiedEvent
 
 _PROJECT_ID_KEY = "aico.project_id"
 
@@ -16,6 +17,7 @@ def morning_message(
     task_snapshots: tuple[TaskSnapshot, ...],
     overnight_records: tuple[OfflineDelegationRecord, ...] = (),
     audit_events: tuple[AuditEvent, ...] = (),
+    recent_events: tuple[UnifiedEvent, ...] = (),
 ) -> MessageContent:
     scoped_tasks = _scoped_tasks(task_snapshots, project_id)
     lines = [f"Morning handoff: {project_id}", f"scope: current project ({project_id})"]
@@ -23,8 +25,22 @@ def morning_message(
     lines.extend(_blocked_lines(scoped_tasks))
     lines.extend(_risk_lines(scoped_tasks, audit_events))
     lines.extend(_handoff_lines(overnight_records))
+    lines.extend(_recent_activity_lines(recent_events))
     lines.extend(_next_action_lines(scoped_tasks, overnight_records))
     return rich_text_message("\n".join(lines))
+
+
+def _recent_activity_lines(events: tuple[UnifiedEvent, ...]) -> list[str]:
+    if not events:
+        return []
+    lines = ["", "Recent activity:"]
+    for event in events:
+        ts = event.timestamp.strftime("%H:%M")
+        lines.append(
+            f"- {ts} [{event.source.value}] {event.kind} {event.short_id} — {event.summary}"
+        )
+    lines.append("- ask /why <short_id> for the full trace")
+    return lines
 
 
 def _done_lines(task_snapshots: tuple[TaskSnapshot, ...]) -> list[str]:

@@ -18,6 +18,34 @@
 
 ## 当前活跃与近期归档卡点
 
+### [B-005] Orchestrator class size regression
+
+**状态**:🟡 DEFERRED
+**提出于**:Round 132
+**最后更新**:2026-05-31
+**影响**:Boss-first roadmap 后续 sprint(V1/V2/A3/V3)再往 Orchestrator 加 handler 必须遵守"主体不变"边界,否则会再次撞 500 行硬限。不阻塞 A2 落地,但建议在 V3 完成后做一轮独立拆分。
+
+**问题描述**
+B-004 在 Round 107 把 `Orchestrator` 拆到 480 行。M2/A2 各加了 1-2 个 command handler 实例化,加上模块级 `_build_orchestrator_event_index` helper 和 `_setup_*` 子方法,类总规模重新涨到约 585 行。每个方法已经被拆到 <100 行(`__init__` 37 / `_setup_command_handlers` 8 / `_setup_coordinators` 26 / `_setup_boss_and_lead_handlers` 36 / `_setup_workflow_handlers` 28),但类整体仍超 500 行硬限。
+
+**已尝试的方向**
+- Round 132 已经把 `__init__` 从 117 行拆成 4 个 <40 行的私有方法,satisfies 单方法限制,不满足类整体限制。
+- 不在 A2 本 sprint 做大规模重构,以避免扩范围。
+
+**需要什么才能解开**
+- 独立重构 sprint:把 command handlers 的实例化 + 命令分发表拆到一个新的 `OrchestratorCommandRegistry` 类(或类似形态),Orchestrator 主体只剩 task 提交 / 流式输出 / 状态查询。
+- 不要再依赖"挤一挤就能再加一个 handler"——下一个 handler 会再次撞限。
+
+**当前 workaround**
+- 新 sprint(V1/V2/V3/A3)如果需要加新 command handler,**必须放在自己的模块文件**,Orchestrator 内只加 1 行命令分发 + 1 行 handler 实例化。
+- 超出"挤一挤"额度时,优先把已有 `_setup_*` 之一进一步拆分,但**主体仍然超限**——记入本卡点。
+
+**相关链接**
+- ROUNDS Round 107(B-004 RESOLVED 时的状态)
+- ROUNDS Round 132(本卡点提出)
+- ADR-0032(A2 完成时识别问题)
+- CLAUDE.md "Hard rules" 单类 <500 行限制
+
 ### [B-004] Core orchestration classes exceed project size hard limit
 
 **状态**:🟢 RESOLVED

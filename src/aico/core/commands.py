@@ -54,6 +54,8 @@ class CommandName(StrEnum):
     REJECT = "reject"
     INTERRUPT = "interrupt"
     EXPERIENCE = "experience"
+    UNDO = "undo"
+    WHY = "why"
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,7 @@ def parse_command(text: str) -> Command | None:
         CommandName.TEAM,
         CommandName.AGENTS,
         CommandName.SESSIONS,
+        CommandName.UNDO,
     }:
         return Command(CommandName(lowered))
 
@@ -132,6 +135,8 @@ def help_text() -> str:
         "/overnight <goal> - delegate an offline project goal to the current lead\n"
         "/dream - record reviewable runbook memory candidates from recent project signals\n"
         "/experience review|list|promote|archive - lead-internal experience lifecycle\n"
+        "/undo - reverse the most recent AICO-internal mutation (memory/experience only)\n"
+        "/why [short_id] - explain what produced an event (defaults to most recent)\n"
         "/goal [role] <objective> - attach a verifiable goal brief to project work\n"
         "/roles [project|all] - show compact role board; add all for hidden roles\n"
         "/role <id> - show one role's scope and approval policy\n"

@@ -18,6 +18,9 @@
 
 ### Added
 - 项目立项,北极星三句话确立
+- `/undo` boss-only 命令:撤销最近一次 AICO 内部状态变更(memory append / experience promote / archive),**不撤** git / shell / file。每次回复都明确边界。
+- `/why [short_id]` boss-only 命令:从 UnifiedEventIndex 取该 trace 的全部事件;空参数返回最近一条事件的 trace。
+- `/inbox` 和 `/morning` 输出在末尾追加 "Recent activity" 摘要,并提示 `/why <short_id>` 用法。
 - `/experience review|list|promote|archive` lead 内务命令:管理 Dream 生成的 candidate experience 晋升 / 列表 / 失效;active experience 会按 role 自动注入 role system prompt。
 - `/language [en|zh]` agent 回复语言命令:默认英文,可按 IM chat 作用域限制后续 agent 回复语言,不改变内置命令语言。
 - `AICO_PREFER_NATIVE_CHANNEL_FORMAT=true` Telegram native output pilot:agent 可优先输出 Telegram HTML,通过白名单验证后直接发送;验证失败自动回退 rich text。

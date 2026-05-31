@@ -469,7 +469,7 @@
 | **M2** | ✅ `/experience review/list/archive` + PromptStack 加 ExperienceLayer(Round 130) | M1 | 1 sprint |
 | **M3** | ✅ Grader verdict → confidence 回写 + 排序(Round 131) | M1, M2 | 1 sprint |
 | **A1** | ✅ Unified event index + trace_id 串联 + 短 ID 改造(Round 129) | 无(与 M1 可并行) | 1 sprint |
-| **A2** | `/undo` + `/why` + `/morning` `/inbox` 内嵌 timeline 摘要 | A1 | 1 sprint |
+| **A2** | ✅ `/undo` + `/why` + `/morning` `/inbox` 内嵌 timeline 摘要(Round 132) | A1 | 1 sprint |
 | **V1** | aico-view 最小 FastAPI + Timeline/Task Trace/Memory Tree 三视图 | A1 | 1 sprint |
 | **V2** | aico-view → IM deep-link 跳转 | V1 + A2 | 0.5 sprint |
 | **A3** | `/timeline`(细粒度)+ `/rollback` 精细 + 边界文档 | A2, M2 | 1 sprint |

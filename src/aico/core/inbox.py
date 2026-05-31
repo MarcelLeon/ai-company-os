@@ -7,6 +7,7 @@ from datetime import datetime
 from aico.core.message_rendering import rich_text_message
 from aico.core.models import AuditEvent, MessageContent, TaskSnapshot, TaskStatus, utc_now
 from aico.core.offline_delegation import OfflineDelegationRecord
+from aico.core.unified_event import UnifiedEvent
 
 _PROJECT_ID_KEY = "aico.project_id"
 _INTENT_KEY = "aico.intent"
@@ -21,6 +22,7 @@ def inbox_message(
     task_snapshots: tuple[TaskSnapshot, ...],
     overnight_records: tuple[OfflineDelegationRecord, ...] = (),
     audit_events: tuple[AuditEvent, ...] = (),
+    recent_events: tuple[UnifiedEvent, ...] = (),
 ) -> MessageContent:
     scoped_tasks = _scoped_tasks(task_snapshots, project_id)
     lines = [f"Inbox: {project_id}", f"scope: current project ({project_id})"]
@@ -30,6 +32,7 @@ def inbox_message(
     lines.extend(_handoff_lines(overnight_records))
     lines.extend(_decision_goal_lines(scoped_tasks))
     lines.extend(_collaboration_lines(audit_events, scoped_tasks))
+    lines.extend(_recent_activity_lines(recent_events))
     lines.append("")
     lines.append("Next:")
     lines.append("- /inbox")
@@ -37,6 +40,19 @@ def inbox_message(
     lines.append("- /tasks")
     lines.append("- /audit")
     return rich_text_message("\n".join(lines))
+
+
+def _recent_activity_lines(events: tuple[UnifiedEvent, ...]) -> list[str]:
+    if not events:
+        return []
+    lines = ["", "Recent activity:"]
+    for event in events:
+        ts = event.timestamp.strftime("%H:%M")
+        lines.append(
+            f"- {ts} [{event.source.value}] {event.kind} {event.short_id} — {event.summary}"
+        )
+    lines.append("- ask /why <short_id> for the full trace")
+    return lines
 
 
 def _first_action_lines(

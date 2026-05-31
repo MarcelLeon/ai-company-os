@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-05-31
-**当前轮次**:Round 131(Sprint M3 — Grader verdict → experience feedback)
+**当前轮次**:Round 132(Sprint A2 — /undo + /why + inbox/morning timeline)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -296,6 +296,7 @@ AICO 的产品边界是 absence-first:
 - [x] Sprint A1 — AuditEvent/Task/MemoryAtom 增加 `trace_id`;新增 `UnifiedEventIndex` 派生只读层;ADR-0030(Round 129)。
 - [x] Sprint M2 — `/experience review|list|promote|archive` lead 内务命令;`prompt_stack` 加 ExperienceLayer;task metadata 写出 `aico.injected_experience_ids`;ADR-0031(Round 130)。
 - [x] Sprint M3 — Outcome Grader `parse_verdict` + `apply_verdict_to_owner_experiences` 回写 confidence/hits/misses/injection_count;grader task trace_id 继承 owner trace_id(Round 131)。
+- [x] Sprint A2 — boss-only `/undo` + `/why` + `/inbox` `/morning` 内嵌 Recent activity;ADR-0032(Round 132)。
 
 ### 开源 Demo 进度
 
@@ -309,6 +310,18 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 132**(2026-05-31,Claude — Sprint A2):
+- 落地 boss-first-grounding §6 Sprint A2:boss-only `/undo` 和 `/why`,`/inbox` 和 `/morning` 内嵌 Recent activity 摘要。
+- 新增 `undo_why_commands.py`(< 280 行):`UndoCommandHandler` 撤销最近 24 小时内 AICO 内部 memory 变更(experience promote → CANDIDATE / archive → ACTIVE / fact append → archive),回复显式写明"不撤 git / shell / file";`WhyCommandHandler` 按 short_id 前缀匹配走 UnifiedEventIndex 的 trace 序列。
+- `inbox.py` / `morning.py` 加可选 `recent_events` 参数,渲染 "Recent activity" 段 + 一行 `/why <short_id>` 提示。
+- `orchestrator.py` 新增 `_build_event_index` 私有方法 + 模块级 helper `_build_orchestrator_event_index`(派生只读 UnifiedEventIndex,不写真相);`__init__` 拆为 `_setup_command_handlers` → `_setup_coordinators` / `_setup_boss_and_lead_handlers` / `_setup_workflow_handlers` 三个子方法(每个 <40 行,满足 100 行硬限)。
+- `commands.py` 加 `CommandName.UNDO` / `WHY`,help 加两行。
+- 新增 ADR-0032 `Undo and Why scope boundary`(Accepted)。
+- 新增 BLOCKER B-005 `Orchestrator class size regression`(🟡 DEFERRED):类规模重新涨到 ~585 行,后续 sprint 加 handler 必须遵守"主体不变"边界,V3 完成后做独立拆分。
+- 验证通过:`uv run pytest` **365 passed / 1 skipped**;ruff / format / mypy 全绿。
+- CHANGELOG 加 `/undo` / `/why` / Recent activity 说明。
+- 在 `docs/architecture/boss-first-grounding.md` §6 表格给 A2 标 ✅ 引用 Round 132。
 
 **Round 131**(2026-05-31,Claude — Sprint M3):
 - 落地 boss-first-grounding §6 Sprint M3:Outcome Grader verdict 反向回写 experience confidence / verdict_hits / verdict_misses / injection_count。

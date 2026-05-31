@@ -6324,3 +6324,60 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - `docs/architecture/boss-first-grounding.md` §6 M3 行打 ✅ 引用 Round 131。
 - 不开 ADR(兑现 ADR-0030 + ADR-0031 既有承诺)。
 - 不动 CHANGELOG(实质行为对老板不可见,M3 提升的是 lead/agent 体验,A2 `/why` 落地时再统一更 CHANGELOG)。
+
+---
+
+## Round 132 — 2026-05-31 — Claude
+
+### 输入
+- 接 Round 131 M3 完成,连续推进 §6 路线图 A2。
+- 本轮聚焦 boss-only `/undo` / `/why` 和 `/inbox` `/morning` 内嵌 Recent activity。
+
+### 思考与讨论
+- 候选 A:`/undo` 试图覆盖 git rollback / IM 撤回 → ❌ 失败模式无限,违反"可撤" 真实语义;一次"看似撤了"的事故就破坏老板信任。
+- 候选 B:`/undo` 严格 AICO 内部 + 边界写在每次回复里 → ✅ 选定。
+- 候选 C:不提供 `/undo`,只给 `/rollback memory <id>` 精细命令 → ❌ 违反 boss-first(老板要记 ID + 记命令)。
+- `/why` 通过 reply-to-message 隐式取 short_id 是 boss-first-grounding §3.2 原设计,但 `IncomingMessage` 当前无 reply 元数据。决定:本 sprint 走显式 `/why <short_id>`,reply 解析作为 channel 层扩展未来再做(在 ADR-0032 显式标出)。
+- 撤销语义:不物理回退,而是 append 新的反向事件;原事件保留可审。
+
+### 产出
+- 新增 `src/aico/core/undo_why_commands.py`:`UndoCommandHandler` + `WhyCommandHandler`,共 < 280 行。
+- `src/aico/core/inbox.py` / `morning.py` 加可选 `recent_events: tuple[UnifiedEvent, ...]` 参数 + `_recent_activity_lines` 渲染段。
+- `src/aico/core/orchestrator.py`:
+  - 新增 `_build_event_index` 实例方法 + 模块级 `_build_orchestrator_event_index(task_bus, memory_store, project_directory)` helper(派生只读 UnifiedEventIndex,迭代每个 project 的 atoms,include_archived=True)。
+  - `__init__` 拆分成 4 个 ≤40 行方法(`__init__` / `_setup_coordinators` / `_setup_boss_and_lead_handlers` / `_setup_workflow_handlers`)+ 一个 8 行 `_setup_command_handlers` 编排器。
+  - 命令分发新增 `UNDO` / `WHY` 两个 elif。
+  - `inbox` / `morning` 处理器在调用 `inbox_message` / `morning_message` 时注入 `recent_events=index.recent(limit=5)`。
+- `src/aico/core/commands.py`:`CommandName.UNDO` / `WHY`,`UNDO` 进 lowered 短命令集,help 加两行。
+- 新增 ADR-0032 `Undo and Why scope boundary`(Accepted)。
+- 新增 BLOCKER B-005 `Orchestrator class size regression`(🟡 DEFERRED)。
+- 新增测试 `tests/unit/test_undo_why_commands.py`(5 用例)。
+- CHANGELOG 加 `/undo` / `/why` / Recent activity 说明。
+- `docs/architecture/boss-first-grounding.md` §6 表格 A2 行打 ✅ Round 132。
+
+### 验证结果
+- `uv run pytest`:**365 passed / 1 skipped**(360 + 5 new = 365)。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:127 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 122 source files。
+
+### 关键决策
+- 🔒 **决策 1**:`/undo` 严格只撤 AICO 内部状态(memory / experience 生命周期);每次回复都明确"不撤 git / shell / IM"边界。
+- 🔒 **决策 2**:撤销 = append 新反向事件,**不物理回退**,原事件保留可审。
+- 🔒 **决策 3**:`/why` 本 sprint 走显式 `<short_id>`;reply-to-message 隐式解析需要 channel 层先加元数据,留作未来。
+- 🔒 **决策 4**:`UnifiedEventIndex` 派生只读层放模块级 helper,不进 Orchestrator 主体(`_build_event_index` 实例方法只是薄包装),减少 Orchestrator 类继续膨胀。
+- 🔒 **决策 5**:Orchestrator 类整体超 500 行硬限**仍未解决**,记入 BLOCKER B-005。本 sprint 不做大规模重构以避免扩范围;V3 完成后做独立拆分 sprint。
+
+### 留给下一轮
+- Sprint V1:aico-view 最小 FastAPI(Timeline / Task Trace / Memory Tree),直接读 UnifiedEventIndex。
+- Sprint V2:V1 完成后接 IM deep-link。
+- Sprint A3:`/timeline` `/rollback` 精细命令 + ADR-0034 + 新增 `ROLLBACK_PERFORMED` AuditEventType。
+- Sprint V3:aico-view token 鉴权 + 隧道部署文档。
+- 全部 V*/A3 sprint 必须遵守 B-005 workaround:新 handler 进自己的模块,Orchestrator 主体只加 1 行实例化 + 1 行命令分发。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 132;Phase 8 进度新增 Sprint A2 ✅ 行。
+- `docs/architecture/boss-first-grounding.md` §6 A2 行打 ✅ 引用 Round 132。
+- 新增 `docs/decisions/0032-undo-why-scope-boundary.md`(Accepted)。
+- 新增 BLOCKER B-005(🟡 DEFERRED)。
+- CHANGELOG 加 `/undo` / `/why` / Recent activity 三条 Added。
