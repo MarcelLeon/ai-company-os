@@ -18,6 +18,7 @@
 
 ### Added
 - 项目立项,北极星三句话确立
+- `aico-view` read-only 移动端 Web:Timeline / Task Trace / Memory Tree 三视图,挂在 `AICO_AUDIT_LOG_PATH` / `AICO_MEMORY_PATH` / `AICO_STATE_DB_PATH` 上;所有路由 GET-only,写操作全部回 IM。默认 `127.0.0.1:8765`,V3 会加 token 鉴权后再支持隧道。
 - `/undo` boss-only 命令:撤销最近一次 AICO 内部状态变更(memory append / experience promote / archive),**不撤** git / shell / file。每次回复都明确边界。
 - `/why [short_id]` boss-only 命令:从 UnifiedEventIndex 取该 trace 的全部事件;空参数返回最近一条事件的 trace。
 - `/inbox` 和 `/morning` 输出在末尾追加 "Recent activity" 摘要,并提示 `/why <short_id>` 用法。

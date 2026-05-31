@@ -19,6 +19,7 @@ aico-metrics = "aico.app.metrics_cli:main"
 aico-phase1 = "aico.app.phase1:main"
 aico-release-room-demo = "aico.app.release_room_demo:main"
 aico-state = "aico.app.state_cli:main"
+aico-view = "aico.app.view_cli:main"
 
 [dependency-groups]
 dev = [

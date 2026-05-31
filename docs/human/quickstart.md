@@ -99,6 +99,30 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
 
 ---
 
+## 启动 aico-view(只读 Web 视图)
+
+`aico-view` 是一个独立的 FastAPI 进程,它**不挂 channel/adapter**,只打开
+orchestrator 写出的 JSONL/SQLite,提供 Timeline / Task Trace / Memory Tree
+三个手机友好视图。所有写操作仍走 IM(/undo、/why、/experience 等),aico-view 自身
+是只读的(任何 POST/PUT/DELETE 都会返回 405)。
+
+```bash
+export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
+export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
+export AICO_STATE_DB_PATH="/tmp/aico-state.db"
+export AICO_VIEW_PROJECT_IDS="aico"     # 可选,逗号分隔
+export AICO_VIEW_HOST="127.0.0.1"        # 默认 127.0.0.1,只允许本机访问
+export AICO_VIEW_PORT="8765"
+
+uv run aico-view
+# 浏览 http://127.0.0.1:8765
+```
+
+要让手机访问需要隧道(ngrok / Cloudflare tunnel);**V3 sprint 会加 token 鉴权 +
+部署文档**,在此之前不要把 view 暴露到公网。
+
+---
+
 ## 启用更多 Adapter
 
 这些 Adapter 默认关闭,适合在本机 CLI 已安装并登录后再开启:

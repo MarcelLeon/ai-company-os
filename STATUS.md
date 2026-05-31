@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-05-31
-**当前轮次**:Round 132(Sprint A2 — /undo + /why + inbox/morning timeline)
+**当前轮次**:Round 133(Sprint V1 — aico-view 最小 FastAPI)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -297,6 +297,7 @@ AICO 的产品边界是 absence-first:
 - [x] Sprint M2 — `/experience review|list|promote|archive` lead 内务命令;`prompt_stack` 加 ExperienceLayer;task metadata 写出 `aico.injected_experience_ids`;ADR-0031(Round 130)。
 - [x] Sprint M3 — Outcome Grader `parse_verdict` + `apply_verdict_to_owner_experiences` 回写 confidence/hits/misses/injection_count;grader task trace_id 继承 owner trace_id(Round 131)。
 - [x] Sprint A2 — boss-only `/undo` + `/why` + `/inbox` `/morning` 内嵌 Recent activity;ADR-0032(Round 132)。
+- [x] Sprint V1 — `aico-view` 只读 FastAPI 三视图 + `aico-view` entrypoint;ADR-0033(Round 133)。
 
 ### 开源 Demo 进度
 
@@ -310,6 +311,17 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 133**(2026-05-31,Claude — Sprint V1):
+- 落地 boss-first-grounding §6 Sprint V1:`aico-view` 只读 FastAPI Web,三视图 mobile-first。
+- 新增 `src/aico/view/app.py`(< 300 行):`build_view_app(settings)` 返回 FastAPI app;Timeline `/`、Task Trace `/trace/{trace_id}`(支持短 ID 前缀匹配)、Memory Tree `/memory`、`/healthz`、`/static/style.css`。
+- 新增 `src/aico/app/view_cli.py` + `pyproject.toml [project.scripts]` `aico-view = "aico.app.view_cli:main"`;env 配置 `AICO_AUDIT_LOG_PATH` / `AICO_MEMORY_PATH` / `AICO_STATE_DB_PATH` / `AICO_VIEW_PROJECT_IDS` / `AICO_VIEW_HOST` / `AICO_VIEW_PORT`。
+- 直接复用 ADR-0030 UnifiedEventIndex,每次请求重建 index(JSONL 解析快、避免缓存失效);Memory Tree 区分 experience(在前)和 fact(在后)。
+- 关键边界:**Read-only**(任何 POST/PUT/DELETE 都 405)、**不挂 phase1 runtime/channel/adapter**、**无 Jinja2/JS framework**(f-string + html.escape);默认 `127.0.0.1`,不上公网鉴权(V3 加 token)。
+- 新增 ADR-0033 `aico-view read-only mobile web surface`(Accepted)。
+- 验证通过:`uv run pytest` **377 passed / 1 skipped**(原 365 + 12 V1);`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`。
+- CHANGELOG 加 `aico-view` 说明;`docs/human/quickstart.md` 加启动指引。
+- 在 `docs/architecture/boss-first-grounding.md` §6 表格给 V1 标 ✅ 引用 Round 133。
 
 **Round 132**(2026-05-31,Claude — Sprint A2):
 - 落地 boss-first-grounding §6 Sprint A2:boss-only `/undo` 和 `/why`,`/inbox` 和 `/morning` 内嵌 Recent activity 摘要。

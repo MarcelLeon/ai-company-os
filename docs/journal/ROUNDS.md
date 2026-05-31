@@ -6381,3 +6381,59 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - 新增 `docs/decisions/0032-undo-why-scope-boundary.md`(Accepted)。
 - 新增 BLOCKER B-005(🟡 DEFERRED)。
 - CHANGELOG 加 `/undo` / `/why` / Recent activity 三条 Added。
+
+---
+
+## Round 133 — 2026-05-31 — Claude
+
+### 输入
+- 接 Round 132 A2 完成,连续推进 §6 路线图 V1。
+- 本轮聚焦 `aico-view`:read-only mobile web,三视图。
+
+### 思考与讨论
+- 候选 A:Desktop GUI(Electron/原生) → ❌ 破坏 absence-first;维护成本高。
+- 候选 B:Web GUI 用 React/Vue SPA → ❌ 引入前端构建链,违反 "no early abstraction";手机首屏慢。
+- 候选 C:FastAPI + 服务端 HTML + 单 CSS → ✅ 选定。无前端构建、mobile-first、首屏快、可立刻 dogfood。
+- 是否复用 Phase 1 runtime → ❌ 决定独立进程,只打开 JSONL/SQLite,**不挂 channel/adapter**。orchestrator crash 不影响 view,反之亦然。
+- 是否引入 Jinja2 → ❌ 决定用 f-string + html.escape,**不增加依赖**。
+- 是否做 SQL/JSONL 缓存 → ❌ 每次请求重建 index;JSONL 解析快,实现简单。规模大时再加 mtime cache。
+- 视图清单 → 严格只做 §3.3 三个视图;`/agents` `/projects` `/inbox` 复刻留作未来。
+- 鉴权 → 本 sprint **不做**;默认 `127.0.0.1`;V3 sprint 加 token + 部署文档。
+
+### 产出
+- 新增 `src/aico/view/__init__.py` + `src/aico/view/app.py`(< 300 行)。
+  - `ViewSettings` dataclass + `load_view_settings_from_env()`;支持 `AICO_AUDIT_LOG_PATH` / `AICO_MEMORY_PATH` / `AICO_STATE_DB_PATH` / `AICO_VIEW_PROJECT_IDS`。
+  - `build_view_app(settings)` 返回 FastAPI app。
+  - Routes:`GET /healthz`、`GET /`(Timeline 最近 100 条,short_id 链到 trace)、`GET /trace/{trace_id}`(支持完整或前缀短 ID)、`GET /memory`(experience 在前 fact 在后,archived 灰显)、`GET /static/style.css`(暗色 mobile CSS)。
+- 新增 `src/aico/app/view_cli.py`:uvicorn 启动,默认 `127.0.0.1:8765`,可通过 `AICO_VIEW_HOST` / `AICO_VIEW_PORT` 覆盖。
+- `pyproject.toml` 加 `aico-view = "aico.app.view_cli:main"`。
+- 新增 ADR-0033 `aico-view read-only mobile web surface`(Accepted)。
+- 新增 `tests/unit/test_aico_view_routes.py`(12 用例):healthz、Timeline 渲染、Trace 渲染、Trace 404、Memory 渲染(含 hits/misses、applies_to)、所有路由 405 拒绝写方法、CSS 服务、GET-only 参数化(5 个 path)。
+- CHANGELOG 加 `aico-view` 条目;`docs/human/quickstart.md` 加 V1 启动指引(env 列表 + `uv run aico-view` + V3 安全提示)。
+- `docs/architecture/boss-first-grounding.md` §6 表格 V1 行打 ✅ Round 133。
+
+### 验证结果
+- `uv run pytest`:**377 passed / 1 skipped**(365 + 12 V1 = 377)。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:131 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 126 source files。
+
+### 关键决策
+- 🔒 **决策 1**:Read-only。所有路由 GET。FastAPI 默认 405 任何非 GET 方法(测试覆盖)。
+- 🔒 **决策 2**:独立进程,不复用 Phase 1 runtime。aico-view crash 不影响 orchestrator,反之亦然。
+- 🔒 **决策 3**:无 Jinja2 / 无 JS framework。服务端 HTML + 单 CSS。
+- 🔒 **决策 4**:每次请求重建 UnifiedEventIndex,不缓存。规模大时再加 mtime cache。
+- 🔒 **决策 5**:本 sprint 不做鉴权,默认绑 `127.0.0.1`。V3 加 `AICO_VIEW_TOKEN` 前不要把 view 暴露公网。
+
+### 留给下一轮
+- Sprint V2:在 Timeline / Trace 视图末尾追加 `tg://resolve?domain=<bot>&text=/undo` 等 deep link 按钮;Feishu 暂用文本指引降级。
+- Sprint A3:`/timeline` / `/rollback` 精细命令 + ADR-0034 + `ROLLBACK_PERFORMED` AuditEventType。
+- Sprint V3:`AICO_VIEW_TOKEN` 强制鉴权 + 部署文档(localhost / ngrok / Cloudflare tunnel)+ 安全模型。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 133;Phase 8 进度新增 Sprint V1 ✅ 行。
+- `docs/architecture/boss-first-grounding.md` §6 V1 行打 ✅ 引用 Round 133。
+- 新增 `docs/decisions/0033-aico-view-readonly-web.md`(Accepted)。
+- 新增 `pyproject.toml` script `aico-view`。
+- CHANGELOG 加 aico-view;quickstart 加启动指引。
+- 不动 PITFALLS / BLOCKERS(B-005 仍 DEFERRED,V1 没有触碰 Orchestrator)。
