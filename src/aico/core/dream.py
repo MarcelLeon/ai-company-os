@@ -7,8 +7,10 @@ from collections import defaultdict
 from aico.channel import IMChannel
 from aico.core.command_messages import short_id_text
 from aico.core.memory import (
+    ExperienceMeta,
     MemoryAtom,
     MemoryEvidence,
+    MemoryKind,
     MemoryPurpose,
     MemoryScope,
     MemoryStatus,
@@ -88,11 +90,12 @@ class DreamCommandHandler:
 def dream_review_message(project_id: str, candidates: tuple[MemoryAtom, ...]) -> MessageContent:
     lines = [
         f"# Dream review: {project_id}",
-        "status: candidate memory only",
+        "status: candidate experience only",
         "",
         "Meaning:",
         "- These are reusable lessons inferred from recent project task signals.",
-        "- They are not injected into prompts unless you explicitly promote one with /remember.",
+        "- They are stored as candidate experience; they are not injected into prompts "
+        "until promoted.",
     ]
     if not candidates:
         lines.extend(
@@ -102,7 +105,7 @@ def dream_review_message(project_id: str, candidates: tuple[MemoryAtom, ...]) ->
                 "- none from recent project signals",
                 "",
                 "Effect:",
-                "- active memory unchanged",
+                "- active experience unchanged",
             )
         )
     else:
@@ -114,7 +117,7 @@ def dream_review_message(project_id: str, candidates: tuple[MemoryAtom, ...]) ->
             lines.append(f"  evidence: {refs}")
         lines.append("")
         lines.append("Effect:")
-        lines.append("- written as candidate memory; not injected into prompts until promoted")
+        lines.append("- written as candidate experience; not injected into prompts until promoted")
     lines.append("")
     lines.append("Next:")
     lines.append("- /inbox")
@@ -183,6 +186,7 @@ def _memory_atom(
 ) -> MemoryAtom:
     now = utc_now()
     first = snapshots[0]
+    trigger_key = _candidate_key(first) or "unknown"
     return MemoryAtom(
         memory_id=f"dream-{short_id_text(first.task_id)}-{int(now.timestamp())}",
         claim=claim,
@@ -202,6 +206,8 @@ def _memory_atom(
         status=MemoryStatus.CANDIDATE,
         tags=("dream", "runbook-candidate"),
         purpose_tags=(MemoryPurpose.TASK_KEY_PROGRESS,),
+        kind=MemoryKind.EXPERIENCE,
+        experience=ExperienceMeta(triggers=(trigger_key,)),
     )
 
 

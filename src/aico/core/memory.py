@@ -51,6 +51,19 @@ class MemoryEdgeType(StrEnum):
     SUPERSEDES = "supersedes"
 
 
+class MemoryKind(StrEnum):
+    FACT = "fact"
+    EXPERIENCE = "experience"
+
+
+class ExperienceMeta(FrozenModel):
+    applies_to: tuple[str, ...] = ()
+    triggers: tuple[str, ...] = ()
+    injection_count: int = Field(default=0, ge=0)
+    verdict_hits: int = Field(default=0, ge=0)
+    verdict_misses: int = Field(default=0, ge=0)
+
+
 class MemoryScope(FrozenModel):
     owner_type: MemoryScopeType
     owner_id: str = Field(min_length=1)
@@ -156,11 +169,21 @@ class MemoryAtom(FrozenModel):
     purpose_tags: tuple[MemoryPurpose, ...] = (MemoryPurpose.GENERAL_CONTEXT,)
     archived_at: datetime | None = None
     reason: str | None = None
+    kind: MemoryKind = MemoryKind.FACT
+    experience: ExperienceMeta | None = None
 
     @model_validator(mode="after")
     def _validate_purpose_tags(self) -> MemoryAtom:
         if not self.purpose_tags:
             raise ValueError("purpose_tags must not be empty")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_kind_experience(self) -> MemoryAtom:
+        if self.kind is MemoryKind.EXPERIENCE and self.experience is None:
+            raise ValueError("kind=experience requires experience metadata")
+        if self.kind is MemoryKind.FACT and self.experience is not None:
+            raise ValueError("kind=fact must not carry experience metadata")
         return self
 
     def archived(self, *, reason: str | None = None) -> MemoryAtom:

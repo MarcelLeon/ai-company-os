@@ -35,6 +35,7 @@ from aico.core.language import (
     task_with_response_language,
 )
 from aico.core.memory import (
+    ExperienceMeta,
     JsonlMemoryStore,
     LocalHybridMemoryScorer,
     LocalSemanticMemoryScorer,
@@ -45,6 +46,7 @@ from aico.core.memory import (
     MemoryEvidence,
     MemoryGovernor,
     MemoryGraphMatch,
+    MemoryKind,
     MemoryPacket,
     MemoryPacketItem,
     MemoryPurpose,
@@ -197,6 +199,8 @@ __all__ = [
     "MemoryEvidence",
     "MemoryGraphMatch",
     "MemoryGovernor",
+    "MemoryKind",
+    "ExperienceMeta",
     "MemoryPacket",
     "MemoryPacketItem",
     "MemoryPurpose",

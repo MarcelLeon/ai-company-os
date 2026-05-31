@@ -3,8 +3,8 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-05-29
-**当前轮次**:Round 127(Boss-First Grounding 设计文档落地)
+**最后更新**:2026-05-31
+**当前轮次**:Round 128(Sprint M1 — Memory kind + ExperienceMeta)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -292,6 +292,7 @@ AICO 的产品边界是 absence-first:
 - [x] Phase 8 Absence Loop 真实 IM dogfood 已由人类执行;效果不佳且暂不继续投入 native output 方向,当前 dogfood 使用 `AICO_PREFER_NATIVE_CHANNEL_FORMAT=false`。
 - [ ] 多 step / 多 agent 夜间自动编排
 - [ ] 早报自动生成或定时推送
+- [x] Sprint M1 — MemoryAtom 加 `kind=fact|experience` + `ExperienceMeta`;Dream 输出改为 candidate experience(Round 128)。
 
 ### 开源 Demo 进度
 
@@ -305,6 +306,16 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 128**(2026-05-31,Claude — Sprint M1):
+- 落地 boss-first-grounding §6 路线图 Sprint M1:Memory + Experience 数据层分层。
+- `src/aico/core/memory.py`:新增 `MemoryKind` enum(`fact` / `experience`)和 `ExperienceMeta` 模型(`applies_to` / `triggers` / `injection_count` / `verdict_hits` / `verdict_misses`);`MemoryAtom` 增加 `kind` 与 `experience` 两字段 + validator(experience kind 必须带 meta、fact kind 不得带 meta)。
+- `src/aico/core/dream.py`:Dream 输出从普通 candidate memory 升级为 `kind=EXPERIENCE` 的 candidate experience,`experience.triggers` 携带 candidate key(如 `failed:adapter_idle_timeout`)。文案 `candidate memory only` → `candidate experience only`,提示晋升后才注入 prompt。
+- 关键边界:M1 仅做数据层,**不**注入 prompt(留 M2),**不**做 grader 反馈回写(留 M3)。
+- JSONL 向后兼容已验证:老记录无 `kind` 字段 → 默认 `FACT`(测试 `test_jsonl_store_loads_legacy_atom_without_kind` 覆盖)。
+- 验证通过:`uv run pytest` 330 passed / 1 skipped;`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`。
+- 不开 ADR(只是字段扩展,ADR-0020/0021/0022 已覆盖范围)。
+- 在 `docs/architecture/boss-first-grounding.md` §6 表格给 M1 标 ✅ 引用 Round 128。
 
 **Round 127**(2026-05-29,Claude):
 - 与人类两轮脑暴 absence-first 边界、lead 主动机制、Memory/Experience 分层、Audit/Rollback 可视化和命令爆炸问题。

@@ -1737,11 +1737,11 @@ async def test_orchestrator_dream_writes_reviewable_candidate_memory(tmp_path: P
     dream = channel.sent_messages[-1].text
     atoms = memory_store.list_atoms(MemoryScope.project("aico"))
     assert dream.startswith("Dream review: aico\n")
-    assert "status: candidate memory only" in dream
+    assert "status: candidate experience only" in dream
     assert "Meaning:\n• These are reusable lessons" in dream
     assert "1 task(s) are blocked on approval (task-app)" in dream
     assert channel.sent_messages[-1].spans
-    assert "active memory unchanged" not in dream
+    assert "active experience unchanged" not in dream
     assert len(atoms) == 1
     assert atoms[0].status is MemoryStatus.CANDIDATE
     assert atoms[0].source == "dream_review"

@@ -6125,3 +6125,52 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 127,顶部新增当前路线图指针。
 
+---
+
+## Round 128 — 2026-05-31 — Claude
+
+### 输入
+- 用户在新会话中按 `boss-first-grounding.md §7.3` 模板要求落地 §6 路线图全部 9 sprint。
+- 在执行节奏问题上人类选择"本会话只跑 M1 + A1(数据层第一波)+ 每个 sprint 一个独立 commit"。
+- 本轮聚焦 Sprint M1:Memory + Experience 数据层分层(不动 prompt 注入,不动 audit)。
+
+### 思考与讨论
+- 候选 A:在 `MemoryAtom` 之外另起一个独立的 `Experience` model + 独立 store → ❌ **否决**:违反 boss-first-grounding §3.1 "对 `MemoryAtom` 的最小扩展,不另起一张表";会让 governance / retrieval / audit 三条链路全部分裂。
+- 候选 B:复用现有 `MemoryStatus.CANDIDATE` 作为 experience 生命周期 → ✅ **选定**:Dream 已经在用,M2 只需要在此基础上增加 `ACTIVE` 状态作为"已晋升 experience";不需要新建 lifecycle 枚举。
+- 候选 C:`experience` 字段做成 dict 而非强类型 model → ❌ **否决**:与项目"Pydantic strict mypy"风格不符,也不利于 M3 的 verdict 回写。
+- 候选 D:M1 顺手把 `/experience` 命令也做了 → ❌ **否决**:违反"不扩大 sprint 范围",命令是 M2 的事。
+- JSONL 兼容性:`FrozenModel` 配置是 `extra="forbid"`,但**新字段加 default 值后,老 JSONL 加载是安全的**(老记录里不存在 `kind`,Pydantic 不会报 unknown extra,只用 default 填充);反向不安全(老代码读新 JSONL 会因 `kind` 是未知字段而拒绝),这是单向升级门,记入 PITFALLS-or-future-note。
+
+### 产出
+- `src/aico/core/memory.py`:
+  - 新增 `MemoryKind` StrEnum(`FACT` / `EXPERIENCE`)。
+  - 新增 `ExperienceMeta` FrozenModel:`applies_to` / `triggers` / `injection_count` / `verdict_hits` / `verdict_misses`(后三者为 M3 verdict 回写预留)。
+  - `MemoryAtom` 加 `kind: MemoryKind = FACT` 与 `experience: ExperienceMeta | None = None`,加 validator(experience kind 必须带 meta、fact kind 不得带 meta)。
+- `src/aico/core/dream.py`:
+  - `_memory_atom` 新增 `kind=EXPERIENCE` + `experience=ExperienceMeta(triggers=(<candidate_key>,))`。
+  - `dream_review_message` 文案 "candidate memory only" → "candidate experience only";提示文案明确"晋升后才注入 prompt"。
+- `src/aico/core/__init__.py`:导出 `MemoryKind` / `ExperienceMeta` 并加入 `__all__`。
+- 新增 `tests/unit/test_memory_kind.py`(5 个用例):default fact / experience requires meta / fact rejects meta / experience accepts meta / 老 JSONL 兼容。
+- 同步更新 `tests/unit/test_orchestrator.py` dream 文案断言。
+- `docs/architecture/boss-first-grounding.md` §6 表格 M1 行追加 ✅ Round 128。
+
+### 验证结果
+- `uv run pytest`:**330 passed / 1 skipped**(原 326 + 5 新增 - 1 helper 重复 - 0 = 330,数对)。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:117 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 113 source files。
+- `git diff --check`:clean。
+
+### 关键决策
+- 🔒 **决策 1**:Memory 与 Experience 共用 `MemoryAtom`,通过 `kind` 字段区分;不建独立 store。理由:governance / retrieval / audit / JSONL 持久化必须共享一条链路。
+- 🔒 **决策 2**:M1 严格只做数据层,prompt 注入留 M2,grader verdict 回写留 M3。即便文档已经完整描述 M2/M3 的字段(`injection_count`/`verdict_hits`/`verdict_misses`),M1 把这些字段先建好但不写入。
+- 🔒 **决策 3**:不开 ADR。本轮只是 ADR-0020/0021/0022 既有 memory 模型的字段扩展;只有当某个决策**否决了既有 ADR**时才需要新 ADR。
+
+### 留给下一轮
+- Sprint A1:Audit + Task + Memory 增加 `trace_id`,新建 `unified_event.py`(只读索引层),新增 ADR-0030 写明"派生只读、不拥有真相"边界。
+- A1 完成后,M2 可以开始(向 prompt_stack 注入 active experience)。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 128;Phase 8 进度新增 Sprint M1 ✅ 行。
+- `docs/architecture/boss-first-grounding.md` §6 M1 行打 ✅ 引用 Round 128。
+- 不动 PITFALLS / BLOCKERS / CHANGELOG / ADR。

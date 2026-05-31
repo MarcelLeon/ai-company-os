@@ -465,7 +465,7 @@
 
 | 编号 | 内容 | 依赖 | 估算 |
 |---|---|---|---|
-| **M1** | MemoryAtom 增加 `kind` + `ExperienceMeta`;Dream 输出改为 candidate experience | 无 | 1 sprint |
+| **M1** | ✅ MemoryAtom 增加 `kind` + `ExperienceMeta`;Dream 输出改为 candidate experience(Round 128) | 无 | 1 sprint |
 | **M2** | `/experience review/list/archive` + PromptStack 加 ExperienceLayer | M1 | 1 sprint |
 | **M3** | Grader verdict → confidence 回写 + 排序 | M1, M2 | 1 sprint |
 | **A1** | Unified event index + trace_id 串联 + 短 ID 改造 | 无(与 M1 可并行) | 1 sprint |
