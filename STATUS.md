@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-05-31
-**当前轮次**:Round 130(Sprint M2 — Experience commands + prompt injection)
+**当前轮次**:Round 131(Sprint M3 — Grader verdict → experience feedback)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -295,6 +295,7 @@ AICO 的产品边界是 absence-first:
 - [x] Sprint M1 — MemoryAtom 加 `kind=fact|experience` + `ExperienceMeta`;Dream 输出改为 candidate experience(Round 128)。
 - [x] Sprint A1 — AuditEvent/Task/MemoryAtom 增加 `trace_id`;新增 `UnifiedEventIndex` 派生只读层;ADR-0030(Round 129)。
 - [x] Sprint M2 — `/experience review|list|promote|archive` lead 内务命令;`prompt_stack` 加 ExperienceLayer;task metadata 写出 `aico.injected_experience_ids`;ADR-0031(Round 130)。
+- [x] Sprint M3 — Outcome Grader `parse_verdict` + `apply_verdict_to_owner_experiences` 回写 confidence/hits/misses/injection_count;grader task trace_id 继承 owner trace_id(Round 131)。
 
 ### 开源 Demo 进度
 
@@ -308,6 +309,18 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 131**(2026-05-31,Claude — Sprint M3):
+- 落地 boss-first-grounding §6 Sprint M3:Outcome Grader verdict 反向回写 experience confidence / verdict_hits / verdict_misses / injection_count。
+- `outcome_grader.py`:新增 `GraderVerdict` StrEnum + `parse_verdict(output)` 容错解析(大小写、Markdown emphasis 都接受);未匹配返回 `None`,**不猜测**。
+- `memory.py`:`MemoryStore` Protocol + `JsonlMemoryStore` 实现 `update_experience_meta(memory_id, *, confidence_delta, verdict_hits_delta, verdict_misses_delta, injection_count_delta)`,clamp 到 [0, 1]。
+- 新增 `experience_feedback.py`(< 90 行):`injected_experience_ids(task)` + `apply_verdict_to_owner_experiences(store, owner_task, verdict)`;PASS→+0.05、PARTIAL→0、FAIL→-0.10;PASS/PARTIAL 计 hit、PARTIAL/FAIL 计 miss;每次都 injection_count+1。
+- `goal_brief_commands.py`:GoalBriefCommandHandler 注入 `memory_store`,grader 跑完后捕获 output → parse_verdict → apply_verdict;**同时把 grader task trace_id 接到 owner_task.trace_id**(完成 ADR-0030 留给 M3 的 grader trace 续接)。
+- `orchestrator.py`:GoalBriefCommandHandler 实例化传入 memory_store(主体仅 +1 行)。
+- 验证通过:`uv run pytest` **360 passed / 1 skipped**(原 347 + 12 feedback 单测 + 1 E2E);ruff / format / mypy 全绿。
+- 关键边界:experience meta 反向回写**只在 grader 完成时发生**,普通 task 注入不主动 +1 injection_count(否则未被验收的注入会污染 confidence)。
+- 不开 ADR(M3 是 M1+M2+ADR-0030 留作业的兑现,不引入新决策)。
+- 在 `docs/architecture/boss-first-grounding.md` §6 表格给 M3 标 ✅ 引用 Round 131。
 
 **Round 130**(2026-05-31,Claude — Sprint M2):
 - 落地 boss-first-grounding §6 Sprint M2:`/experience` 命令 + ExperienceLayer prompt 注入。

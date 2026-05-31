@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from enum import StrEnum
+
 from aico.core.command_messages import short_id_text
 from aico.core.goal_brief import GoalBrief
 from aico.core.message_rendering import rich_text_message
@@ -12,6 +15,35 @@ OUTCOME_GRADER_INTENT = "outcome_grader"
 OUTCOME_GRADER_INTENT_KEY = "aico.intent"
 OUTCOME_GRADED_TASK_KEY = "aico.graded_task_id"
 OUTCOME_GOAL_ID_KEY = "aico.outcome_goal_id"
+
+
+class GraderVerdict(StrEnum):
+    PASS = "pass"
+    PARTIAL = "partial"
+    FAIL = "fail"
+
+
+_VERDICT_LINE = re.compile(
+    r"verdict\s*[:=]\s*(pass|partial|fail)\b",
+    re.IGNORECASE,
+)
+
+
+def parse_verdict(output: str) -> GraderVerdict | None:
+    """Extract `verdict: pass|partial|fail` from a grader response.
+
+    Tolerates upper/lower case, leading bullets, surrounding asterisks
+    (Markdown emphasis), and ignores anything else in the line. Returns None
+    when no canonical verdict line is found, leaving the caller to decide
+    how to treat the absence (we deliberately do not guess).
+    """
+    if not output:
+        return None
+    normalized = output.replace("**", "").replace("__", "")
+    match = _VERDICT_LINE.search(normalized)
+    if match is None:
+        return None
+    return GraderVerdict(match.group(1).lower())
 
 
 def outcome_grader_prompt(

@@ -171,6 +171,7 @@ class Orchestrator:
             task_bus=self._task_bus,
             task_for_assignment=self._task_factory.task_for_assignment,
             run_goal_task=self._run_delegated_task,
+            memory_store=self._memory_store,
         )
         self._lead_decisions = LeadDecisionWorkflow(
             channel=self._channel,

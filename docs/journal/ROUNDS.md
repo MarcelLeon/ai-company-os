@@ -6276,3 +6276,51 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - 新增 `docs/decisions/0031-experience-as-injectable-memory.md`(Accepted)。
 - CHANGELOG.md 加 `/experience` 说明。
 - 不动 PITFALLS / BLOCKERS。
+
+---
+
+## Round 131 — 2026-05-31 — Claude
+
+### 输入
+- 接 Round 130 M2 完成,连续推进 §6 路线图。
+- 本轮聚焦 Sprint M3:Outcome Grader verdict 解析 + 反向回写 experience meta。
+
+### 思考与讨论
+- 候选 A:让 `apply_verdict` 直接调用 TaskBus 内部 → ❌ TaskBus 不应知道 experience 语义(违反"核心不写工具分支");新建 `experience_feedback.py` 模块隔离 glue。
+- 候选 B:每次 prompt 注入都 +1 injection_count → ❌ 未被 grader 验收的注入会污染 confidence 信号;**只在 grader 完成时计数**才有意义。
+- 候选 C:verdict 缺失时给 0 信号(不动) → ✅ **选定**;`parse_verdict` 找不到 canonical 行就返回 `None`,caller 不调用 apply_verdict。
+- grader task trace_id → owner_task.trace_id 续接:ADR-0030 留给 M3 的承诺,本轮顺手做(grader 是 owner 的副作用,共享 trace 是自然语义);**这不算扩范围**,因为 ADR-0030 已经显式标注这是 M3 范畴。
+- delta 数值:PASS+0.05/PARTIAL+0/FAIL-0.10。FAIL 比 PASS 重一倍,反映 NORTH_STAR 第三句"YOLO 不能默认"——失败信号要明显比成功大。
+
+### 产出
+- `src/aico/core/outcome_grader.py`:`GraderVerdict` StrEnum + `parse_verdict(output)`;regex 兼容大小写、Markdown emphasis、行首编号。
+- `src/aico/core/memory.py`:`MemoryStore` Protocol + `JsonlMemoryStore` 加 `update_experience_meta`(clamp 到 [0,1])。
+- 新增 `src/aico/core/experience_feedback.py`:`injected_experience_ids(task)` + `apply_verdict_to_owner_experiences(store, owner_task, verdict)`;未知 memory_id 或非-experience 静默跳过(WARN 日志)。
+- `src/aico/core/goal_brief_commands.py`:`GoalBriefCommandHandler` 注入 `memory_store`;grader 跑完后捕获 output 调 parse_verdict + apply_verdict;**同时** grader_task.trace_id 设为 owner_task.trace_id(填 ADR-0030 留作业)。
+- `src/aico/core/orchestrator.py`:GoalBriefCommandHandler 实例化加 `memory_store=self._memory_store`。
+- 新增测试 `tests/unit/test_experience_feedback.py`(12 用例):parse_verdict 6 个参数化、metadata 读取、PASS/FAIL/PARTIAL 三档反馈、no-injection no-op、未知/非-experience 静默跳过。
+- `tests/unit/test_orchestrator.py` 加端到端 `test_orchestrator_grader_pass_bumps_injected_experience_confidence`:goal → grader 返 "verdict: pass" → 验证 confidence +0.05 + hits 1。
+- `docs/architecture/boss-first-grounding.md` §6 表格 M3 行打 ✅ Round 131。
+
+### 验证结果
+- `uv run pytest`:**360 passed / 1 skipped**(347 + 12 feedback + 1 E2E = 360,数对)。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:125 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 120 source files。
+
+### 关键决策
+- 🔒 **决策 1**:`apply_verdict_to_owner_experiences` 是新模块独立 glue,不放进 TaskBus / Orchestrator,保持"核心不写工具分支"纪律。
+- 🔒 **决策 2**:**injection_count 只在 grader 完成时 +1**,普通 task 注入不计数。理由:未验收的注入不构成可信信号。
+- 🔒 **决策 3**:FAIL delta(-0.10)比 PASS delta(+0.05)绝对值大一倍,反映"失败信号应该明显"的纪律。
+- 🔒 **决策 4**:grader_task.trace_id = owner_task.trace_id,这是 ADR-0030 留给 M3 的承诺,本轮顺手兑现。
+- 🔒 **决策 5**:`parse_verdict` 找不到 canonical 行返回 `None`(不猜),caller 不调 apply_verdict。
+
+### 留给下一轮
+- Sprint A2:`/undo` + `/why` + inbox/morning 内嵌 timeline 摘要;ADR-0032 写死 undo 边界。
+- A2 完成后 V1 可启动(aico-view 三视图)。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 131;Phase 8 进度新增 Sprint M3 ✅ 行。
+- `docs/architecture/boss-first-grounding.md` §6 M3 行打 ✅ 引用 Round 131。
+- 不开 ADR(兑现 ADR-0030 + ADR-0031 既有承诺)。
+- 不动 CHANGELOG(实质行为对老板不可见,M3 提升的是 lead/agent 体验,A2 `/why` 落地时再统一更 CHANGELOG)。

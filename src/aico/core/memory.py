@@ -299,6 +299,16 @@ class MemoryStore(Protocol):
         triggers: tuple[str, ...] = (),
     ) -> MemoryAtom: ...
 
+    def update_experience_meta(
+        self,
+        memory_id: str,
+        *,
+        confidence_delta: float = 0.0,
+        verdict_hits_delta: int = 0,
+        verdict_misses_delta: int = 0,
+        injection_count_delta: int = 0,
+    ) -> MemoryAtom: ...
+
     def list_experiences(
         self,
         scope: MemoryScope,
@@ -409,6 +419,38 @@ class JsonlMemoryStore:
             }
         )
         return self.append_atom(promoted)
+
+    def update_experience_meta(
+        self,
+        memory_id: str,
+        *,
+        confidence_delta: float = 0.0,
+        verdict_hits_delta: int = 0,
+        verdict_misses_delta: int = 0,
+        injection_count_delta: int = 0,
+    ) -> MemoryAtom:
+        atom = self._atoms.get(memory_id)
+        if atom is None:
+            raise KeyError(f"Unknown memory id: {memory_id}")
+        if atom.kind is not MemoryKind.EXPERIENCE or atom.experience is None:
+            raise ValueError(
+                f"Cannot update experience meta on memory_id={memory_id}: kind={atom.kind.value}"
+            )
+        new_confidence = max(0.0, min(1.0, atom.confidence + confidence_delta))
+        updated_meta = atom.experience.model_copy(
+            update={
+                "verdict_hits": atom.experience.verdict_hits + max(0, verdict_hits_delta),
+                "verdict_misses": atom.experience.verdict_misses + max(0, verdict_misses_delta),
+                "injection_count": atom.experience.injection_count + max(0, injection_count_delta),
+            }
+        )
+        updated = atom.model_copy(
+            update={
+                "confidence": new_confidence,
+                "experience": updated_meta,
+            }
+        )
+        return self.append_atom(updated)
 
     def list_experiences(
         self,

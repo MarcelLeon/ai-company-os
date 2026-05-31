@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 
 from aico.channel import IMChannel
 from aico.core.agent_session import AgentSession
+from aico.core.experience_feedback import apply_verdict_to_owner_experiences
 from aico.core.goal_brief import (
     GoalBrief,
     goal_brief_from_text,
@@ -15,11 +16,13 @@ from aico.core.goal_brief import (
     should_suggest_goal_brief,
     task_with_goal_brief,
 )
+from aico.core.memory import MemoryStore
 from aico.core.models import IncomingMessage, MessageContent, Task, TaskSnapshot, TaskStatus
 from aico.core.outcome_grader import (
     outcome_grader_prompt,
     outcome_grader_skipped_message,
     outcome_grader_started_message,
+    parse_verdict,
     task_with_outcome_grader_metadata,
 )
 from aico.core.project_assignment import (
@@ -48,12 +51,14 @@ class GoalBriefCommandHandler:
         task_bus: TaskBus,
         task_for_assignment: ProjectTaskFactory,
         run_goal_task: GoalTaskRunner,
+        memory_store: MemoryStore | None = None,
     ) -> None:
         self._channel = channel
         self._project_directory = project_directory
         self._task_bus = task_bus
         self._task_for_assignment = task_for_assignment
         self._run_goal_task = run_goal_task
+        self._memory_store = memory_store
 
     async def handle_goal(self, message: IncomingMessage, payload: str) -> None:
         if not payload:
@@ -162,6 +167,8 @@ class GoalBriefCommandHandler:
             graded_task_id=owner_task.task_id,
             goal_id=brief.goal_id,
         )
+        owner_trace = owner_task.trace_id or owner_task.task_id
+        grader_task = grader_task.model_copy(update={"trace_id": owner_trace})
         await self._channel.send_message(
             message.source,
             outcome_grader_started_message(
@@ -172,7 +179,14 @@ class GoalBriefCommandHandler:
                 brief=brief,
             ),
         )
-        await self._run_goal_task(message, grader_task, session)
+        grader_output = await self._run_goal_task(message, grader_task, session)
+        verdict = parse_verdict(grader_output)
+        if verdict is not None and self._memory_store is not None:
+            apply_verdict_to_owner_experiences(
+                self._memory_store,
+                owner_task=owner_task,
+                verdict=verdict,
+            )
 
     def _outcome_grader_assignment(
         self,

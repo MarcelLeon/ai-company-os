@@ -3,6 +3,8 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from aico.channel import IMChannel, IncomingMessageHandler
 from aico.core import (
     STREAM_MESSAGE_TEXT_LIMIT,
@@ -17,6 +19,7 @@ from aico.core import (
     Capability,
     ChannelTarget,
     CompanyAgentProfile,
+    ExperienceMeta,
     HealthStatus,
     IncomingMessage,
     InMemoryAgentSessionStore,
@@ -24,6 +27,7 @@ from aico.core import (
     MemoryAtom,
     MemoryBroadcastService,
     MemoryEvidence,
+    MemoryKind,
     MemoryPurpose,
     MemoryScope,
     MemoryStatus,
@@ -1708,6 +1712,61 @@ async def test_orchestrator_goal_runs_outcome_grader_when_tester_is_appointed() 
         message.text.startswith("Outcome grading queued: task-gra")
         for message in channel.sent_messages
     )
+
+
+async def test_orchestrator_grader_pass_bumps_injected_experience_confidence(
+    tmp_path: Path,
+) -> None:
+    grader_output = (
+        "verdict: pass\n"
+        "evidence: implementer addressed every acceptance bullet.\n"
+        "gaps: none\n"
+        "boss_next_action: /inbox\n"
+    )
+    adapter = ScriptedAdapter(
+        name="claude-code",
+        output_texts=("implementer report.", grader_output),
+    )
+    channel = RecordingChannel()
+    memory_store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    seed = MemoryAtom(
+        memory_id="mem-exp-feedback",
+        claim="Always rerun adapter idle smoke before shipping.",
+        evidence=(MemoryEvidence(ref="task:seed", source="dream_review"),),
+        scope=MemoryScope.project("aico"),
+        source="dream_review",
+        confidence=0.6,
+        created_by="lead-agent",
+        status=MemoryStatus.ACTIVE,
+        kind=MemoryKind.EXPERIENCE,
+        experience=ExperienceMeta(applies_to=("implementer",)),
+    )
+    memory_store.append_atom(seed)
+    task_ids = iter(("task-goal-fb", "task-grade-fb"))
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_tester(),
+        memory_store=memory_store,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(
+            text="/goal implementer inspect release plan 验收: confirm blockers",
+            mentions=(),
+        )
+    )
+
+    updated = memory_store.get_atom("mem-exp-feedback")
+    assert updated is not None
+    assert updated.confidence == pytest.approx(0.65)
+    assert updated.experience is not None
+    assert updated.experience.verdict_hits == 1
+    assert updated.experience.verdict_misses == 0
+    assert updated.experience.injection_count == 1
 
 
 async def test_orchestrator_dream_writes_reviewable_candidate_memory(tmp_path: Path) -> None:
