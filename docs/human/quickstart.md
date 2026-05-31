@@ -118,8 +118,9 @@ uv run aico-view
 # 浏览 http://127.0.0.1:8765
 ```
 
-要让手机访问需要隧道(ngrok / Cloudflare tunnel);**V3 sprint 会加 token 鉴权 +
-部署文档**,在此之前不要把 view 暴露到公网。
+要让手机访问需要隧道(ngrok / Cloudflare tunnel)和 **`AICO_VIEW_TOKEN`**。
+绑非 loopback host 时没设 token 会全请求 401(有意防误暴露)。完整部署形态、
+安全模型和 env 速查见 [`aico-view-deploy.md`](aico-view-deploy.md)。
 
 ---
 

@@ -18,6 +18,7 @@
 
 ### Added
 - 项目立项,北极星三句话确立
+- `AICO_VIEW_TOKEN` 鉴权:`aico-view` 在非 loopback host 部署时**必须**设 token,否则所有请求 401;loopback 部署无 token 时保持便利访问;客户端可以走 `X-AICO-Token` header 或 `?token=` query。详见 ADR-0035 和 `docs/human/aico-view-deploy.md`。
 - `/timeline [--since 24h --source memory|task|audit --limit 30 --trace <id>]` lead 内务命令:UnifiedEventIndex 的过滤视图。
 - `/rollback memory|experience|task <id>` lead 内务命令:精确撤销 AICO 内部状态,每次都写一条 `rollback_performed` audit;`/rollback task` 只写 audit 标记,**不级联**撤 memory 副作用;永远不撤 git/shell/file。详见 ADR-0034。
 - `aico-view` read-only 移动端 Web:Timeline / Task Trace / Memory Tree 三视图,挂在 `AICO_AUDIT_LOG_PATH` / `AICO_MEMORY_PATH` / `AICO_STATE_DB_PATH` 上;所有路由 GET-only,写操作全部回 IM。默认 `127.0.0.1:8765`,V3 会加 token 鉴权后再支持隧道。

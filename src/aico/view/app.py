@@ -37,6 +37,7 @@ from aico.core.unified_event import (
     UnifiedEvent,
     UnifiedEventIndex,
 )
+from aico.view.auth import TokenGuard
 from aico.view.deep_link import (
     DeepLinkSettings,
     load_deep_link_settings_from_env,
@@ -83,14 +84,17 @@ def build_view_app(
     settings: ViewSettings | None = None,
     *,
     deep_link_settings: DeepLinkSettings | None = None,
+    token_guard: TokenGuard | None = None,
 ) -> FastAPI:
     """Construct the read-only aico-view FastAPI application."""
     settings = settings or load_view_settings_from_env()
     deep_link_settings = deep_link_settings or load_deep_link_settings_from_env()
+    guard = token_guard or TokenGuard.from_env()
 
     app = FastAPI(title="AI Company OS — View", docs_url=None, redoc_url=None)
     app.state.aico_view_settings = settings
     app.state.aico_deep_link_settings = deep_link_settings
+    app.state.aico_token_guard = guard
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
@@ -98,13 +102,14 @@ def build_view_app(
 
     @app.get("/", response_class=HTMLResponse)
     async def timeline_view(request: Request) -> HTMLResponse:
-        del request
+        guard.check(request)
         index = _build_index(settings)
         recent = index.recent(limit=100)
         return HTMLResponse(_render_timeline(recent, deep_link_settings))
 
     @app.get("/trace/{trace_id}", response_class=HTMLResponse)
-    async def trace_view(trace_id: str) -> HTMLResponse:
+    async def trace_view(trace_id: str, request: Request) -> HTMLResponse:
+        guard.check(request)
         index = _build_index(settings)
         events = index.events_for_trace(trace_id)
         if not events:
@@ -117,7 +122,8 @@ def build_view_app(
         return HTMLResponse(_render_trace(trace_id, events, deep_link_settings))
 
     @app.get("/memory", response_class=HTMLResponse)
-    async def memory_view() -> HTMLResponse:
+    async def memory_view(request: Request) -> HTMLResponse:
+        guard.check(request)
         atoms = _load_memory_atoms(settings)
         return HTMLResponse(_render_memory(atoms, deep_link_settings))
 

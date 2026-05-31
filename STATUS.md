@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-05-31
-**当前轮次**:Round 135(Sprint A3 — /timeline + /rollback lead commands)
+**当前轮次**:Round 136(Sprint V3 — aico-view token auth + deploy doc)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -300,6 +300,7 @@ AICO 的产品边界是 absence-first:
 - [x] Sprint V1 — `aico-view` 只读 FastAPI 三视图 + `aico-view` entrypoint;ADR-0033(Round 133)。
 - [x] Sprint V2 — aico-view 三视图加 IM deep-link 按钮(Telegram `t.me/<bot>?text=`)+ Feishu cmd-copy 降级(Round 134)。
 - [x] Sprint A3 — lead 内务 `/timeline` + `/rollback memory|experience|task`;新增 `ROLLBACK_PERFORMED` AuditEventType;ADR-0034(Round 135)。
+- [x] Sprint V3 — `aico-view` `AICO_VIEW_TOKEN` 鉴权 + 部署文档(localhost / ngrok / Cloudflare);ADR-0035(Round 136)。
 
 ### 开源 Demo 进度
 
@@ -313,6 +314,17 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 136**(2026-05-31,Claude — Sprint V3 + 路线图全部完成):
+- 落地 boss-first-grounding §6 Sprint V3:`aico-view` token 鉴权 + 部署文档 + 安全模型。**§6 路线图 9 个 sprint 全部完成**。
+- 新增 `src/aico/view/auth.py`(< 90 行):`TokenGuard.from_env()` 三态决策——token 已设则验证;loopback 无 token 放行(本机便利);**非 loopback 无 token 全请求 401**(刻意拒绝裸暴露)。token 比较走 `secrets.compare_digest` 防 timing。
+- `src/aico/view/app.py`:`build_view_app(..., token_guard=None)` 注入 guard;三个受保护路由 `/`、`/trace/{id}`、`/memory` 调 `guard.check(request)`;`/healthz` 和 `/static/style.css` 不受保护(liveness probe + 公开样式)。
+- 新增 ADR-0035 `aico-view token auth posture`(Accepted):写死行为矩阵 + 不做的事(无多用户、无 OIDC、无 rate limit)。
+- 新增 `docs/human/aico-view-deploy.md`:三种形态(localhost / ngrok / Cloudflare tunnel)+ 安全模型 + env 速查 + "不要做的事" 清单。
+- 验证通过:`uv run pytest` **411 passed / 1 skipped**(原 394 + 17 V3);ruff / format / mypy 全绿。
+- CHANGELOG 加 `AICO_VIEW_TOKEN` 说明;quickstart 链到 deploy 文档。
+- 在 `docs/architecture/boss-first-grounding.md` §6 表格给 V3 标 ✅ 引用 Round 136。
+- **路线图状态**:M1 ✅ / M2 ✅ / M3 ✅ / A1 ✅ / A2 ✅ / A3 ✅ / V1 ✅ / V2 ✅ / V3 ✅。Phase 8 复盘 / Future F-1 F-2 / Orchestrator 拆分(B-005)留作下一阶段。
 
 **Round 135**(2026-05-31,Claude — Sprint A3):
 - 落地 boss-first-grounding §6 Sprint A3:lead 内务 `/timeline` 和 `/rollback memory|experience|task`,以及新增 `AuditEventType.ROLLBACK_PERFORMED`。

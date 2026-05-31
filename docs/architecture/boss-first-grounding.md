@@ -473,7 +473,7 @@
 | **V1** | ✅ aico-view 最小 FastAPI + Timeline/Task Trace/Memory Tree 三视图(Round 133) | A1 | 1 sprint |
 | **V2** | ✅ aico-view → IM deep-link 跳转(Round 134) | V1 + A2 | 0.5 sprint |
 | **A3** | ✅ `/timeline`(细粒度)+ `/rollback` 精细 + 边界文档(Round 135) | A2, M2 | 1 sprint |
-| **V3** | aico-view 本地 token 鉴权 + 隧道部署文档 | V1 | 0.5 sprint |
+| **V3** | ✅ aico-view 本地 token 鉴权 + 隧道部署文档(Round 136) | V1 | 0.5 sprint |
 | **(Phase 8 复盘)** | 验证三块基础是否解决 dogfood 根因,再决定 Phase 8 后续 | M3, A3, V2 | 评估 |
 | **(F-1 / F-2)** | Lead 主动机制 / Team Karpathy Loop | 全部上述 + Phase 8 dogfood 跑通 | TBD |
 

@@ -6533,3 +6533,60 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - 新增 `docs/decisions/0034-rollback-granularity-boundary.md`(Accepted)。
 - CHANGELOG / daily-ops 加 `/timeline` `/rollback` 文档。
 - 不动 PITFALLS / BLOCKERS(B-005 仍 DEFERRED)。
+
+---
+
+## Round 136 — 2026-05-31 — Claude
+
+### 输入
+- 接 Round 135 A3 完成,继续推进 §6 最后一个 sprint V3。
+- 本轮聚焦 `aico-view` token 鉴权 + 部署文档 + 安全模型;同时这是 §6 路线图的最后一刀。
+
+### 思考与讨论
+- 候选 A:OAuth / OIDC / Cloudflare Access → ❌ 重型,违反"单人 dogfood"边界。
+- 候选 B:HTTP Basic Auth → ❌ 手机不友好,凭据进浏览器密码管理器后撤销难。
+- 候选 C:单 token via env(query / header) → ✅ 选定,书签存好,撤销=改 env。
+- 行为矩阵设计:loopback 无 token 放行(本机便利);**非 loopback 无 token 全请求 401**(refuse to expose unauth'd view)。这是有意:绑公网必须设 token,启动会写 WARN 日志。
+- token 比较走 `secrets.compare_digest` 防 timing attack。
+- 哪些路由保护:`/`、`/trace/{id}`、`/memory`。**不保护** `/healthz`(tunnel 上游 liveness 探针)和 `/static/style.css`(公开样式,无敏感数据)。
+- 实现方式:在每个受保护路由内显式调 `guard.check(request)`,**不用** FastAPI Depends——让 healthz / static 不走 dependency 树,降低误配风险。
+
+### 产出
+- 新增 `src/aico/view/auth.py`(< 90 行):`TokenGuard` + `is_loopback_host` + `TokenGuard.from_env`。
+- `src/aico/view/app.py`:`build_view_app(..., token_guard=None)` 注入 guard;三个受保护路由 `guard.check(request)`;`healthz` 和 `static` 不调。
+- 新增 ADR-0035 `aico-view token auth posture`(Accepted)。
+- 新增 `docs/human/aico-view-deploy.md`:三形态(localhost / ngrok / Cloudflare)、安全模型、env 速查、"不要做的事"清单。
+- 新增测试 `tests/unit/test_aico_view_auth.py`(17 用例):loopback 判定参数化 8 个、loopback 无 token 放行、非 loopback 无 token 全拒、header / query / 错 token、healthz 和 static 不被 token 保护、trace / memory 都被保护。
+- CHANGELOG 加 `AICO_VIEW_TOKEN` 说明;quickstart 加 deploy 文档链接。
+- `docs/architecture/boss-first-grounding.md` §6 表格 V3 行打 ✅ Round 136。
+
+### 验证结果
+- `uv run pytest`:**411 passed / 1 skipped**(394 + 17 V3 = 411)。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:137 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 132 source files。
+
+### 关键决策
+- 🔒 **决策 1**:绑非 loopback 没设 token = 全请求 401(刻意拒绝裸暴露)。是有意的,WARN 日志会提醒。
+- 🔒 **决策 2**:token 比较走 `secrets.compare_digest`,防 timing。
+- 🔒 **决策 3**:`/healthz` / `/static/style.css` 不保护(tunnel 友好 + 公开样式)。
+- 🔒 **决策 4**:不挂 Depends,而是路由内显式 `guard.check(request)`,降低误配。
+- 🔒 **决策 5**:不做多 token / 多用户 / OIDC / rate limit。这是单人 dogfood 工具的合理边界。
+
+### 路线图总览(收官)
+- ✅ M1 / M2 / M3:Memory + Experience 数据层 → 命令 → 反馈闭环
+- ✅ A1 / A2 / A3:trace_id + UnifiedEventIndex → boss 老板 `/undo` `/why` → lead `/timeline` `/rollback`
+- ✅ V1 / V2 / V3:aico-view 三视图 → IM deep links → token 鉴权
+
+### 留给下一轮
+- **首要**:Phase 8 dogfood 复盘(boss-first §3.5):用真实 Telegram + Memory+Experience + aico-view 跑一轮夜间托管,检验是否解决了"老板早上不敢直接接手"的根因(boss-first §1 痛点 P6)。
+- **次要**:Orchestrator 类拆分(B-005)。
+- **延后**:Future F-1 Lead Self-Driving / F-2 Team Karpathy Loop——只在 Phase 8 dogfood 跑通后再启动。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 136;Phase 8 进度新增 Sprint V3 ✅ 行;**§6 路线图 9 sprint 全 ✅**。
+- `docs/architecture/boss-first-grounding.md` §6 V3 行打 ✅ 引用 Round 136。
+- 新增 `docs/decisions/0035-aico-view-token-auth.md`(Accepted)。
+- 新增 `docs/human/aico-view-deploy.md`。
+- CHANGELOG / quickstart 加 token 鉴权说明。
+- 不动 PITFALLS;BLOCKERS B-005 仍 DEFERRED,留下一阶段处理。
