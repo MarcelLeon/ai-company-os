@@ -74,4 +74,5 @@ local-config/
 .aico-cache/
 mnt/
 docs/assets/*.mov
+docs/assets/release-room-demo-original.gif
 reports/
