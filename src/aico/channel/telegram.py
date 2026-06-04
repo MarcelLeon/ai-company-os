@@ -97,6 +97,28 @@ class TelegramChannel:
         )
         return SentMessage(message_id=str(result["message_id"]), target=target)
 
+    async def send_document(
+        self,
+        target: ChannelTarget,
+        *,
+        filename: str,
+        content: bytes,
+        media_type: str,
+        caption: str | None = None,
+    ) -> SentMessage:
+        log.info(
+            "Telegram sendDocument: target=%s filename=%s bytes=%s",
+            target.target_id,
+            filename,
+            len(content),
+        )
+        payload: dict[str, Any] = {"chat_id": target.target_id}
+        if caption:
+            payload["caption"] = caption
+        files = {"document": (filename, content, media_type)}
+        result = await self._post_multipart("sendDocument", payload, files)
+        return SentMessage(message_id=str(result["message_id"]), target=target)
+
     async def edit_message(
         self,
         target: ChannelTarget,
@@ -187,6 +209,24 @@ class TelegramChannel:
 
     async def _post(self, method: str, payload: dict[str, Any]) -> Any:
         response = await self._client.post(self._method_url(method), json=payload)
+        data = _telegram_response_json(response)
+        if not data.get("ok"):
+            description = data.get("description", "unknown Telegram API error")
+            raise TelegramAPIError(str(description))
+        response.raise_for_status()
+        return data["result"]
+
+    async def _post_multipart(
+        self,
+        method: str,
+        payload: dict[str, Any],
+        files: dict[str, tuple[str, bytes, str]],
+    ) -> Any:
+        response = await self._client.post(
+            self._method_url(method),
+            data=payload,
+            files=files,
+        )
         data = _telegram_response_json(response)
         if not data.get("ok"):
             description = data.get("description", "unknown Telegram API error")

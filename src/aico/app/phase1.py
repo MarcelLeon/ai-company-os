@@ -59,6 +59,9 @@ from aico.core import (
     agent_cards_from_personas,
     read_jsonl_audit_events,
 )
+from aico.view.app import ViewSettings
+from aico.view.commands import ViewSnapshotCommandHandler
+from aico.view.deep_link import load_deep_link_settings_from_env
 
 
 class Phase1Settings(BaseSettings):
@@ -132,6 +135,8 @@ class Phase1Settings(BaseSettings):
     audit_log_path: Path | None = None
     memory_path: Path | None = None
     state_db_path: Path | None = None
+    view_enabled: bool = False
+    view_output_dir: Path = Path(".aico/view-snapshots")
     log_level: str = "INFO"
     log_path: Path | None = Path("logs/aico.log")
 
@@ -304,6 +309,7 @@ def build_phase1_runtime(
         project_directory=project_directory,
         memory_store=JsonlMemoryStore(settings.memory_path) if settings.memory_path else None,
         offline_delegation_store=_offline_delegation_store(settings),
+        view_snapshot_handler=_view_snapshot_handler(settings, channel, project_directory),
         prefer_native_channel_format=settings.prefer_native_channel_format,
     )
     return Phase1Runtime(
@@ -327,6 +333,28 @@ def _offline_delegation_store(settings: Phase1Settings) -> SQLiteOfflineDelegati
     if settings.state_db_path is None:
         return None
     return SQLiteOfflineDelegationStore(settings.state_db_path)
+
+
+def _view_snapshot_handler(
+    settings: Phase1Settings,
+    channel: IMChannel,
+    project_directory: ProjectAssignmentDirectory,
+) -> ViewSnapshotCommandHandler | None:
+    if not settings.view_enabled:
+        return None
+    return ViewSnapshotCommandHandler(
+        channel=channel,
+        project_directory=project_directory,
+        settings_factory=lambda project_id: ViewSettings(
+            audit_log_path=settings.audit_log_path,
+            memory_path=settings.memory_path,
+            state_db_path=settings.state_db_path,
+            project_ids=(project_id,),
+        ),
+        deep_link_factory=load_deep_link_settings_from_env,
+        enabled=True,
+        output_dir=settings.view_output_dir,
+    )
 
 
 def _build_channel(

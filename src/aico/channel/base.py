@@ -42,3 +42,18 @@ class IMChannel(Protocol):
     def on_incoming(self, handler: IncomingMessageHandler) -> None: ...
 
     async def health_check(self) -> HealthStatus: ...
+
+
+@runtime_checkable
+class DocumentChannel(Protocol):
+    """Optional channel capability for sending file attachments."""
+
+    async def send_document(
+        self,
+        target: ChannelTarget,
+        *,
+        filename: str,
+        content: bytes,
+        media_type: str,
+        caption: str | None = None,
+    ) -> SentMessage: ...

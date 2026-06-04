@@ -65,7 +65,7 @@ def test_collaboration_payload_can_include_source_context() -> None:
         "Collaboration request from reviewer:\n\n"
         "Context from reviewer output so far:\n"
         "Findings:\n(a) keep /inbox read-only\n(b) do not batch approvals\n\n"
-        "Request:\n"
+        "Current task:\n"
         "reflect (a)-(d) in the plan"
     )
 

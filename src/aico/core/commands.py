@@ -56,6 +56,7 @@ class CommandName(StrEnum):
     EXPERIENCE = "experience"
     UNDO = "undo"
     WHY = "why"
+    VIEW = "view"
     TIMELINE = "timeline"
     ROLLBACK = "rollback"
 
@@ -93,6 +94,7 @@ def parse_command(text: str) -> Command | None:
         CommandName.AGENTS,
         CommandName.SESSIONS,
         CommandName.UNDO,
+        CommandName.VIEW,
         CommandName.TIMELINE,
     }:
         return Command(CommandName(lowered))
@@ -140,6 +142,7 @@ def help_text() -> str:
         "/experience review|list|promote|archive - lead-internal experience lifecycle\n"
         "/undo - reverse the most recent AICO-internal mutation (memory/experience only)\n"
         "/why [short_id] - explain what produced an event (defaults to most recent)\n"
+        "/view [project] - send a read-only HTML aico-view snapshot into IM\n"
         "/timeline [--since 24h --source memory|task|audit --limit 30 --trace <id>]"
         " - lead-internal filtered timeline\n"
         "/rollback memory|experience|task <id> - lead-internal precise reversal"

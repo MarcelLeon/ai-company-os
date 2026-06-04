@@ -48,6 +48,13 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0027 | Memory Purpose Tags | Accepted | 2026-05-21 |
 | ADR-0028 | SQLite Task State Store | Accepted | 2026-05-21 |
 | ADR-0029 | Phase 8 Absence Loop | Accepted | 2026-05-26 |
+| ADR-0030 | Unified Event Index | Accepted | 2026-05-31 |
+| ADR-0031 | Experience as Injectable Memory | Accepted | 2026-05-31 |
+| ADR-0032 | Undo / Why Scope Boundary | Accepted | 2026-05-31 |
+| ADR-0033 | aico-view Read-only Web Surface | Accepted | 2026-05-31 |
+| ADR-0034 | Rollback Granularity Boundary | Accepted | 2026-05-31 |
+| ADR-0035 | aico-view Token Auth Posture | Accepted | 2026-05-31 |
+| ADR-0036 | aico-view IM-delivered HTML Snapshot | Accepted | 2026-06-02 |
 
 **状态图例**:
 - `Proposed`(提议中)

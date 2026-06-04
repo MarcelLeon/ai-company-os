@@ -183,6 +183,36 @@ async def test_telegram_channel_send_edit_and_delete_use_bot_api_methods() -> No
     ]
 
 
+async def test_telegram_channel_sends_document_as_multipart_upload() -> None:
+    calls: list[tuple[str, dict[str, str], bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, dict(request.headers), request.read()))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 456}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+
+        sent = await channel.send_document(
+            target,
+            filename="aico-view-aico.html",
+            content=b"<!doctype html><html>AICO</html>",
+            media_type="text/html; charset=utf-8",
+            caption="AICO view snapshot for aico (read-only)",
+        )
+
+    path, headers, body = calls[0]
+    assert sent.message_id == "456"
+    assert path == "/bottoken/sendDocument"
+    assert "multipart/form-data" in headers["content-type"]
+    assert b"chat_id" in body
+    assert b"chat-1" in body
+    assert b"caption" in body
+    assert b"aico-view-aico.html" in body
+    assert b"<!doctype html><html>AICO</html>" in body
+
+
 async def test_telegram_channel_renders_text_spans_as_telegram_html() -> None:
     calls: list[tuple[str, bytes]] = []
 

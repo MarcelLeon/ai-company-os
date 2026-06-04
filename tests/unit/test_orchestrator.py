@@ -45,6 +45,7 @@ from aico.core import (
     ProjectRoleProfile,
     ProviderSessionMode,
     ProviderSessionRef,
+    RiskLevel,
     RoleProfile,
     SentMessage,
     SQLiteOfflineDelegationStore,
@@ -63,10 +64,18 @@ class ScriptedAdapter:
         ack_status: AckStatus = AckStatus.ACCEPTED,
         name: str = "scripted",
         output_texts: tuple[str, ...] = ("hello", " world"),
+        capabilities: frozenset[Capability] | None = None,
     ) -> None:
         self.ack_status = ack_status
         self._name = name
         self._output_texts = output_texts
+        self._capabilities = capabilities or frozenset(
+            {
+                Capability.CODE_EDIT,
+                Capability.SHELL_EXEC,
+                Capability.STREAM_OUTPUT,
+            }
+        )
         self.received_tasks: list[Task] = []
         self.interrupted_task_ids: list[str] = []
 
@@ -75,13 +84,7 @@ class ScriptedAdapter:
         return self._name
 
     def capabilities(self) -> frozenset[Capability]:
-        return frozenset(
-            {
-                Capability.CODE_EDIT,
-                Capability.SHELL_EXEC,
-                Capability.STREAM_OUTPUT,
-            }
-        )
+        return self._capabilities
 
     async def receive_task(self, task: Task) -> TaskAck:
         self.received_tasks.append(task)
@@ -780,7 +783,7 @@ async def test_orchestrator_routes_later_collaboration_directive_and_keeps_text(
         "Collaboration request from implementer:\n\n"
         "Context from implementer output so far:\n"
         "Plan:\n- implement inbox list\n\n"
-        "Request:\n"
+        "Current task:\n"
         "inspect this implementation"
     )
     assert any(
@@ -791,6 +794,67 @@ async def test_orchestrator_routes_later_collaboration_directive_and_keeps_text(
         and message.spans
         for message in channel.sent_messages
     )
+
+
+async def test_orchestrator_does_not_reject_read_only_reviewer_for_risky_parent_context() -> None:
+    implementer = ScriptedAdapter(
+        name="claude-code",
+        output_texts=(
+            "Plan:\n"
+            "- run pytest\n"
+            "- git push origin main\n"
+            "@reviewer: review the release plan for risks and missing tests\n",
+        ),
+    )
+    reviewer = ScriptedAdapter(
+        name="codex",
+        output_texts=("risk review done",),
+        capabilities=frozenset({Capability.CODE_REVIEW, Capability.STREAM_OUTPUT}),
+    )
+    persona_registry = PersonaRegistry(
+        [
+            PersonaProfile(
+                name="implementer",
+                adapter_name="claude-code",
+                role_instruction="Role: implementer.",
+            ),
+            PersonaProfile(
+                name="reviewer",
+                adapter_name="codex",
+                role_instruction="Role: reviewer.",
+            ),
+        ]
+    )
+    channel = RecordingChannel()
+    task_ids = iter(("task-parent", "task-child"))
+    bus = TaskBus(
+        AdapterRegistry([implementer, reviewer]),
+        persona_registry=persona_registry,
+    )
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(
+            default_persona="implementer",
+            task_id_factory=lambda: next(task_ids),
+        ),
+        task_bus=bus,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/implementer prepare release"))
+
+    assert reviewer.received_tasks[0].payload == (
+        "Role: reviewer.\n\n"
+        "Collaboration request from implementer:\n\n"
+        "Context from implementer output so far:\n"
+        "Plan:\n- run pytest\n- git push origin main\n\n"
+        "Current task:\n"
+        "review the release plan for risks and missing tests"
+    )
+    assert MessageContent(text="Task accepted: task-child [reviewer]") in channel.sent_messages
+    assert not any("cannot handle shell_exec" in message.text for message in channel.sent_messages)
+    child_snapshot = bus.task_snapshot("task-child")
+    assert not isinstance(child_snapshot, TaskAck)
+    assert child_snapshot.risk_level is RiskLevel.READ_ONLY
 
 
 async def test_orchestrator_collaboration_uses_assignment_role_and_parent_context() -> None:
@@ -840,7 +904,7 @@ async def test_orchestrator_collaboration_uses_assignment_role_and_parent_contex
         "Findings:\n"
         "(a) keep /inbox read-only.\n"
         "(b) do not normalize batched approvals.\n\n"
-        "Request:\n"
+        "Current task:\n"
         "reflect (a)-(b) in the inbox plan"
     )
     assert any(
@@ -1536,7 +1600,21 @@ async def test_orchestrator_reports_daily_and_weekly_project_state() -> None:
 
 
 async def test_orchestrator_queues_overnight_delegation_to_project_lead() -> None:
-    adapter = ScriptedAdapter(name="claude-code", output_texts=("overnight done",))
+    adapter = ScriptedAdapter(
+        name="claude-code",
+        output_texts=(
+            "done:\n"
+            "• reviewed GitHub readiness and community file scope.\n"
+            "blocked:\n"
+            "• no blockers found in local handoff state.\n"
+            "risks:\n"
+            "• release positioning still needs boss review before public launch.\n"
+            "next actions:\n"
+            "• finalize README polish\n"
+            "• add community files\n"
+            "• run final tests\n",
+        ),
+    )
     channel = RecordingChannel()
     store = InMemoryAgentSessionStore(session_id_factory=lambda: "overnight-session-1")
     orchestrator = Orchestrator(
@@ -1576,6 +1654,45 @@ async def test_orchestrator_queues_overnight_delegation_to_project_lead() -> Non
     assert provider.mode is ProviderSessionMode.NEW
     assert channel.sent_messages[-1].text.startswith("Overnight delegations for aico:\n")
     assert "• night-task-nig: implementer -> claude (task-nig)" in channel.sent_messages[-1].text
+
+
+async def test_orchestrator_marks_short_overnight_handoff_failed() -> None:
+    adapter = ScriptedAdapter(
+        name="claude-code",
+        output_texts=(
+            "Community 文件：写一个简短 Code of Conduct（基于 Contributor Covenant 2.1）：",
+        ),
+    )
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-night-short"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(
+            text="/overnight 为我准备好上线github的全部工作，要奔着1k或10k star方向去设计和发力",
+            mentions=(),
+        )
+    )
+
+    snapshot = orchestrator._task_bus.task_snapshot("task-night-short")  # noqa: SLF001
+    assert not isinstance(snapshot, TaskAck)
+    assert snapshot.status is TaskStatus.FAILED
+    assert snapshot.reason == "handoff output is too short for an overnight delegation"
+    assert channel.sent_messages[-1].text == (
+        "Overnight delegation output incomplete\n"
+        "task: task-nig\n"
+        "reason: handoff output is too short for an overnight delegation\n\n"
+        "This was marked failed so it does not look like a successful morning handoff.\n\n"
+        "Next:\n"
+        "- /task task-nig\n"
+        "- rerun /overnight with a narrower goal, or ask the lead to continue"
+    )
 
 
 async def test_orchestrator_inbox_summarizes_project_attention_and_handoffs() -> None:
@@ -1633,7 +1750,21 @@ async def test_orchestrator_inbox_summarizes_project_attention_and_handoffs() ->
 
 
 async def test_orchestrator_morning_handoff_summarizes_absence_recovery() -> None:
-    adapter = ScriptedAdapter(name="claude-code", output_texts=("morning evidence",))
+    adapter = ScriptedAdapter(
+        name="claude-code",
+        output_texts=(
+            "done:\n"
+            "• produced morning evidence for the offline delegation.\n"
+            "blocked:\n"
+            "• waiting approval still needs boss action.\n"
+            "risks:\n"
+            "• running tester work may still change the handoff.\n"
+            "next actions:\n"
+            "• approve pending docs update\n"
+            "• inspect running tester task\n"
+            "• open inbox\n",
+        ),
+    )
     channel = RecordingChannel()
     bus = TaskBus(adapter)
     orchestrator = Orchestrator(

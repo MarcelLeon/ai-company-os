@@ -25,6 +25,7 @@ OFFLINE_DELEGATION_INTENT = "offline_delegation"
 OFFLINE_DELEGATION_INTENT_KEY = "aico.intent"
 OFFLINE_DELEGATION_ID_KEY = "aico.offline_delegation_id"
 OFFLINE_DELEGATION_GOAL_KEY = "aico.offline_goal"
+_MIN_HANDOFF_CHARS = 160
 
 ProjectTaskFactory = Callable[
     [IncomingMessage, str, AssignmentProfile, str],
@@ -267,6 +268,21 @@ def offline_delegation_prompt(
     )
 
 
+def offline_delegation_completion_issue(output: str) -> str | None:
+    text = output.strip()
+    if len(text) < _MIN_HANDOFF_CHARS:
+        return "handoff output is too short for an overnight delegation"
+
+    missing = [
+        label
+        for label, markers in _HANDOFF_MARKERS
+        if not any(marker in text.lower() for marker in markers)
+    ]
+    if missing:
+        return f"handoff output is missing sections: {', '.join(missing)}"
+    return None
+
+
 def offline_delegation_started_message(record: OfflineDelegationRecord) -> MessageContent:
     text = (
         f"Overnight delegation queued: {record.delegation_id}\n"
@@ -282,6 +298,21 @@ def offline_delegation_started_message(record: OfflineDelegationRecord) -> Messa
         "- the lead should report done, blocked, risks, and next actions"
     )
     return MessageContent(text=text)
+
+
+def offline_delegation_incomplete_message(task_id: str, issue: str) -> MessageContent:
+    short_id = short_id_text(task_id)
+    return MessageContent(
+        text=(
+            "Overnight delegation output incomplete\n"
+            f"task: {short_id}\n"
+            f"reason: {issue}\n\n"
+            "This was marked failed so it does not look like a successful morning handoff.\n\n"
+            "Next:\n"
+            f"- /task {short_id}\n"
+            "- rerun /overnight with a narrower goal, or ask the lead to continue"
+        )
+    )
 
 
 def _task_with_offline_metadata(task: Task, delegation_id: str, goal: str) -> Task:
@@ -326,3 +357,11 @@ def _record_from_json(payload: str) -> OfflineDelegationRecord:
         goal=str(data["goal"]),
         created_at=datetime.fromisoformat(created_at) if created_at else utc_now(),
     )
+
+
+_HANDOFF_MARKERS = (
+    ("done", ("done", "完成", "已完成")),
+    ("blocked", ("blocked", "blocker", "阻塞", "卡点")),
+    ("risks", ("risks", "risk", "风险")),
+    ("next actions", ("next", "下一步", "后续动作", "后续行动")),
+)

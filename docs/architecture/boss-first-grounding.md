@@ -146,24 +146,26 @@
 - **A2**(老板线):`/undo` + `/why` + `/morning` 和 `/inbox` 内嵌 timeline 摘要
 - **A3**(lead 线):`/timeline`、`/rollback` 精细操作 + 边界文档
 
-### 3.3 aico-view — Mobile-friendly Read-only Web (Priority 2,与 A3 并行)
+### 3.3 aico-view — Mobile-friendly Read-only View (Priority 2,与 A3 并行)
 
 **为什么不破 absence-first**:NORTH_STAR 原文是"无论身处何地""老板不在 Mac 前",**没有禁止可视化**。手机网页正好契合 absence-first(地铁、饭桌、床上都能看)。
 
 **严格边界**:
 - **只读**。所有写操作回到 IM。
-- **只在已登录的老板设备上可访问**(MVP 阶段用本地 token + ngrok 风格隧道,不上公网鉴权)。
-- **不替代 IM**。aico-view 的每个视图都有"回 IM 操作"按钮,通过 `tg://resolve?...&text=/undo` 深度链接跳回 Telegram 预填命令。
+- **默认不让老板手机访问 Mac 本机服务**。老板路径优先是 `/view` 发送自包含 HTML snapshot 到 IM。
+- **HTTP 服务只做显式本机排障 / 可选隧道 dogfood**。若暴露到隧道,必须设 token。
+- **不替代 IM**。aico-view 的每个视图都有"回 IM 操作"按钮或命令提示,通过 Telegram deep link 预填命令,或降级为复制命令。
 
 **三个视图**:
-1. **Timeline** — 按项目 / 角色 / 时间过滤的事件流
-2. **Task Trace** — 单 task 的全貌:输入 prompt → 注入了哪些 memory/experience → 输出 → 触发了哪些 approval → grader verdict
+1. **Boss Brief** — 当前项目的可接手摘要、最近事件、经验/事实数量和高频回 IM 操作。
+2. **Timeline / Trace** — 按项目 / 时间展示事件流,并可展开单 task 全貌。
 3. **Memory Tree** — memory 与 experience 的关系图(`derived_from` / `supersedes` / `contradicts`)
 
 **Sprint 切片**:
 - **V1**:最小 FastAPI 服务 + 三视图 read-only(直接读 unified_event 索引)
 - **V2**:Telegram deep link 回 IM 命令预填
 - **V3**:本地 token 鉴权 + ngrok 风格隧道部署文档
+- **V4**:IM `/view` HTML snapshot,通过 Telegram `sendDocument` 发送,不启动本机 HTTP 服务
 
 ### 3.4 命令分层(P1 痛点直接解法,不需要新 sprint)
 
@@ -474,6 +476,7 @@
 | **V2** | ✅ aico-view → IM deep-link 跳转(Round 134) | V1 + A2 | 0.5 sprint |
 | **A3** | ✅ `/timeline`(细粒度)+ `/rollback` 精细 + 边界文档(Round 135) | A2, M2 | 1 sprint |
 | **V3** | ✅ aico-view 本地 token 鉴权 + 隧道部署文档(Round 136) | V1 | 0.5 sprint |
+| **V4** | ✅ `AICO_VIEW_ENABLED=true` → `/view` IM HTML snapshot,Telegram `sendDocument`(Round 137) | V1, V2 | 0.5 sprint |
 | **(Phase 8 复盘)** | 验证三块基础是否解决 dogfood 根因,再决定 Phase 8 后续 | M3, A3, V2 | 评估 |
 | **(F-1 / F-2)** | Lead 主动机制 / Team Karpathy Loop | 全部上述 + Phase 8 dogfood 跑通 | TBD |
 

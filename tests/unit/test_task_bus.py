@@ -213,6 +213,35 @@ async def test_task_bus_rejects_risky_task_for_read_only_adapter() -> None:
     assert bus.audit_events()[-1].event_type is AuditEventType.TASK_REJECTED
 
 
+async def test_task_bus_keeps_collaboration_context_from_escalating_read_only_request() -> None:
+    codex = RecordingAdapter(
+        "codex",
+        capabilities=frozenset({Capability.CODE_REVIEW, Capability.STREAM_OUTPUT}),
+    )
+    bus = TaskBus(AdapterRegistry([codex]))
+    task = Task(
+        task_id="task-codex-review",
+        payload=(
+            "Collaboration request from implementer:\n\n"
+            "Context from implementer output so far:\n"
+            "Plan:\n"
+            "- run pytest\n"
+            "- git push origin main\n\n"
+            "Current task:\n"
+            "review the release plan for risks and missing tests"
+        ),
+        requester_id="user-1",
+        target_persona="codex",
+    )
+
+    ack = await bus.submit(task)
+
+    assert ack.status is AckStatus.ACCEPTED
+    assert codex.received_tasks == [task]
+    assert bus.task_snapshots()[0].status is TaskStatus.RUNNING
+    assert bus.task_snapshots()[0].risk_level is RiskLevel.READ_ONLY
+
+
 async def test_task_bus_approval_dispatches_waiting_task() -> None:
     adapter = RecordingAdapter("claude-code")
     bus = TaskBus(AdapterRegistry([adapter]))

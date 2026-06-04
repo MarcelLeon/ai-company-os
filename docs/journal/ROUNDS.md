@@ -6590,3 +6590,165 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - 新增 `docs/human/aico-view-deploy.md`。
 - CHANGELOG / quickstart 加 token 鉴权说明。
 - 不动 PITFALLS;BLOCKERS B-005 仍 DEFERRED,留下一阶段处理。
+
+---
+
+## Round 137 — 2026-06-02 — Codex
+
+### 输入
+- 人类指出当前 aico-view 产品入口不自然且有安全误解:`AICO_VIEW_ENABLED=true` 不应让 Telegram/手机访问 Mac 本机服务;更合理的是把 HTML 文件直接发到 Telegram。
+- 本轮目标:支持 `AICO_VIEW_ENABLED=true` 的 IM HTML snapshot 模式,并写死它不自动启动 HTTP 服务、不发 localhost 链接。
+
+### 思考与讨论
+- 方案 A:`AICO_VIEW_ENABLED=true` 自动启动 `uvicorn` / `aico-view` sidecar → ❌ 否决。虽然工程上能做,但老板手机无法访问 Mac `127.0.0.1`;若默认引向 tunnel,又把本机服务暴露风险变成主路径。
+- 方案 B:Telegram 消息里发 `http://127.0.0.1:8765` 或 tunnel URL → ❌ 否决。前者在手机上无效,后者需要 token/隧道运维,不应成为老板默认体验。
+- 方案 C:`/view` 生成自包含 HTML 并通过 Telegram `sendDocument` 发送 → ✅ 选定。没有入站端口,不需要 tunnel;残余风险是 HTML 内容会进入 Telegram 聊天记录,因此只发可信私聊/小群。
+- 是否自动 `/project` 后发 snapshot → ❌ 本轮不做。避免群里刷屏或误发 memory;先用手动 `/view`,未来可用 `AICO_VIEW_AUTO_SEND_ON_PROJECT=true` 单独评估。
+- Channel 抽象怎么做 → ✅ 新增可选 `DocumentChannel` 协议,Telegram 实现 `send_document`;Feishu 等未支持附件时降级本地文件路径,不在 core 写平台分支。
+
+### 产出
+- `src/aico/channel/base.py`:新增 runtime-checkable `DocumentChannel` 可选附件协议。
+- `src/aico/channel/telegram.py`:新增 `send_document()` 走 Telegram Bot API `sendDocument` multipart 上传。
+- 新增 `src/aico/view/snapshot.py`:生成自包含 HTML snapshot,内联 CSS,包含 Boss Brief / recent timeline / trace details / memory,不依赖 `/static/style.css`。
+- 新增 `src/aico/view/commands.py`:新增 `ViewSnapshotCommandHandler`;`/view [project]` 读取当前 active project 或显式 project,发送 HTML 文件;非附件 Channel 降级写入 `AICO_VIEW_OUTPUT_DIR`。
+- `src/aico/app/phase1.py`:新增 `AICO_VIEW_ENABLED` / `AICO_VIEW_OUTPUT_DIR`;启用时将 handler 注入 Orchestrator。**不会启动 HTTP `aico-view`**。
+- `src/aico/core/commands.py` / `src/aico/core/orchestrator.py`:新增 `/view` 命令与分发。
+- 新增 ADR-0036 `aico-view IM-delivered HTML snapshot`。
+- `docs/human/quickstart.md` / `docs/human/aico-view-deploy.md` / `docs/human/daily-ops.md` / `docs/architecture/boss-first-grounding.md` / CHANGELOG 同步更新。
+- 新增测试:
+  - `tests/unit/test_telegram_channel.py`:覆盖 `sendDocument` multipart 上传。
+  - `tests/unit/test_view_snapshot_commands.py`:覆盖 disabled、Telegram document、自包含 HTML、非附件 Channel 本地降级。
+  - `tests/unit/test_phase1_app.py`:覆盖 `AICO_VIEW_ENABLED` handler 注入开关。
+
+### 验证结果
+- `uv run pytest`:**417 passed / 1 skipped**。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:140 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 135 source files。
+- `git diff --check`:clean。
+
+### 关键决策
+- 🔒 **决策 1**:`AICO_VIEW_ENABLED=true` = 启用 IM `/view` HTML snapshot,**不是**自动启动 HTTP server。
+- 🔒 **决策 2**:默认老板路径不访问 Mac 本机端口、不发 localhost / 127.0.0.1 链接。
+- 🔒 **决策 3**:HTML snapshot 是只读、单文件、内联 CSS;写操作继续回 IM。
+- 🔒 **决策 4**:Telegram `sendDocument` 比 tunnel 更适合默认 dogfood,但内容会进入 Telegram 云端,只发可信聊天。
+- 🔒 **决策 5**:附件能力作为可选 Channel 协议,后续 Feishu 文件上传也走 `DocumentChannel`,不在 Orchestrator 写平台分支。
+
+### 留给下一轮
+- 首要:真实 Telegram dogfood `/project aico` → `/view` → 打开 HTML,确认 Boss Brief / Timeline / Trace / Memory 是否符合老板接手习惯。
+- 次要:独立拆分 Orchestrator(B-005),本轮又为 `/view` 增加了最小 handler 接入,类体债务仍然存在。
+- 可选:若真实体验需要自动入口,再评估 `AICO_VIEW_AUTO_SEND_ON_PROJECT=true`,不要默认自动发敏感 memory。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 137;Phase 8 进度新增 Sprint V4 ✅ 行;下一轮建议改为 `/view` 真实 IM 验收 + B-005 拆分。
+- `docs/architecture/boss-first-grounding.md` §3.3 与 §6 增加 V4 snapshot 形态。
+- 新增 ADR-0036;ADR README 索引补齐 ADR-0030 到 ADR-0036。
+- 不新增 PITFALLS / BLOCKERS;B-005 仍为 DEFERRED。
+
+---
+
+## Round 138 — 2026-06-03 — Codex
+
+### 输入
+- 人类验收 `/overnight` 时看到失败:
+  1. `/overnight 为我准备好上线github的全部工作，要奔着1k或10k star方向去设计和发力`
+  2. `Collaboration requested / source: implementer / target: reviewer`
+  3. `Task rejected: adapter codex cannot handle shell_exec tasks; use /claude`
+- 本轮目标:修复 `/overnight` 协作链路中 reviewer/Codex 被误判为 `shell_exec` 的问题,保持安全边界不降级。
+
+### 思考与讨论
+- 候选 A:把 reviewer 任命到 Claude,让它能处理 `shell_exec` → ❌ 否决。reviewer/Codex read-only 是 ADR-0007 固定的安全边界;这会把审阅角色变成可执行 shell 的角色,掩盖误判。
+- 候选 B:放宽 Codex capability,允许 `shell_exec` → ❌ 否决。Codex 当前定位是只读 reviewer,危险任务应由核心拒绝并提示 `/claude`,不能为了修一条误判破坏 capability matrix。
+- 候选 C:给协作子任务标记真实任务边界,让风险识别只扫描委托内容 → ✅ 选定。`TextRiskAssessor` 已有 `Current task:` 边界逻辑,复用它比新增专用风险规则更小、更符合既有 prompt stack 约定。
+- 根因定位:Round 113 为修 P-024 把 parent output context 注入 child task,但 `collaboration_payload()` 带 context 时使用 `Request:` 标签;风险识别只识别 `Current task:`,于是把 context 中的 `run pytest` / `git push` / `命令` 也扫进去,导致只读 reviewer 被误判为 `shell_exec`。
+
+### 产出
+- `src/aico/core/collaboration.py`:带 `source_context` 的协作 payload 改用 `Current task:` 标记实际委托内容。
+- `tests/unit/test_collaboration.py`:更新 payload 格式断言。
+- `tests/unit/test_task_bus.py`:新增回归测试,证明 parent context 含 `run pytest` / `git push` 时,只读 Codex reviewer 的只读审阅委托仍按 `READ_ONLY` 派发。
+- `tests/unit/test_orchestrator.py`:测试 fake adapter 支持自定义 capabilities;新增端到端协作回归,确认 IM 不再出现 `cannot handle shell_exec` 拒绝。
+- `docs/journal/PITFALLS.md`:新增 P-034,记录“协作 parent context 被风险识别扫描导致只读 reviewer 子任务误判为 shell_exec”。
+
+### 验证结果
+- Targeted:`uv run pytest tests/unit/test_collaboration.py tests/unit/test_task_bus.py tests/unit/test_orchestrator.py -q` → **108 passed**。
+- Full clean env:`env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest` → **419 passed / 1 skipped**。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:140 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 135 source files。
+- `git diff --check`:clean。
+- 注意:未清理当前 shell 的 `AICO_VIEW_TOKEN` / `AICO_VIEW_ENABLED` 时,全量 pytest 里旧 aico-view 测试会因 401 或默认启用预期失败;这属于测试环境变量污染,不是本轮修复失败。
+
+### 关键决策
+- 🔒 **决策 1**:不改变 Codex read-only capability。`adapter codex cannot handle shell_exec tasks; use /claude` 对真正危险任务仍是正确行为。
+- 🔒 **决策 2**:协作子任务带 parent context 时,必须显式给真实委托段 `Current task:` 边界;风险识别只看真实委托,不看背景上下文。
+- 🔒 **决策 3**:不新增专用 collaboration risk bypass。正确修复是复用既有任务边界,不是为协作任务开特权。
+
+### 留给下一轮
+- 继续真实 IM 复验 `/overnight ...上线github...` 链路:应看到 reviewer 子任务 accepted,不再因 parent context 中的 shell/git 词被拒绝。
+- 继续 Round 137 留下的 `/view` 真实 IM 验收。
+- B-005 Orchestrator 类拆分仍是高优工程债;本轮只在测试 fake adapter 上加 capabilities 参数,没有继续膨胀运行时代码。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 138;Phase 8 进度新增 `/overnight` 协作风险边界修复。
+- `docs/journal/PITFALLS.md` 新增 P-034。
+- 不开 ADR:这是既有风险边界契约的 bug fix,没有新增架构决策。
+
+---
+
+## Round 139 — 2026-06-04 — Codex
+
+### 输入
+- 人类继续验收 `/overnight` 效果,反馈 task `/task 3f7d57c2` 只打印了半句:
+  `Community 文件：写一个简短 Code of Conduct（基于 Contributor Covenant 2.1）：`
+- 原问题仍是:`/overnight 为我准备好上线github的全部工作，要奔着1k或10k star方向去设计和发力`。
+- 本轮目标:定位为什么 overnight 只返回半句仍被视为成功,并修复“不可交接输出伪装成 done”的问题。
+
+### 思考与讨论
+- 证据:
+  - `logs/aico.log` 显示 task `3f7d57c2-9290-438a-b10f-1af31d55d100` 被 Claude 接收,运行约 8 分钟后 `return_code=0`,但 `stdout_chunks=1`。
+  - Orchestrator 只收到 64 字符 `TEXT`,随后 stream finished。
+  - `.aico/state.db` 中 task snapshot 是 `done`,offline delegation record 也正常存在。
+- 结论:这不是 Telegram 截断,也不是 `/overnight` 工单丢失;是底层 CLI 成功退出但输出本身不完整,AICO 缺少 `/overnight` handoff 验收。
+- 候选 A:所有任务输出少于 N 字符都标失败 → ❌ 否决。普通 `/ask` 短问答可以合法很短,全局规则会误伤。
+- 候选 B:只改 prompt,要求 Claude “必须写完整” → ❌ 否决。prompt 不能成为唯一可靠边界;真实 dogfood 已证明 provider 会提前退出。
+- 候选 C:仅对 `offline_delegation` task 增加 completion guard → ✅ 选定。`/overnight` 本来就承诺 morning handoff,有明确产品合同:done、blocked、risks、next actions。
+- 重要边界:`/goal` 不套这个规则,因为它已有 Outcome Grader;等待审批的 `/overnight` 也不应因空输出被误判 failed。
+
+### 产出
+- `src/aico/core/offline_delegation.py`:
+  - 新增 `offline_delegation_completion_issue(output)`,检查输出过短或缺少 done / blocked / risks / next actions。
+  - 新增 `offline_delegation_incomplete_message(task_id, issue)`,给 IM 明确提示 handoff 不完整和下一步。
+- `src/aico/core/task_bus.py`:新增 `mark_failed(task_id, reason=...)`,用于把已 done 但产品验收失败的 task 改标 failed 并写 `TASK_FAILED` audit。
+- `src/aico/core/orchestrator.py`:
+  - `_run_delegated_task()` 在 task snapshot 已是 `DONE` 后执行 overnight handoff 完整性检查。
+  - 新增 `_run_goal_task()`;`GoalBriefCommandHandler` 改用它,避免 `/goal` 被 overnight 合同误伤。
+- `tests/unit/test_offline_delegation.py`:覆盖半句输出失败和完整 handoff 通过。
+- `tests/unit/test_orchestrator.py`:新增真实半句回归;更新 morning handoff fixture;保留 waiting approval 不误判。
+- `CHANGELOG.md`、`STATUS.md`、`docs/journal/PITFALLS.md` 同步更新;新增 P-035。
+
+### 验证结果
+- Targeted:
+  - `uv run pytest tests/unit/test_offline_delegation.py tests/unit/test_orchestrator.py::test_orchestrator_queues_overnight_delegation_to_project_lead tests/unit/test_orchestrator.py::test_orchestrator_marks_short_overnight_handoff_failed tests/unit/test_orchestrator.py::test_orchestrator_overnight_keeps_risky_goal_waiting_for_approval -q` → 5 passed。
+  - `uv run pytest tests/unit/test_orchestrator.py::test_orchestrator_morning_handoff_summarizes_absence_recovery tests/unit/test_orchestrator.py::test_orchestrator_goal_runs_outcome_grader_when_tester_is_appointed tests/unit/test_orchestrator.py::test_orchestrator_grader_pass_bumps_injected_experience_confidence tests/unit/test_orchestrator.py::test_orchestrator_marks_short_overnight_handoff_failed tests/unit/test_offline_delegation.py -q` → 6 passed。
+- Full clean env:`env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest` → **422 passed / 1 skipped**。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:141 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 136 source files。
+- `git diff --check`:clean。
+
+### 关键决策
+- 🔒 **决策 1**:`/overnight` 成功条件不再只是 provider exit 0;必须留下可交接 handoff。
+- 🔒 **决策 2**:handoff 完整性检查只作用于 offline delegation,不作为全局输出长度规则。
+- 🔒 **决策 3**:`/goal` 使用 Outcome Grader,不复用 overnight handoff guard。
+- 🔒 **决策 4**:等待审批不是失败;只有 snapshot 已 `DONE` 后才检查输出完整性。
+
+### 留给下一轮
+- 真实 IM 复验同一条 `/overnight ...上线github...`:如果 provider 再只输出半句,应看到 `Overnight delegation output incomplete`,且 `/task <id>` 为 failed。
+- 若真实输出经常被 guard 打回,下一步不是放宽 guard,而是把 `/overnight` 拆成更明确的多 step / 多 agent 夜间编排。
+- B-005 Orchestrator 类拆分仍是高优工程债;本轮只做最小接入,没有借机大重构。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 139;Phase 8 进度新增 `/overnight` handoff 完整性兜底。
+- `docs/journal/PITFALLS.md` 新增 P-035。
+- `CHANGELOG.md` Fixed 新增 `/overnight` incomplete handoff guard。
+- 不开 ADR:这是 Phase 8 `/overnight` 既有交接合同的 bug fix,没有新增架构路线。

@@ -49,10 +49,17 @@ from aico.core.models import (
     OutputType,
     SentMessage,
     Task,
+    TaskSnapshot,
+    TaskStatus,
 )
 from aico.core.morning import morning_message
 from aico.core.native_output import native_output_format_from_task, task_with_native_output_format
-from aico.core.offline_delegation import OfflineDelegationCommandHandler, OfflineDelegationStore
+from aico.core.offline_delegation import (
+    OfflineDelegationCommandHandler,
+    OfflineDelegationStore,
+    offline_delegation_completion_issue,
+    offline_delegation_incomplete_message,
+)
 from aico.core.orchestrator_commands import DirectoryCommandHandler
 from aico.core.orchestrator_task_factory import OrchestratorTaskFactory, _is_same_assignment
 from aico.core.project_assignment import (
@@ -75,6 +82,7 @@ from aico.core.timeline_rollback_commands import (
 )
 from aico.core.undo_why_commands import UndoCommandHandler, WhyCommandHandler
 from aico.core.unified_event import InMemoryUnifiedEventIndex, UnifiedEventIndex
+from aico.view.commands import ViewSnapshotCommandHandler
 
 log = logging.getLogger(__name__)
 ProviderSessionRefFactory = Callable[[AgentSession], ProviderSessionRef | None]
@@ -94,6 +102,7 @@ class Orchestrator:
         project_directory: ProjectAssignmentDirectory | None = None,
         memory_store: MemoryStore | None = None,
         offline_delegation_store: OfflineDelegationStore | None = None,
+        view_snapshot_handler: ViewSnapshotCommandHandler | None = None,
         prefer_native_channel_format: bool = False,
     ) -> None:
         self._channel = channel
@@ -104,6 +113,7 @@ class Orchestrator:
         self._agent_directory = agent_directory or AgentDirectory()
         self._project_directory = project_directory or ProjectAssignmentDirectory()
         self._memory_store = memory_store
+        self._view_snapshots = view_snapshot_handler
         self._prefer_native_channel_format = prefer_native_channel_format
         self._task_sessions: dict[str, str] = {}
         self._response_languages = ResponseLanguageStore()
@@ -215,7 +225,7 @@ class Orchestrator:
             project_directory=self._project_directory,
             task_bus=self._task_bus,
             task_for_assignment=self._task_factory.task_for_assignment,
-            run_goal_task=self._run_delegated_task,
+            run_goal_task=self._run_goal_task,
             memory_store=self._memory_store,
         )
         self._lead_decisions = LeadDecisionWorkflow(
@@ -462,6 +472,39 @@ class Orchestrator:
         await self._run_task(message, task, include_target=True)
 
     async def _run_delegated_task(
+        self,
+        message: IncomingMessage,
+        task: Task,
+        session: AgentSession | None,
+    ) -> str:
+        output = await self._run_task(
+            message,
+            task,
+            include_target=True,
+            session_id=None if session is None else session.session_id,
+        )
+        await self._mark_incomplete_overnight_handoff(message, task, output)
+        return output
+
+    async def _mark_incomplete_overnight_handoff(
+        self,
+        message: IncomingMessage,
+        task: Task,
+        output: str,
+    ) -> None:
+        snapshot = self._task_bus.task_snapshot(task.task_id)
+        if not isinstance(snapshot, TaskSnapshot) or snapshot.status is not TaskStatus.DONE:
+            return
+        issue = offline_delegation_completion_issue(output)
+        if issue is None:
+            return
+        self._task_bus.mark_failed(task.task_id, reason=issue)
+        await self._channel.send_message(
+            message.source,
+            offline_delegation_incomplete_message(task.task_id, issue),
+        )
+
+    async def _run_goal_task(
         self,
         message: IncomingMessage,
         task: Task,
@@ -758,6 +801,8 @@ async def _handle_command(
         await orchestrator._undo_commands.handle_undo(message, command.payload)
     elif command.name is CommandName.WHY:
         await orchestrator._why_commands.handle_why(message, command.payload)
+    elif command.name is CommandName.VIEW:
+        await _handle_view_command(orchestrator, message, command.payload)
     elif command.name is CommandName.TIMELINE:
         await orchestrator._timeline_commands.handle_timeline(message, command.payload)
     elif command.name is CommandName.ROLLBACK:
@@ -866,6 +911,25 @@ async def _handle_morning_command(orchestrator: Orchestrator, message: IncomingM
             recent_events=index.recent(limit=5),
         ),
     )
+
+
+async def _handle_view_command(
+    orchestrator: Orchestrator,
+    message: IncomingMessage,
+    payload: str,
+) -> None:
+    if orchestrator._view_snapshots is None:
+        await orchestrator._channel.send_message(
+            message.source,
+            MessageContent(
+                text=(
+                    "AICO view snapshots are not configured. Set AICO_VIEW_ENABLED=true "
+                    "and restart aico-phase1."
+                )
+            ),
+        )
+        return
+    await orchestrator._view_snapshots.handle_view(message, payload)
 
 
 async def _handle_project_command(

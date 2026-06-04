@@ -1,10 +1,16 @@
 # aico-view 部署
 
-`aico-view` 是一个独立的 read-only FastAPI 进程,把 orchestrator 写出的
-JSONL/SQLite 渲染成手机友好的 Timeline / Task Trace / Memory Tree 三视图。
-**所有写操作都回 IM**;view 自身永远是只读的(任何 POST/PUT/DELETE 都 405)。
+`aico-view` 有两种形态:
 
-本文给三种典型部署形态,以及为什么 V3 要求 token 鉴权。
+1. **IM HTML 快照**:由 `aico-phase1` 在 `/view` 时生成自包含 `.html` 文件并发送到
+   Telegram。默认推荐这条路,不启动本机 HTTP 服务,不要求手机访问 Mac。
+2. **HTTP 只读服务**:显式运行 `uv run aico-view`,把 orchestrator 写出的
+   JSONL/SQLite 渲染成 Timeline / Task Trace / Memory Tree。适合本机排障或显式隧道
+   dogfood。
+
+两种形态都只读。**所有写操作都回 IM**;HTTP view 的任何 POST/PUT/DELETE 都 405。
+
+本文先给推荐的 IM 快照形态,再给三种 HTTP 部署形态,以及为什么 V3 要求 token 鉴权。
 
 ---
 
@@ -13,8 +19,16 @@ JSONL/SQLite 渲染成手机友好的 Timeline / Task Trace / Memory Tree 三视
 `aico-view` 不是公共服务。它要解决的是"老板在地铁/床上想看一眼项目状态"的场景。
 能力边界:
 
-- ✅ 适合:本机 dev、个人手机隧道、单人 dogfood。
+- ✅ 适合:IM HTML 快照、本机 dev、个人手机隧道、单人 dogfood。
 - ❌ 不适合:团队共享、公网部署、多用户鉴权、长期生产暴露。
+
+IM HTML 快照边界:
+
+- ✅ 不开放本机端口,不需要 ngrok / Cloudflare tunnel。
+- ✅ HTML 内联 CSS,不包含 localhost / 127.0.0.1 链接。
+- ⚠️ HTML 内容会进入 Telegram 聊天记录/云端存储;只发到可信私聊或可信小群。
+
+HTTP 服务强制规则:
 
 强制规则:
 
@@ -28,7 +42,33 @@ JSONL/SQLite 渲染成手机友好的 Timeline / Task Trace / Memory Tree 三视
 
 ---
 
-## 形态 1:本机访问(最简)
+## 形态 0:IM HTML 快照(默认推荐)
+
+适合:老板在 Telegram 里看项目状态,不希望暴露 Mac 本机服务。
+
+```bash
+export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
+export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
+export AICO_STATE_DB_PATH="/tmp/aico-state.db"
+export AICO_VIEW_ENABLED=true
+export AICO_VIEW_TELEGRAM_BOT_USERNAME="aico_dogfood_bot"  # 可选,启用 HTML 内 deep link
+
+env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11 aico-phase1
+```
+
+Telegram 里:
+
+```text
+/project aico
+/view
+```
+
+如果 Channel 支持附件,会收到 `aico-view-aico.html`;如果不支持附件,会降级为把快照写到
+`AICO_VIEW_OUTPUT_DIR`(默认 `.aico/view-snapshots`)并回 IM 提示本地路径。
+
+---
+
+## 形态 1:HTTP 本机访问(排障)
 
 适合:开发期、本机调试、不需要手机访问。
 
@@ -120,6 +160,8 @@ cloudflared tunnel run <tunnel-id>
 | `AICO_AUDIT_LOG_PATH` | 否 | audit JSONL 路径(与 phase1 一致) |
 | `AICO_MEMORY_PATH` | 否 | memory JSONL 路径(与 phase1 一致) |
 | `AICO_STATE_DB_PATH` | 否 | SQLite task state 路径;`true` 映射到 `.aico/state.db` |
+| `AICO_VIEW_ENABLED` | 否 | `true` 后在 `aico-phase1` 中启用 `/view` HTML 快照,不启动 HTTP 服务 |
+| `AICO_VIEW_OUTPUT_DIR` | 否 | `/view` 在非附件 Channel 下写本地 HTML 的目录,默认 `.aico/view-snapshots` |
 | `AICO_VIEW_PROJECT_IDS` | 否 | 逗号分隔的项目 ID;不设则从 memory 推断 |
 | `AICO_VIEW_HOST` | 否 | 监听 host,默认 `127.0.0.1` |
 | `AICO_VIEW_PORT` | 否 | 监听端口,默认 `8765` |
@@ -132,5 +174,6 @@ cloudflared tunnel run <tunnel-id>
 
 - ADR-0033 — aico-view read-only mobile web surface
 - ADR-0035 — aico-view token auth posture(本文)
+- ADR-0036 — aico-view IM-delivered HTML snapshot
 - `docs/architecture/boss-first-grounding.md` §3.3
 - `docs/human/quickstart.md` 启动指引

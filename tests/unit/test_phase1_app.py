@@ -233,6 +233,29 @@ def test_phase1_settings_maps_bool_like_state_db_path_to_local_data_dir() -> Non
     assert disabled.state_db_path is None
 
 
+def test_build_phase1_runtime_configures_view_snapshot_handler_when_enabled(
+    tmp_path: Path,
+) -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        claude_command="claude -p",
+        view_enabled=True,
+        view_output_dir=tmp_path / "view",
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    assert runtime.orchestrator._view_snapshots is not None  # noqa: SLF001
+
+
+def test_build_phase1_runtime_leaves_view_snapshot_handler_disabled_by_default() -> None:
+    settings = Phase1Settings(telegram_bot_token="token", claude_command="claude -p")
+
+    runtime = build_phase1_runtime(settings)
+
+    assert runtime.orchestrator._view_snapshots is None  # noqa: SLF001
+
+
 def test_build_phase1_runtime_wires_telegram_channel_and_claude_adapter() -> None:
     settings = Phase1Settings(
         telegram_bot_token="token",

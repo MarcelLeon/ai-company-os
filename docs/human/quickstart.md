@@ -99,7 +99,28 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
 
 ---
 
-## 启动 aico-view(只读 Web 视图)
+## 启用 aico-view(只读视图)
+
+老板在 IM 里的默认入口不是访问 Mac 本机服务,而是让 AICO 发送一份 HTML 快照:
+
+```bash
+export AICO_VIEW_ENABLED=true
+export AICO_VIEW_OUTPUT_DIR=".aico/view-snapshots"  # 可选,非附件 Channel 的本地降级目录
+export AICO_VIEW_TELEGRAM_BOT_USERNAME="your_bot_username"  # 可选,启用 HTML 内回 IM deep link
+```
+
+重启 `aico-phase1` 后,在 Telegram 里:
+
+```text
+/project aico
+/view
+```
+
+`/view` 会把当前项目的 Boss Brief / Timeline / Trace / Memory 生成一份自包含
+`.html` 文件发到 Telegram。它不启动本机 HTTP 服务,也不要求手机访问
+`127.0.0.1`。注意:HTML 内容会进入 Telegram 聊天记录,只发到可信私聊或可信小群。
+
+### 可选:启动 aico-view HTTP 服务(本机排障 / 隧道 dogfood)
 
 `aico-view` 是一个独立的 FastAPI 进程,它**不挂 channel/adapter**,只打开
 orchestrator 写出的 JSONL/SQLite,提供 Timeline / Task Trace / Memory Tree

@@ -355,6 +355,10 @@ class TaskBus:
             detail=f"parent_task={source_task.task_id}",
         )
 
+    def mark_failed(self, task_id: str, *, reason: str) -> None:
+        self._update_task(task_id, TaskStatus.FAILED, reason=reason)
+        self._record_audit_for_task(task_id, AuditEventType.TASK_FAILED, detail=reason)
+
     def record_lead_decision(self, task: Task, *, detail: str) -> AuditEvent:
         snapshot = self._state.tasks.get(task.task_id)
         return self._audit_log.record(

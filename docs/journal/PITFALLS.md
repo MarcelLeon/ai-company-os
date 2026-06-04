@@ -46,10 +46,12 @@
 - P-014:Reviewer 子任务已 accepted 但 Codex CLI 长时间无 stdout 且 IM 无中断入口
 - P-025:长沉默 Adapter 任务被误判为 IM 挂死
 - P-024:协作短指令引用父输出编号但 child task 丢失上下文
+- P-034:协作 parent context 被风险识别扫描导致只读 reviewer 子任务误判为 shell_exec
 
 ### 人格化与状态
 - P-013:Project Team 同一 role 可出现多个 appointment 导致 `/team` 重复成员
 - P-016:Appointment prompt 脚手架导致普通项目咨询误触发审批
+- P-035:CLI exit 0 的短输出被 `/overnight` 误当作可交接成功
 
 ### 部署与运维
 - P-017:真实 Stage 3 录屏被底层 CLI 噪音污染
@@ -1221,3 +1223,82 @@ Sprint A1 给 `MemoryAtom` / `AuditEvent` / `Task` 都加了 `trace_id: str | No
 - ADR-0030 §"关键边界 #3"
 - ROUNDS Round 128 / Round 129
 - `src/aico/core/memory.py` MemoryAtom
+
+### [P-034] 协作 parent context 被风险识别扫描导致只读 reviewer 子任务误判为 shell_exec
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 138
+**最后更新**:2026-06-03
+**影响范围**:`src/aico/core/collaboration.py`, `src/aico/core/risk.py`, `src/aico/core/orchestrator.py`
+
+**症状**
+真实 IM 验收 `/overnight 为我准备好上线github的全部工作...` 时,lead/implementer 输出触发协作:
+
+```text
+Collaboration requested
+source: implementer
+target: reviewer
+Task rejected: adapter codex cannot handle shell_exec tasks; use /claude
+```
+
+reviewer 的职责是只读审阅风险和缺口,但系统把它当成 `shell_exec` 任务拒绝,导致 `/overnight`
+托管链路中断。
+
+**根因**
+Round 113 为解决协作短指令上下文丢失,把 parent output context 注入 child task payload。
+但带 context 的协作 payload 旧格式使用 `Request:` 标记真实委托内容,而 `TextRiskAssessor`
+只会在存在 `Current task:` 时截取真实任务段。结果风险识别扫描了完整 parent context;
+只要 context 中出现 `run pytest`、`git push`、`命令` 等词,只读 reviewer/Codex 子任务就会被误判为
+`shell_exec`。
+
+**解决方案 / 缓解措施**
+- `collaboration_payload()` 在带 source context 时改用 `Current task:` 标记真实委托内容。
+- 保持 Codex read-only capability 不变;如果 `Current task:` 本身要求执行命令或写文件,仍会被拒绝或进入审批。
+- 新增 TaskBus + Orchestrator 回归测试,覆盖 parent context 含 `run pytest` / `git push` 但 reviewer 只做风险审阅的场景。
+
+**如何避免再次踩中**
+- 给 agent 子任务注入上下文时,必须用风险识别已识别的任务边界标记,不要发明新的 `Request:` / `Delta:` 标签。
+- 排查 `adapter codex cannot handle shell_exec tasks` 时,先看 child payload 的 `Current task:` 边界是否存在;不要直接把 reviewer 改任命给可执行 shell 的 adapter。
+- 不要为修这种误判放宽 Codex capability;正确边界是“只扫描真实委托内容”,不是让只读 reviewer 能执行命令。
+
+**相关链接**
+- ROUNDS Round 138
+- P-024
+
+### [P-035] CLI exit 0 的短输出被 `/overnight` 误当作可交接成功
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 139
+**最后更新**:2026-06-04
+**影响范围**:`src/aico/core/offline_delegation.py`, `src/aico/core/orchestrator.py`, `src/aico/core/task_bus.py`
+
+**症状**
+真实 IM 验收 `/overnight 为我准备好上线github的全部工作...` 后,`/task 3f7d57c2`
+只看到半句输出:
+
+```text
+Community 文件：写一个简短 Code of Conduct（基于 Contributor Covenant 2.1）：
+```
+
+日志显示 Claude CLI 运行约 8 分钟后 `return_code=0`,但 `stdout_chunks=1`,最终 IM 只有 64 字符。
+SQLite snapshot 却显示任务 `done`,容易让老板误以为 overnight handoff 成功。
+
+**根因**
+`TaskBus` 的通用语义是:Adapter 产出 `OutputType.DONE` 就标记 `TaskStatus.DONE`。这对普通短问答合理,
+但 `/overnight` 的产品合同不是“有输出即可”,而是必须留下 morning handoff:done、blocked、risks 和 next actions。
+AICO 缺少 `/overnight` 专属的交接完整性验收,导致 CLI exit 0 + 任意短 stdout 被误判为成功。
+
+**解决方案 / 缓解措施**
+- 新增 `offline_delegation_completion_issue(output)`:只检查 `/overnight` handoff,输出过短或缺少 done / blocked / risks / next actions 时返回问题。
+- `Orchestrator._run_delegated_task()` 只在 task snapshot 已是 `DONE` 时调用该检查;等待审批、rejected、failed 不受影响。
+- 不完整 handoff 会调用 `TaskBus.mark_failed(...)`,记录 `TASK_FAILED` audit,并通过 IM 发送 `Overnight delegation output incomplete`。
+- `/goal` 改走独立 `_run_goal_task`,继续用 Outcome Grader,不套 overnight handoff 合同。
+
+**如何避免再次踩中**
+- Absence-first 工作流不能只看 provider exit code;必须看老板早上能不能接手。
+- 后续新增 `/morning` 自动生成、lead 自驱、多 agent 夜间编排时,都要定义“可交接成功”的产品合同。
+- 不要把这个规则下沉为所有任务的全局最小输出长度;普通 `/ask` 短问答仍然可以短输出成功。
+
+**相关链接**
+- ROUNDS Round 139
+- NORTH_STAR.md 第三句 Dogfooding / 可审计交接

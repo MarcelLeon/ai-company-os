@@ -3,8 +3,8 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-05-31
-**当前轮次**:Round 136(Sprint V3 — aico-view token auth + deploy doc)
+**最后更新**:2026-06-04
+**当前轮次**:Round 139(`/overnight` incomplete handoff guard)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -301,6 +301,9 @@ AICO 的产品边界是 absence-first:
 - [x] Sprint V2 — aico-view 三视图加 IM deep-link 按钮(Telegram `t.me/<bot>?text=`)+ Feishu cmd-copy 降级(Round 134)。
 - [x] Sprint A3 — lead 内务 `/timeline` + `/rollback memory|experience|task`;新增 `ROLLBACK_PERFORMED` AuditEventType;ADR-0034(Round 135)。
 - [x] Sprint V3 — `aico-view` `AICO_VIEW_TOKEN` 鉴权 + 部署文档(localhost / ngrok / Cloudflare);ADR-0035(Round 136)。
+- [x] Sprint V4 — `AICO_VIEW_ENABLED=true` 启用 IM `/view` HTML 快照,通过 Telegram `sendDocument` 发送自包含只读文件,不启动本机 HTTP 服务;ADR-0036(Round 137)。
+- [x] `/overnight` dogfood 修复:协作子任务用 `Current task:` 标记真实委托内容,避免 reviewer/Codex 因 parent context 中的 `git` / `run` 词被误判为 `shell_exec`(Round 138)。
+- [x] `/overnight` handoff 完整性兜底:CLI exit 0 但输出过短或缺少 done/blocked/risks/next actions 时,任务改标 failed 并回 IM 提示不完整,避免半句输出伪装成成功(Round 139)。
 
 ### 开源 Demo 进度
 
@@ -314,6 +317,29 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 139**(2026-06-04,Codex — `/overnight` incomplete handoff guard):
+- 人类复验 `/overnight 为我准备好上线github的全部工作...` 后,任务 `3f7d57c2` 只在 IM 打出半句 `Community 文件：写一个简短 Code of Conduct...`。
+- 日志确认 Claude CLI 运行约 8 分钟后 return code 0,但 stdout 只有 1 个 chunk / 64 字符;SQLite snapshot 却被标成 `done`。这不是 Telegram 截断,而是 AICO 把“CLI 成功退出 + 任意 stdout”误当作可交接成功。
+- 新增 offline delegation completion guard:仅对 `/overnight` 任务生效;当最终 `DONE` 输出过短或缺少 done / blocked / risks / next actions 基本段落时,改标 `failed` 并向 IM 发送 `Overnight delegation output incomplete`。
+- `/goal` 继续走自己的 Outcome Grader,不复用 overnight handoff 验收;等待审批的 `/overnight` 也不会因空输出被误判失败。
+- 验证通过:`env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest` **422 passed / 1 skipped**;`ruff check .`;`ruff format --check .`;`mypy src tests`;`git diff --check`。
+
+**Round 138**(2026-06-03,Codex — `/overnight` collaboration risk boundary fix):
+- 人类验收 `/overnight` 时触发真实失败:`Collaboration requested: implementer -> reviewer` 后 reviewer/Codex 子任务被拒绝为 `adapter codex cannot handle shell_exec tasks; use /claude`。
+- 根因是协作 payload 带有 parent output context,但真实委托段使用 `Request:` 标签;`TextRiskAssessor` 只识别 `Current task:`,因此把 context 中的 `run pytest` / `git push` / `命令` 等词也纳入风险判定。
+- 修复 `collaboration_payload()` 在带 source context 时用 `Current task:` 标记实际委托内容,保持 Codex read-only capability 边界不变,也不绕过 `/approve`。
+- 新增回归测试覆盖 TaskBus 与 Orchestrator 两层:parent context 含 `run pytest` / `git push`,但 reviewer 只做风险审阅时仍按 read-only 派给 Codex;真正 shell/write 委托仍由现有风险门禁处理。
+- 验证通过:`env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest` **419 passed / 1 skipped**;`ruff check .`;`ruff format --check .`;`mypy src tests`;`git diff --check`。未清理当前 shell 的 view env 时,旧 view 测试会因 401/默认启用预期失败,这是环境变量污染而非本轮代码失败。
+
+**Round 137**(2026-06-02,Codex — aico-view IM HTML snapshot):
+- 根据人类安全反馈修正 aico-view 产品入口:`AICO_VIEW_ENABLED=true` 不再表达"自动启动可访问 Web 服务",而是启用 IM 内 `/view [project]` 发送自包含 HTML 快照。
+- 新增 `DocumentChannel` 可选附件协议;`TelegramChannel.send_document()` 通过 Bot API `sendDocument` 上传 `.html` 文件,不发送 localhost / 127.0.0.1 链接。
+- 新增 `src/aico/view/snapshot.py`:生成 Boss Brief / recent timeline / trace details / memory 的单文件 HTML,内联 CSS,无外部静态资源。
+- 新增 `src/aico/view/commands.py`:按当前 active project 生成 snapshot;非附件 Channel 降级为写入 `AICO_VIEW_OUTPUT_DIR` 并回 IM 提示路径。
+- `src/aico/app/phase1.py` 新增 `AICO_VIEW_ENABLED` / `AICO_VIEW_OUTPUT_DIR`;`uv run aico-view` HTTP 服务仍保留为显式本机排障/隧道 dogfood,不会由 `AICO_VIEW_ENABLED` 自动启动。
+- 新增 ADR-0036 `aico-view IM-delivered HTML snapshot`:写死安全边界——不开入站端口;但 HTML 内容会进入 Telegram 聊天记录,只发可信私聊/小群。
+- 验证通过:`uv run pytest` **417 passed / 1 skipped**;`ruff check .`;`ruff format --check .`;`mypy src tests`;`git diff --check`。
 
 **Round 136**(2026-05-31,Claude — Sprint V3 + 路线图全部完成):
 - 落地 boss-first-grounding §6 Sprint V3:`aico-view` token 鉴权 + 部署文档 + 安全模型。**§6 路线图 9 个 sprint 全部完成**。
@@ -1376,44 +1402,33 @@ AICO 的产品边界是 absence-first:
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【高】开源首屏二次验收:AI agent 开发者 / 个人开发者视角**:
-   - 检查 README 首屏是否在 30 秒内说清“远程指挥本机真实 AI 工具”。
-   - 用全新 clone + Telegram token 跑一次 Quickstart,记录外部开发者真实卡点。
-2. **【高】Lead decision workflow 真实 IM 验收**:
+1. **【高】Phase 8 dogfood 复盘 + `/view` 真实 IM 验收**:
    - 直接可问的问题:
      - `/project aico`
-     - `/team`
-     - `/ask lead decide whether we should start Phase 8 operator inbox now. Consider current project status, risks, and alternatives.`
-     - `/audit`
-     - `/recall decision`
+     - `/view`
+     - `/morning`
      - `/inbox`
-   - 预期效果:老板只发一个决策问题,系统自动拉反方/评审意见,最后给一份可追踪 decision memo,并能用 `/audit` / `/recall decision` 复盘。`/inbox` 应把该决策类任务列入 current-project follow-up,但不把 heartbeat 文本混进 memo。
-3. **【高】Goal Brief v0 真实 IM dogfooding**:
-   - 直接可问的问题:
-     - `/project aico`
-     - `/goal implementer inspect whether Phase 8 operator inbox is ready to implement. 验收: summarize blockers, required state tables, and stop conditions.`
-     - `/task <上一步返回的 task id>`
-     - `/inbox`
-     - `/ask tester check the Phase 8 inbox acceptance path, 必须给出通过/失败证据`
-     - `/ask tester what is the current project testing strategy?`
-   - 预期效果:复杂任务的目标、验收、证据和停止条件前置到 prompt 与任务详情里;`/task` 能看到 goal id/objective/acceptance,`/inbox` 能在 current-project scope 下列出 Goal Brief follow-up。
-4. **【高】Release Room Stage 3 GIF 复剪 / README 体验复核**:
-   - 已生成真实 Telegram dogfooding GIF: `docs/assets/release-room-demo.gif`,并嵌入 README。
-   - 当前 GIF 是 35 秒实录剪辑,覆盖 `/use`、`/team`、project memory、Codex PM/tester 输出、`/daily` 和 `/audit`。
-   - 下一轮可做一次更精剪版本:减少旧消息露出,补更清晰的 approval gate 镜头,并避免 read-only pytest 临时目录失败入镜。
-   - 若继续录真实 CLI,优先让 Codex tester 使用可写临时目录或只做静态检查,不要在 read-only sandbox 里直接跑 pytest。
-5. **【高】Feishu Channel 部署层与真实 smoke test**:
-   - 用 FastAPI route 或现有部署入口把飞书事件 callback 接到 `FeishuChannel.handle_event(payload)`。
-   - 在飞书开放平台完成 URL verification,订阅 `im.message.receive_v1`。
-   - 配置 App ID / App Secret / Verification Token,跑文本入站、回复、编辑/删除降级 smoke test。
-6. **【中】Codex bind / Claude resume / 长文本复测**:继续确认 session 和长文本分片不被 Phase 6 命令影响。
-7. **【低】Adapter usage 上报**:等 Claude/Codex Adapter 能稳定提供 usage 后,记录 `task_usage_recorded` 审计事件;当前只保留接入边界,不伪造数据。
+     - `/why <short_id>`
+   - 预期效果:老板不需要访问 Mac 本机端口,能在 Telegram 收到 `aico-view-aico.html`;HTML 能看懂 Boss Brief / Timeline / Trace / Memory,且敏感内容只出现在可信聊天里。
+2. **【高】Orchestrator 类拆分(B-005)**:
+   - 把 command handler 实例化 + 分发表迁到 `OrchestratorCommandRegistry` 或类似模块。
+   - Orchestrator 主体回到 task 提交 / 流式输出 / 状态协调,恢复单类 <500 行硬约束。
+3. **【中】aico-view Boss Brief 产品化**:
+   - 根据 `/view` dogfood 调整 HTML 第一屏:审批、阻塞、昨夜产出、第一行动优先于原始 Timeline。
+   - 暂不自动 `/project` 后发送;如真实体验需要,再加 `AICO_VIEW_AUTO_SEND_ON_PROJECT=true`。
+4. **【中】Feishu 文件附件能力评估**:
+   - 若 Feishu dogfood 需要 `/view`,新增 Feishu 文件上传 Channel capability。
+   - 不要在 core 中写平台分支;复用 `DocumentChannel`。
+5. **【低】Future F-1 / F-2**:
+   - Lead 主动机制和 Team Karpathy Loop 只在 Phase 8 dogfood 确认三块基础体验跑顺后再启动。
 
 ---
 
 ## 当前卡点
 
-参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。B-001、B-002 均已解决;B-003 已降为 deferred,当前没有阻塞 Phase 8 / 开源首屏继续推进的活跃卡点。
+参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。当前最高优工程债是 B-005
+`Orchestrator class size regression`(🟡 DEFERRED);本轮 `/view` 继续只做最小接入,
+下一轮建议独立拆分。
 
 ---
 

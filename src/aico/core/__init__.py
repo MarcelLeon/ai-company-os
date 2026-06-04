@@ -120,6 +120,7 @@ from aico.core.offline_delegation import (
     OfflineDelegationRecord,
     OfflineDelegationStore,
     SQLiteOfflineDelegationStore,
+    offline_delegation_completion_issue,
 )
 from aico.core.orchestrator import Orchestrator
 from aico.core.persona_registry import PersonaRegistry
@@ -233,6 +234,7 @@ __all__ = [
     "OfflineDelegationRecord",
     "OfflineDelegationStore",
     "SQLiteOfflineDelegationStore",
+    "offline_delegation_completion_issue",
     "OutputType",
     "PersonaProfile",
     "PersonaRegistry",

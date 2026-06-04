@@ -65,8 +65,7 @@ def collaboration_payload(
     if context:
         text += f"Context from {source_persona} output so far:\n{context}\n\n"
 
-    label = "Delta" if use_memory_refs and memory_refs else "Request"
-    return f"{text}{label}:\n{payload}"
+    return f"{text}Current task:\n{payload}"
 
 
 _SOURCE_CONTEXT_LIMIT = 4000

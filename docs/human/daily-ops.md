@@ -212,6 +212,8 @@ Adapter 未来若能稳定提供 usage,应记录 `task_usage_recorded` 审计事
 
 老板回来看当前项目时优先用 `/inbox`。它只读聚合当前 active project 的 pending approvals、running quiet tasks、failed/interrupted tasks、`/overnight` handoff、Goal Brief 和 lead decision follow-up,并给出 `/approve`、`/reject`、`/task`、`/interrupt`、`/daily`、`/audit` 等下一步入口。
 
+需要看更完整的可视化留痕时,在启动前设置 `AICO_VIEW_ENABLED=true`,然后在 IM 里发送 `/view`。AICO 会把当前 active project 的 Boss Brief / Timeline / Trace / Memory 渲染成自包含 HTML 文件并通过支持附件的 Channel(当前 Telegram)发送;这不会启动本机 HTTP 服务,也不会要求手机访问 `127.0.0.1`。注意 HTML 内容会进入 Telegram 聊天记录,只发到可信私聊或可信小群。
+
 长任务卡住或 Adapter 长时间 busy 时,可先用 `/inbox` 或 `/tasks` 找到最近任务,再用 `/task <short_task_id>` 查看状态和可用动作。running 任务会提示 `/interrupt <short_task_id>`,待审批任务会提示 `/approve <short_task_id>` / `/reject <short_task_id>`。协作任务还会在 `/task` 详情里展示 parent / child trace,可从 implementer 父任务跳到 reviewer 子任务,也可从子任务回看是谁发起。中断示例:`/interrupt 31e559c3`。中断会调用底层 Adapter 的 interrupt 能力,任务状态变为 `interrupted`,并记录审计事件。
 
 Codex 默认是 read-only reviewer,不承接写文件 / shell / destructive 任务。这类任务请用 `/claude`;如果误发给 `/codex`,系统会在核心层直接拒绝,不会再进入无效审批。
