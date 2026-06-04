@@ -3,3 +3,9 @@ contact_links:
   - name: Security vulnerability
     url: https://github.com/MarcelLeon/ai-company-os/security/advisories/new
     about: Please report security issues privately when possible.
+  - name: Discussion / question
+    url: https://github.com/MarcelLeon/ai-company-os/discussions
+    about: Use Discussions for open-ended questions, design proposals, or showing off your AICO setup.
+  - name: Contributor Quickstart
+    url: https://github.com/MarcelLeon/ai-company-os/blob/main/docs/contributors/quickstart.md
+    about: 30-minute path to your first PR (no Telegram bot or LLM token required).

@@ -6752,3 +6752,108 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - `docs/journal/PITFALLS.md` 新增 P-035。
 - `CHANGELOG.md` Fixed 新增 `/overnight` incomplete handoff guard。
 - 不开 ADR:这是 Phase 8 `/overnight` 既有交接合同的 bug fix,没有新增架构路线。
+
+---
+
+## Round 140 — 2026-06-04 — Claude
+
+### 输入
+- 老板任务:"为我准备好上线 github 的全部工作,要奔着 1k 或 10k star 方向去设计和发力"。
+- 实施者(implementer)appointment 接到这个 offline delegation;前一轮 Round 139 已经
+  合入 `/overnight` handoff completeness guard。
+- 上下文:Round 137-139 三轮代码改动完成但未提交;README polished 版本未提交;
+  v0.1.0 公开 release 节奏没有作战书。
+
+### 思考与讨论
+- 候选 A:再写新功能(例如 lead 主动机制 / 多 step overnight)→ ❌ 否决。北极星第三句
+  "Dogfooding 是唯一的验收标准";v0.1.0 范围已经能跑通老板缺席闭环,继续加功能只会
+  让 Show HN 描述与 README 不一致,典型反模式。
+- 候选 B:只 polish README → ❌ 否决。1k–10k star 路径不是单 README 优化,而是
+  Adapter+Channel+Approval+Audit+Memory wedge 的清晰阐述、外部贡献者真正能在 30 分钟
+  内做出第一个 PR、上线日 24 小时窗口的弹药都到位。
+- 候选 C:把 launch 拆成"治理资产"+"贡献者体验"+"上线作战书"+"v0.1.0 release notes"
+  四个独立产物 → ✅ 选定。每件都能被陌生开发者独立验证;不引入运行时代码改动,降低
+  发布风险。
+- 是否在本轮做 v0.1.0 tag 和 GitHub Release?→ ❌ 不做。tag 是不可逆操作,根据
+  AGENTS 操作规则需要老板亲自点确认;本轮把作战书写到位,把决策权交回去。
+
+### 产出
+
+**OSS 治理资产**:
+- 新增 `CODE_OF_CONDUCT.md`:Contributor Covenant 2.1,中英双语,引用 SECURITY.md
+  作为执行渠道。
+- 新增 `.github/FUNDING.yml`:占位,默认全部注释,等老板确认 sponsorship 渠道再激活。
+- 新增 `.github/dependabot.yml`:weekly Python 依赖升级 + monthly GitHub Actions 升级,
+  conventional commit prefix `chore(deps)` / `chore(ci)`。
+- `.github/ISSUE_TEMPLATE/config.yml` 新增 Discussions 与 Contributor Quickstart 联系链接。
+- `SECURITY.md` 明确响应 SLA(72 小时确认 / 14 天修复)。
+- `CONTRIBUTING.md` 顶部加 first-time contributor 入口和 CoC 引用。
+
+**贡献者体验**:
+- 新增 `docs/contributors/quickstart.md`:30 分钟 first-PR 路径,完全跑在 no-token
+  Release Room demo 上,精选 5 类适合 30 分钟内做完的 starter 任务。
+- 5 步流程:fork → 装依赖 → 跑测试 → 选任务 → 提 PR;9 段答疑(我卡住了 / 我想成为
+  maintainer)。
+- README Contributing 段重写,把 Contributor Quickstart 和 CoC 都摆在第一屏。
+
+**上线作战书**:
+- 新增 `docs/launch/playbook.md`:11 个章节、约 350 行的实战清单。
+  - §1 上线日 D0:24 小时关键窗口 + 不要做的事。
+  - §2 Show HN 模板:3 条标题 A/B、首条作者评论(含真实技术细节)、5 条评论应对剧本。
+  - §3 Reddit 4 个子版位差异化模板(r/LocalLLaMA / r/programming /
+    r/ChatGPTCoding / r/Anthropic),内容互不重复。
+  - §4 X / Twitter / Bluesky / LinkedIn / 中文向(V2EX / 少数派 / 知乎)。
+  - §5 v0.1.0 GitHub Release 模板。
+  - §6 dev.to / 知乎 长文骨架(8 段结构)。
+  - §7 D+3 → D+90 维持声量节奏。
+  - §8 反指标:不要花钱推广 / 不要追求一周 1k / 不要 ChatGPT 化 issue 回复。
+  - §9 老板缺席护栏:把 AICO 自身的产品价值反向应用到 launch ops。
+  - §10 数据看板:weekly star/fork/issue/PR/来源 KPI;低于 50% 时不加大宣发,而是回到产品。
+  - §11 谁不该做这件事:三个月不能持续投入就不要启动 playbook。
+
+**v0.1.0 release notes**:
+- 新增 `docs/launch/v0.1.0-release-notes.md`:可直接贴到 GitHub Release。
+  内容覆盖 features / engineering quality / 这个 release 不做什么 / 30 秒 demo /
+  Telegram 接入 / what's next / acknowledgements。
+
+**README polish**(此前 Round 由用户手动完成,本轮收口)+ Roadmap 对齐当前真实状态:
+- README 顶部金句改为 "Manage your local AI coding agents like a remote team — from
+  Telegram, while you sleep."
+- 新增 6 枚 badge(License / Python / CI / Ruff / mypy / PRs Welcome)。
+- 新增 How It Compares 4 列对比表。
+- 新增 Star History chart 引用。
+- "For Agent Developers" 段重写,链接到新增的 `docs/agent/adapter-authoring.md`。
+
+### 验证结果
+- `env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest`:**422 passed / 1 skipped**。
+- `uv run ruff check .`:All checks passed!
+- `uv run ruff format --check .`:141 files already formatted.
+- `uv run mypy src tests`:Success: no issues found in 136 source files.
+- 文档链接全部本仓内部相对引用,没有 dead link。
+
+### 关键决策
+- 🔒 **决策 1**:本轮不写新功能、不动运行时代码,只做 launch 弹药包。北极星第三句要求
+  Dogfooding 验收;v0.1.0 范围必须冻结到 launch 之后才能扩。
+- 🔒 **决策 2**:v0.1.0 git tag + GitHub Release 不在本轮执行,留给老板亲自点确认。
+  这是不可逆动作,符合 AGENTS 自检清单"irreversible 决策需要 boss approval"。
+- 🔒 **决策 3**:Show HN 一次性弹药,模板必须包含真实技术细节(Adapter Protocol、
+  风险边界 ADR-0007、append-only JSONL),不允许"hype + emoji"风格。
+- 🔒 **决策 4**:贡献者 quickstart 强制基于 no-token demo;任何要求 Telegram bot
+  或 LLM 账号才能开始的 first-PR 路径都不接受,门槛太高。
+- 🔒 **决策 5**:作战书必须包含反指标和"谁不该做这件事",防止把社区健康度换成短期数字。
+
+### 留给下一轮
+- **老板亲自决策**:v0.1.0 tag 时机、是否上 HN、是否激活 FUNDING.yml 中某条渠道、
+  GitHub UI metadata 是否要更新。
+- **launch D0 当天 agent 任务**:守评论区,把 issue 中的高频问题写成 ROADMAP issue,
+  在 README 顶部展示"我在听"。
+- **B-005 Orchestrator 拆分**仍是 launch 之后第一周的工程债。
+- 如果 launch 后 3 周内出现真实的外部 PR,优先把 docs/contributors/quickstart.md 改成
+  "30 分钟 first-PR" 的真实 user testimonial 而不是猜想体验。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 140;"上一轮做了什么"和"下一轮建议"全面更新。
+- `CHANGELOG.md` Unreleased Added 段新增 launch 资产五条。
+- 不开 ADR:本轮没有新架构决策,只是公开发布工程。
+- 不新增 PITFALLS / BLOCKERS。
+- 触达硬约束自检:本轮新增/改的全部是 markdown / yaml,无单类 / 单方法变化。

@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### Added
+- OSS 上线治理资产:新增 `CODE_OF_CONDUCT.md`(Contributor Covenant 2.1 中英双语)、
+  `.github/FUNDING.yml`(占位)、`.github/dependabot.yml`(weekly pip + monthly
+  GitHub Actions 升级)。
+- `docs/contributors/quickstart.md`:30 分钟内完成第一次 PR 的 Contributor Quickstart,
+  零 Telegram bot / 零 LLM token 路径。
+- `docs/launch/playbook.md`:面向 1k–10k star 的上线作战书(Show HN / Reddit / X / dev.to
+  模板,D0–D90 节奏,反指标清单)。
+- `docs/launch/v0.1.0-release-notes.md`:v0.1.0 GitHub Release notes 草稿,可直接贴。
+- README 增加 Contributing 段落对 Contributor Quickstart 与 Code of Conduct 的链接。
+- `.github/ISSUE_TEMPLATE/config.yml` 新增 Discussions 与 Contributor Quickstart 联系链接。
+- `SECURITY.md` 明确响应 SLA(72 小时确认 / 14 天修复)和私有 advisory 链接。
+- `CONTRIBUTING.md` 顶部加 Code of Conduct 引用 + first-time contributor 入口。
+
 ### Fixed
 - `/overnight` 现在会校验最终 handoff 是否可交接:CLI exit 0 但输出过短或缺少 done / blocked / risks / next actions 时,任务会改标 failed 并回 IM 提示不完整,避免半句输出伪装成成功。
 - `/goal` / Outcome Grader / `/dream` / `/recall` 等 Phase 8 内置命令消息现在统一走 IM rich text renderer,标题、列表、字段 label 和 slash command 能正确格式化。

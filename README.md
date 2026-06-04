@@ -1,31 +1,56 @@
 # AI Company OS
 
-> Remote control room for your local AI coding agents.
+> **Manage your local AI coding agents like a remote team — from Telegram, while you sleep.**
 
-[中文说明](README.zh-CN.md) · [Quickstart](docs/human/quickstart.md) · [Release Room demo](docs/examples/release-room.md) · [Roadmap](STATUS.md) · [Boss-first roadmap](docs/architecture/boss-first-grounding.md) · [Agent handoff](AGENTS.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://github.com/MarcelLeon/ai-company-os/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcelLeon/ai-company-os/actions/workflows/ci.yml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Checked with mypy](https://img.shields.io/badge/mypy-strict-2a6db4.svg)](https://mypy.readthedocs.io/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-AI Company OS turns the AI tools already running on your machine, such as Claude Code,
-Codex, Cursor, Gemini, Trae, CodeFlicker, OpenClaw, or internal CLIs, into a remote
-project team you can manage from Telegram or Feishu.
-
-It is not another chat UI. It is an orchestration layer for developers who want to leave
-the desk while their local agents keep working with roles, project memory, approval
-gates, audit trails, task status, and morning handoff.
+[中文](README.zh-CN.md) · [Quickstart](docs/human/quickstart.md) · [Demo](docs/examples/release-room.md) · [Roadmap](STATUS.md) · [Architecture](docs/architecture/boss-first-grounding.md) · [Agents](AGENTS.md)
 
 ![Release Room demo](docs/assets/release-room-demo.gif)
 
-## The Pain
+AICO turns the AI tools already on your laptop — Claude Code, Codex, Cursor, Gemini,
+Trae, CodeFlicker, or your own CLI — into a remote project team you can manage from
+Telegram or Feishu. Roles, project memory, approval gates, audit trails, task status,
+and a morning handoff — all over IM, with no laptop required.
 
-Modern AI coding work is powerful, but still awkward in daily use:
+> **Try it in 30 seconds, no tokens needed:**
+> ```bash
+> git clone https://github.com/MarcelLeon/ai-company-os.git && cd ai-company-os
+> env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo
+> ```
+> Runs the full Release Room flow with deterministic fake adapters — no Telegram bot,
+> no Claude account, no spend.
 
-- Your agents are scattered across many CLIs and IDE tools.
-- Long tasks are tied to the laptop in front of you.
-- Dangerous actions still need a real approval boundary.
-- Multi-agent work often becomes parallel chat, not a managed delivery process.
-- Context, decisions, blockers, and status are hard to carry across agents.
+## The Problem
 
-AICO starts from a simple product bet: agent developers do not only need smarter agents.
-They need a small operating layer that makes local agents manageable like a real team.
+Your AI coding agents are powerful — but they're chained to the desk in front of them.
+Long tasks die when the laptop sleeps. Multi-agent work degenerates into parallel chat
+windows. Risky writes have no real approval boundary. Context, decisions, and blockers
+don't survive across agents or restarts.
+
+AICO is built on one bet: agent developers don't need smarter agents — they need a thin
+operating layer that makes the agents they already have manageable like a real team,
+remotely, while they're not at the desk.
+
+## How It Compares
+
+|  | Cursor / Aider / Continue | SWE-agent / OpenDevin | Multi-agent frameworks (CrewAI / AutoGen) | **AI Company OS** |
+|---|:---:|:---:|:---:|:---:|
+| Run while you're away from the laptop | ❌ | ❌ | partial | ✅ |
+| IM-native control (Telegram / Feishu) | ❌ | ❌ | ❌ | ✅ |
+| Multi-CLI orchestration (Claude + Codex + Cursor + …) | ❌ | ❌ | rebuild yourself | ✅ |
+| Approval gate before file/shell writes | ❌ | ❌ | ❌ | ✅ |
+| Audit log + restart-aware state | ❌ | partial | ❌ | ✅ |
+| Project memory shared across agents | partial | ❌ | partial | ✅ |
+| Overnight task handoff + morning report | ❌ | ❌ | ❌ | ✅ |
+
+The wedge is intentional: AICO is for developers who want to operate a local AI **team**
+remotely, not a smarter chat UI for one agent.
 
 ## What It Does
 
@@ -57,19 +82,6 @@ Three concrete workflows are ready to try:
 - **Approve a release from your commute**: when an agent needs file writes or shell
   execution, approve or reject from Telegram, then inspect `/task` and `/audit` without
   opening the laptop.
-
-## Why It Is Different
-
-| Common approach | AICO approach |
-|---|---|
-| A web or desktop agent workspace | IM-first remote control for the agents already on your machine |
-| A single agent wrapper | Multi-adapter project team with roles and appointments |
-| Autonomous shell access by default | Approval, audit, interruption, and capability gates |
-| A memory feature the user must maintain | Agent-driven memory with correction commands |
-| Demo-only workflows | Dogfooded Release Room flow using real Telegram and local CLIs |
-
-The narrow wedge is intentional: AICO is for developers who want to operate a local AI
-team remotely, not for replacing every IDE, chat app, or workflow engine.
 
 ## Demo: Release Room
 
@@ -129,14 +141,8 @@ or high-privilege local environments.
 
 ## Quickstart
 
-Want to see the product shape before creating a bot token?
-
-```bash
-env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo
-```
-
-This runs the Release Room flow with deterministic fake adapters, so it does not call
-Telegram, Claude, Codex, or any paid provider.
+The 30-second no-token demo at the top of this README is the fastest way to see the
+product shape. To wire AICO to your real Telegram bot and a local AI CLI:
 
 Requirements:
 
@@ -192,26 +198,20 @@ AICO keeps volatile tool details behind stable interfaces:
 Design notes live in [docs/architecture](docs/architecture), and accepted decisions live
 in [docs/decisions](docs/decisions).
 
-## For Agent Developers
+## For Agent Developers (Build Your Own Adapter)
 
-If you are building agents, adapters, or internal AI CLIs, the interesting part is not
-the Telegram bot itself. It is the operating contract around agents:
+Cursor, Aider, OpenClaw, an internal company CLI — if your agent is a process that
+takes a prompt and streams output, AICO can drive it as a team member alongside Claude
+Code and Codex. Implement one Protocol and register it; never edit the core.
 
-- capability declarations and risk gates
-- project-scoped prompt stack
-- role handoff and appointment model
-- shared memory governance
-- restart-aware audit and metrics direction
-- IM-native approval and interruption
+See [docs/agent/adapter-authoring.md](docs/agent/adapter-authoring.md) for the full
+contract. The fastest existing implementations to read:
 
-The fastest code paths to inspect are:
-
-- [src/aico/adapter/base.py](src/aico/adapter/base.py)
-- [src/aico/channel/base.py](src/aico/channel/base.py)
-- [src/aico/core/orchestrator.py](src/aico/core/orchestrator.py)
-- [src/aico/core/project_assignment.py](src/aico/core/project_assignment.py)
-- [src/aico/core/memory.py](src/aico/core/memory.py)
-- [src/aico/core/audit.py](src/aico/core/audit.py)
+- [src/aico/adapter/base.py](src/aico/adapter/base.py) — the `AIAdapter` Protocol
+- [src/aico/adapter/cursor.py](src/aico/adapter/cursor.py) — minimal real adapter
+- [src/aico/adapter/claude_code.py](src/aico/adapter/claude_code.py) — full session-resume adapter
+- [src/aico/core/orchestrator.py](src/aico/core/orchestrator.py) — how adapters are dispatched
+- [src/aico/core/memory.py](src/aico/core/memory.py) — A2A memory fabric
 
 ## For Personal Developers
 
@@ -226,15 +226,19 @@ AICO is useful if your real problem sounds like this:
 If you only need a single agent in the terminal while sitting at the laptop, AICO is
 probably too much.
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=MarcelLeon/ai-company-os&type=Date)](https://star-history.com/#MarcelLeon/ai-company-os&Date)
+
 ## Roadmap
 
 Near-term work:
 
-- Polish the public Release Room GIF and first-run story.
-- Add an operator inbox for offline delegation handoff and pending human actions.
+- Real-IM dogfood of `/view` IM-delivered HTML snapshot and operator inbox flow.
+- Split the orchestrator after Phase 8 wraps (B-005).
 - Finish Feishu production callback smoke testing.
-- Add cleaner public setup docs and starter issues for external contributors.
-- Add adapter authoring docs and a no-token local demo path.
+- Multi-step / multi-agent overnight orchestration on top of the absence loop.
+- Pluggable semantic backend behind the memory retriever.
 
 See [STATUS.md](STATUS.md) for the live roadmap.
 
@@ -247,10 +251,17 @@ topic list, image guidance, and click path.
 
 ## Contributing
 
-Humans should start with [CONTRIBUTING.md](CONTRIBUTING.md).
+New contributors: 30 minutes to first PR via
+[docs/contributors/quickstart.md](docs/contributors/quickstart.md). It runs entirely
+against the no-token Release Room demo, so you don't need a Telegram bot or any LLM
+provider.
+
+Humans should also read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 
 AI agents must start with [AGENTS.md](AGENTS.md). This repository is intentionally
 structured so another agent can continue from previous rounds without guessing.
+
+We follow the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). Be kind.
 
 For vulnerabilities or approval bypasses, read [SECURITY.md](SECURITY.md) before opening
 a public issue.

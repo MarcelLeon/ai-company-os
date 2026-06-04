@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-06-04
-**当前轮次**:Round 139(`/overnight` incomplete handoff guard)
+**当前轮次**:Round 140(OSS public-launch readiness)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -317,6 +317,31 @@ AICO 的产品边界是 absence-first:
 ---
 
 ## 上一轮做了什么
+
+**Round 140**(2026-06-04,Claude — OSS public-launch readiness):
+- 老板任务"为我准备好上线 GitHub 的全部工作,要奔着 1k 或 10k star 方向去设计和发力"。
+- 收口 Round 137-139 三轮代码改动到 `launch/oss-public-readiness` 分支(包括
+  Round 137 IM HTML snapshot、Round 138 协作风险边界修复、Round 139 `/overnight`
+  handoff completeness guard)。
+- 补齐 OSS 治理资产:`CODE_OF_CONDUCT.md`(Contributor Covenant 2.1 中英双语)、
+  `.github/FUNDING.yml` 占位、`.github/dependabot.yml`(weekly pip + monthly Actions)。
+- 新增 `docs/contributors/quickstart.md`:30 分钟内完成第一次 PR 的零门槛路径,完全
+  跑在 no-token Release Room demo 上。
+- 新增 `docs/launch/playbook.md`:面向 1k–10k star 的上线作战书,包括 Show HN /
+  4 个 Reddit 子版位 / X / Bluesky / LinkedIn / dev.to 长文模板,D0 → D90 节奏,
+  反指标清单和老板缺席护栏。
+- 新增 `docs/launch/v0.1.0-release-notes.md`:v0.1.0 GitHub Release notes 草稿,
+  可直接贴到 GitHub Release。
+- README 增加 Contributing 段对 Contributor Quickstart + CoC 的引用,并把 Roadmap
+  near-term 部分对齐到当前真实状态。
+- `.github/ISSUE_TEMPLATE/config.yml` 增加 Discussions / Contributor Quickstart 入口。
+- `SECURITY.md` 明确响应 SLA(72 小时确认 / 14 天修复)。
+- `CONTRIBUTING.md` 顶部增加 first-time contributor 入口和 CoC 引用。
+- 验证通过:`env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest` **422
+  passed / 1 skipped**;`ruff check .`;`ruff format --check .`(141 files);
+  `mypy src tests`(136 source files)。
+- 关键决策:不在本轮做新功能,不动 v0.1.0 范围。所有上线工作通过文档 + 模板支撑,
+  代码 surface 保持冻结,避免 Show HN 描述与实际产品不一致。
 
 **Round 139**(2026-06-04,Codex — `/overnight` incomplete handoff guard):
 - 人类复验 `/overnight 为我准备好上线github的全部工作...` 后,任务 `3f7d57c2` 只在 IM 打出半句 `Community 文件：写一个简短 Code of Conduct...`。
@@ -1402,7 +1427,19 @@ AICO 的产品边界是 absence-first:
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【高】Phase 8 dogfood 复盘 + `/view` 真实 IM 验收**:
+1. **【最高】v0.1.0 公开打 tag + GitHub Release**(操作必须由老板亲自点确认):
+   - 把 `launch/oss-public-readiness` 分支的 PR 合到 `main`。
+   - `git tag v0.1.0 && git push --tags`。
+   - 用 [`docs/launch/v0.1.0-release-notes.md`](docs/launch/v0.1.0-release-notes.md)
+     创建 GitHub Release。
+   - 检查 GitHub UI 的 description / topics / social preview(见
+     [`docs/human/github-publication.md`](docs/human/github-publication.md))。
+2. **【高】按 [`docs/launch/playbook.md`](docs/launch/playbook.md) 执行 D0 上线**:
+   - HN Show HN 单次上线只有一次机会,失败不能复发同主题。
+   - HN 帖子贴出后 1 分钟内贴作者首条评论,30 分钟内开始值守评论区。
+   - 同窗口 Reddit r/LocalLLaMA / r/programming / r/ChatGPTCoding / r/Anthropic
+     各发 1 帖,内容互不重复(模板见 playbook §3)。
+3. **【高】Phase 8 dogfood 复盘 + `/view` 真实 IM 验收**:
    - 直接可问的问题:
      - `/project aico`
      - `/view`
@@ -1410,16 +1447,16 @@ AICO 的产品边界是 absence-first:
      - `/inbox`
      - `/why <short_id>`
    - 预期效果:老板不需要访问 Mac 本机端口,能在 Telegram 收到 `aico-view-aico.html`;HTML 能看懂 Boss Brief / Timeline / Trace / Memory,且敏感内容只出现在可信聊天里。
-2. **【高】Orchestrator 类拆分(B-005)**:
+4. **【高】Orchestrator 类拆分(B-005)**:
    - 把 command handler 实例化 + 分发表迁到 `OrchestratorCommandRegistry` 或类似模块。
    - Orchestrator 主体回到 task 提交 / 流式输出 / 状态协调,恢复单类 <500 行硬约束。
-3. **【中】aico-view Boss Brief 产品化**:
+5. **【中】aico-view Boss Brief 产品化**:
    - 根据 `/view` dogfood 调整 HTML 第一屏:审批、阻塞、昨夜产出、第一行动优先于原始 Timeline。
    - 暂不自动 `/project` 后发送;如真实体验需要,再加 `AICO_VIEW_AUTO_SEND_ON_PROJECT=true`。
-4. **【中】Feishu 文件附件能力评估**:
+6. **【中】Feishu 文件附件能力评估**:
    - 若 Feishu dogfood 需要 `/view`,新增 Feishu 文件上传 Channel capability。
    - 不要在 core 中写平台分支;复用 `DocumentChannel`。
-5. **【低】Future F-1 / F-2**:
+7. **【低】Future F-1 / F-2**:
    - Lead 主动机制和 Team Karpathy Loop 只在 Phase 8 dogfood 确认三块基础体验跑顺后再启动。
 
 ---

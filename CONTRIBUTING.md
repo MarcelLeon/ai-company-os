@@ -2,6 +2,22 @@
 
 > 不论你是人还是 AI,提交代码前请通读本文。
 
+> 我们遵循 [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md);参与本项目即表示
+> 你同意在所有交流场景中遵守该守则。
+
+## First-time contributors / 首次贡献者
+
+新手最容易上手的两条路径:
+
+1. **No-token Release Room demo** —
+   `env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo`,
+   不需要 Telegram bot token、Claude/Codex 账号或任何付费 API,即可看到完整产品流。
+2. **good-first-issue** —
+   见 [GitHub good first issue 列表](https://github.com/MarcelLeon/ai-company-os/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+   或 [`docs/contributors/quickstart.md`](docs/contributors/quickstart.md) 中精选的 30 分钟可完成任务。
+
+写新 Adapter 之前请先读 [`docs/agent/adapter-authoring.md`](docs/agent/adapter-authoring.md)。
+
 ---
 
 ## 提交前必答三问

@@ -17,8 +17,13 @@ Please do not open a public issue for vulnerabilities involving:
 - credential or token leakage
 - unsafe defaults around local files, shell commands, or adapter permissions
 
-Report privately through GitHub Security Advisories if available on the repository, or
-contact the maintainer through the GitHub profile linked from the project owner.
+Report privately through
+[GitHub Security Advisories](https://github.com/MarcelLeon/ai-company-os/security/advisories/new)
+if available on the repository, or contact the maintainer through the GitHub profile
+linked from the project owner.
+
+We aim to acknowledge security reports within 72 hours and to ship a fix or mitigation
+within 14 days for actively exploited issues.
 
 Useful details:
 
