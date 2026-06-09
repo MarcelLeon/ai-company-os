@@ -7187,3 +7187,78 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - `STATUS.md` 当前轮次更新为 Round 146。
 - `docs/journal/PITFALLS.md` 新增 P-038。
 - 不新增 ADR:本轮是发布治理和公开 demo 对齐,不改变架构边界。
+
+---
+
+## Round 147 — 2026-06-09 — Codex
+
+### 输入
+- 人类追问:
+  - README 的 GIF 是否需要更新最新能力,并要求 review README 是否还有其他需要更新的内容。
+  - 人类已登录 `gh`,要求再次检查。
+  - 后续 AGENTS 如何运维 GitHub 本项目,现有文档是否足够 Agent 理解;不足则补充指导。
+
+### 思考与讨论
+- GitHub 状态:
+  - 普通沙箱中的 `gh auth status` 仍读不到 keyring,但提权执行 `gh repo view` 可正常读取仓库信息。
+  - 当前仓库 `MarcelLeon/ai-company-os` 仍是 `PRIVATE`,默认分支 `main`。
+  - 本地没有 `v0.1.0` tag,GitHub Release 列表为空。
+- README 状态:
+  - 英文 / 中文 README 主体口径已经对齐当前 RC:核心 wedge、no-token demo、`/inbox`、`/morning`、
+    `/task`、`/audit`、`/view` 当前能力都已出现。
+  - 最大问题不是 README 文案,而是首屏 GIF。当前 `docs/assets/release-room-demo.gif` 约 95 秒、
+    `360 x 730`,首帧不是 Telegram 产品画面,且没有把 `/morning` 和 `/view` 作为最新能力前置展示。
+- 候选 A:直接改 public 并打 tag → ❌ 否决。仓库仍 private,且 README 首屏 GIF 还未达到 D0 强传播标准。
+- 候选 B:临时伪造一段看似 Telegram 的新 GIF → ❌ 否决。发布素材不能用假真实 IM 录屏补洞;这会损害项目可信度。
+- 候选 C:承认当前 GIF 是 D0 传播 blocker,补齐 agent GitHub 运维 SOP 和发布前视觉 gate → ✅ 选定。
+
+### 产出
+- 新增 `docs/agent/09-github-release-ops.md`:
+  - 固化 `gh` auth / repo state / tag / release 检查。
+  - 区分可逆 RC 操作和 public / tag / GitHub Release 外部信号动作。
+  - 写入 README / GIF / no-token demo / social preview 首印象检查。
+  - 规定仓库仍 private、tag/release 已存在、README GIF 未确认时不得抢先 release。
+- `AGENTS.md`:
+  - Step 7 增加 GitHub 发布 / public / tag / Release 阅读入口。
+  - 自检清单增加 GitHub 发布 SOP 核对项。
+- README / README.zh-CN:
+  - Roadmap 明确 README GIF D0 前需复剪,首帧必须是当前 IM 产品画面,并展示 `/morning` + `/view`。
+  - GitHub publication 段落补 agent release ops 文档入口。
+- `docs/human/github-publication.md`:
+  - 修正当前 GIF 状态为约 1.5 MB、`360 x 730`、约 95 秒。
+  - 明确 README 动图不适合作为 GitHub social preview,应单独做静态 `1280 x 640` PNG。
+- `docs/launch/playbook.md`:
+  - 不再把 GIF / GitHub UI 复核写成无条件完成。
+  - D0 前置条件改为 README 文案和 no-token demo 已完成,README GIF 和 UI metadata 仍需最终复核。
+- `docs/examples/release-room.md` / `examples/release-room/shot-rhythm.md`:
+  - 将 public GIF 优化要求更新为 `/morning` + `/view`。
+  - 记录当前 GIF 95 秒和首帧问题,作为复剪输入。
+- `docs/journal/PITFALLS.md`:
+  - 新增 P-039 "README GIF 首帧和最新能力比文件是否存在更重要"。
+- `STATUS.md`:
+  - 当前轮次更新为 Round 147。
+  - 下一轮最高优先级改为 D0 前复剪 README GIF 并复核 GitHub UI。
+
+### 验证结果
+- `gh repo view MarcelLeon/ai-company-os --json nameWithOwner,visibility,isPrivate,defaultBranchRef,description,url`
+  → `isPrivate=true`,default branch `main`。
+- `git tag --list v0.1.0` → 空。
+- `gh release list --repo MarcelLeon/ai-company-os --limit 5` → 空。
+- `git diff --check` → clean。
+- 本轮仅改发布文档和 Agent SOP,未跑 Python 单测。
+
+### 关键决策
+- 🔒 **决策 1**:README GIF 是发布首印象 gate,不能只因文件存在就标记 D0 传播完成。
+- 🔒 **决策 2**:当前 GIF 是 dogfooding 资产,但不是最终 D0 hero;复剪前不建议把 README 首屏作为强传播入口。
+- 🔒 **决策 3**:public / tag / GitHub Release 必须在仓库 visibility、main SHA、tag/release 空状态、README/GIF/social preview 都确认后执行。
+- 🔒 **决策 4**:Agent 之后运维 GitHub 本项目时,必须从 `docs/agent/09-github-release-ops.md` 走,不要靠口头记忆判断发布步骤。
+
+### 留给下一轮
+- 若人类愿意配合录屏:按 `examples/release-room/shot-rhythm.md` 复剪 30-60 秒 README GIF,首帧从当前 Telegram 项目房间开始,包含 `/morning` 和 `/view`。
+- 由仓库 owner 在 GitHub UI 最终确认 topics / social preview;当前 `gh repo view` 只能确认 description / visibility / default branch。
+- GIF 和 UI 复核完成后,人类将仓库改 public;Agent 再按 `docs/agent/09-github-release-ops.md` 创建 `v0.1.0` tag 和 GitHub Release。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 147。
+- `docs/journal/PITFALLS.md` 新增 P-039(active)。
+- 不新增 ADR:本轮是发布运维 SOP 和公开素材 gate,不改变运行架构。

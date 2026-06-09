@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-06-09
-**当前轮次**:Round 146(release-candidate closure)
+**当前轮次**:Round 147(github-release-ops-and-readme-review)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -86,9 +86,12 @@ AICO 的产品边界是 absence-first:
 - [x] Stage 3 真实 Telegram dogfooding 第一段:project office、team、project memory、interrupt 跑通;provider 输出问题已记录为 B-003。
 - [x] Stage 3 Codex 输出清理:修复跨 provider session resume、role 改任命 session 复用和 CLI warning/HTML 噪音入镜问题;真实 Telegram dry run 可用。
 - [x] Stage 3:真实 IM + Claude/Codex dogfooding 录屏,生成 README 首页可嵌入 GIF。
+- [ ] README GIF D0 复剪:当前 `docs/assets/release-room-demo.gif` 约 95 秒、`360 x 730`,
+  首帧不是当前 IM 产品画面,且没有前置展示 `/morning` + `/view`;公开强传播前需复剪。
 - [x] 开源首屏第一版:英文主 README、中文 README、痛点/差异化/当前可用能力、Quickstart 状态修正、MIT License、SECURITY 和 issue templates。
 - [x] 开源首屏第二版:同步 Cursor / CodeFlicker / Trae / Gemini smoke test 已完成状态,补安全模型图、今日使用场景和 GitHub publication 手动配置指南。
-- [x] GitHub UI metadata 验收完成:description、topics、social preview 已由人类在 GitHub UI 配置验证。
+- [x] GitHub UI metadata 首轮配置验收:description、topics、social preview 已由人类在 GitHub UI 配置验证;
+  public 前仍需仓库 owner 按 `docs/human/github-publication.md` 做最终复核。
 - [x] 开源首屏第三版:新增无 token Release Room demo CLI、PR template 和 good-first-issue template。
 
 ---
@@ -319,11 +322,34 @@ AICO 的产品边界是 absence-first:
 - [x] Release Room Stage 3 real Telegram dogfooding first pass, with provider-output blocker recorded。
 - [x] Release Room Stage 3 Codex provider-output cleanup and real Telegram dry run。
 - [x] Release Room Stage 3 public GIF / README showcase。
+- [ ] Release Room README GIF D0 复剪:按 `examples/release-room/shot-rhythm.md` 展示
+  `/morning` 和 `/view`,并让首帧直接进入当前 IM 产品画面(Round 147 review)。
 - [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 147**(2026-06-09,Codex — GitHub release ops and README review):
+- 复核 GitHub 状态:
+  - `gh` 在当前桌面环境中可用,但普通沙箱读不到 macOS keyring;需要用提权方式执行 `gh ...`。
+  - `gh repo view MarcelLeon/ai-company-os` 显示仓库仍是 `PRIVATE`,默认分支 `main`。
+  - 本地和远端都未创建 `v0.1.0` tag,GitHub Release 列表为空。
+- 审阅 README:
+  - 英文 / 中文 README 的主体叙事、no-token demo、`/inbox` / `/morning` / `/task` / `/audit`
+    口径已对齐当前 RC。
+  - 发现 README GIF 是当前最大首印象缺口:现有 `docs/assets/release-room-demo.gif` 约 95 秒、
+    `360 x 730`,首帧不是 Telegram 产品画面,且没有前置展示 `/morning` 和 `/view`。
+- 新增 Agent GitHub 运维入口:
+  - `docs/agent/09-github-release-ops.md` 固化 public / tag / GitHub Release / D0 的检查顺序。
+  - `AGENTS.md` Step 7 和自检清单接入该 SOP。
+- 更新发布材料:
+  - README / README.zh-CN roadmap 标出 README GIF D0 复剪要求。
+  - `docs/human/github-publication.md` 修正当前 GIF 体积和 social preview 口径。
+  - `docs/launch/playbook.md` 不再把 GIF / GitHub UI 复核写成无条件完成。
+  - `docs/examples/release-room.md` 和 `examples/release-room/shot-rhythm.md` 明确 `/view` 镜头和 D0 复剪标准。
+- 记录 P-039:README GIF 首帧和最新能力比文件是否存在更重要。
+- 本轮仅改文档,不改运行代码;`git diff --check` clean;未执行 public / tag / GitHub Release。
 
 **Round 146**(2026-06-09,Codex — release-candidate closure):
 - 按发布助理口径收口 `launch/oss-public-readiness` 分支,先把当前未提交的 Round 141-145 修复纳入同一 RC 范围,没有启动新功能。
@@ -1500,10 +1526,13 @@ AICO 的产品边界是 absence-first:
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【最高】发布 RC 到 GitHub 并由老板执行 public / release 确认**:
-   - 将 `launch/oss-public-readiness` 当前 RC commit 推到 GitHub,开 PR 或合并到 `main`。
-   - 老板把仓库从 private 改为 public 前,先确认 README、release notes、GitHub About metadata 和 social preview。
-   - public 后再创建 `v0.1.0` tag + GitHub Release;不要在仓库仍 private 或 README 未最终确认时抢先打 tag。
+1. **【最高】D0 公开前复剪 README GIF 并复核 GitHub UI**:
+   - 当前 RC 已在 `main`,但仓库仍是 `PRIVATE`;Round 147 复核时未发现 `v0.1.0` tag 或 GitHub Release。
+   - README 文案和 no-token demo 已对齐当前 RC,但 `docs/assets/release-room-demo.gif` 仍需复剪:
+     首帧必须是当前 IM 产品画面,控制在 30-60 秒,并展示 `/morning` + `/view`。
+   - GitHub About description 已可通过 `gh repo view` 看到;topics / social preview 仍需仓库 owner 在 UI 中最终确认。
+   - public / tag / Release 按 [`docs/agent/09-github-release-ops.md`](docs/agent/09-github-release-ops.md)
+     执行,不要在仓库仍 private 或 README GIF 未最终确认时抢先打 tag。
 2. **【最高】按 Dogfooding 验收分层收口当前待测项**:
    - 先跑机器 Gate:见 [`docs/playbooks/phase-8-absence-loop.md`](docs/playbooks/phase-8-absence-loop.md)
      的 "AI 前置 Contract Gate"。Round 146 实测 **41 passed in 0.94s**。
@@ -1519,7 +1548,7 @@ AICO 的产品边界是 absence-first:
    - 请求 human 时必须附上 Agent 已验证结果、推荐重点验证点、验证问题、预期效果、后续步骤。
    - 如果样本失败,必须留下 `/task <id>`、截图/原始输出、预期效果和实际偏差;不要只写“体验不好”。
 3. **【最高】v0.1.0 公开打 tag + GitHub Release**(操作必须由老板亲自点确认):
-   - 把 `launch/oss-public-readiness` 分支的 PR 合到 `main`。
+   - `main` 已包含当前 RC;如果后续只复剪 GIF / 改文档,先提交并 push `main` 或通过 PR 合入。
    - `git tag v0.1.0 && git push --tags`。
    - 用 [`docs/launch/v0.1.0-release-notes.md`](docs/launch/v0.1.0-release-notes.md)
      创建 GitHub Release。

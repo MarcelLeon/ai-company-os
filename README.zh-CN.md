@@ -204,6 +204,8 @@ agent 的操作契约:
 
 近期重点:
 
+- 复剪 README Release Room GIF:首帧必须是当前 IM 产品画面,并在 D0 前明确展示
+  `/morning` 和 `/view`。
 - 真实 IM dogfood `/view` HTML 快照和 operator inbox 交接体验。
 - 根据 dogfood 结果产品化 aico-view Boss Brief 第一屏。
 - 完成飞书生产 callback smoke test。
@@ -217,6 +219,9 @@ agent 的操作契约:
 仓库 description、topics 和 social preview 是 GitHub 仓库 metadata,需要仓库管理员在
 GitHub UI 中手动配置,不能只靠 README 自动生效。可复制的文案、topic 列表和点击路径见
 [docs/human/github-publication.md](docs/human/github-publication.md)。
+
+AI Agent 负责公开发布、tag 或 GitHub Release 时,还必须按
+[docs/agent/09-github-release-ops.md](docs/agent/09-github-release-ops.md) 做发布前核对。
 
 ## 贡献
 

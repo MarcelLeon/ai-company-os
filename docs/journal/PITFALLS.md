@@ -1436,3 +1436,43 @@ shot rhythm 和 contributor quickstart 没有和 runtime gate 一起进入验证
 **相关链接**
 - ROUNDS Round 146
 - P-037
+
+### [P-039] README GIF 首帧和最新能力比文件是否存在更重要
+
+**状态**:🟡 ACTIVE
+**首次踩中**:Round 147
+**最后更新**:2026-06-09
+**影响范围**:`README.md`, `README.zh-CN.md`, `docs/assets/release-room-demo.gif`,
+`examples/release-room/shot-rhythm.md`, `docs/launch/playbook.md`
+
+**症状**
+Round 147 发布复核时,README 已经嵌入 `docs/assets/release-room-demo.gif`,因此很容易把
+"GIF 文件存在"误判成"公开首屏视觉已完成"。
+
+实际检查发现当前 GIF 约 95 秒、`360 x 730`,首帧不是 Telegram 产品画面,而是旧分镜/表格
+画面;抽样帧也没有把当前最重要的 `/morning` 接手和 `/view` IM HTML snapshot 前置展示。
+如果直接公开并强传播,陌生开发者第一眼会先看到旧素材,而不是 AICO 的 absence-first 工作流。
+
+**根因**
+Stage 3 把"真实 Telegram dogfooding GIF 已生成并嵌入 README"视为完成项,但没有单独建立
+D0 首印象验收:第一帧、时长、是否展示最新命令、是否适合 GitHub 首屏和 social preview。
+发布材料的正确性不只取决于文件是否存在,还取决于它是否讲当前产品故事。
+
+**解决方案 / 缓解措施**
+- 不用文案粉饰旧 GIF,也不伪造一段看似真实的 Telegram 录屏。
+- 在 README roadmap、GitHub publication checklist、launch playbook 和 shot rhythm 中标出:
+  D0 前需要复剪 README GIF。
+- 复剪要求:首帧是当前 IM 产品画面;控制在 30-60 秒;保留 `/team`、`/remember`、`/ask`、
+  `/approve`、`/overnight`、`/morning`、`/view`、`/audit` 的最短闭环。
+- GitHub social preview 另做静态 `1280 x 640` PNG,不要直接上传 README 动图。
+
+**如何避免再次踩中**
+- 发布前把 README GIF 当作 release gate,像 no-token demo 一样实际打开检查。
+- 检查动图时至少看:第一帧、前 5 秒、最后 10 秒、总时长、是否有旧命令、是否露出旧聊天记录。
+- 每次新增老板入口命令或改变接手动线后,同步搜索 README、release notes、demo script、
+  transcript、shot rhythm 和 GIF 说明。
+- 不要在 `STATUS.md` 里只写"GIF 已嵌入";要写它是否适合当前 D0 传播。
+
+**相关链接**
+- ROUNDS Round 147
+- P-038

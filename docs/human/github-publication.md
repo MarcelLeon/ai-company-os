@@ -112,8 +112,16 @@ Telegram / Feishu · Claude Code / Codex / Cursor · Approval · Audit · Memory
 4. 点击 `Edit` -> `Upload an image...`。
 5. 上传 `1280 x 640` 且小于 1 MB 的 PNG / JPG / GIF。
 
-当前 `docs/assets/release-room-demo.gif` 约 6 MB,不适合作为 social preview 上传。建议后续单独做一张
-静态 PNG。
+当前 `docs/assets/release-room-demo.gif` 约 1.5 MB、`360 x 730`、约 95 秒,即使体积已经压缩,
+也不适合作为 social preview 上传:它是竖版 README 动图,不是 GitHub 推荐的 `1280 x 640`
+横版预览图。建议单独做一张静态 PNG。
+
+Round 147 发布复核还发现:当前 README GIF 首帧不是 Telegram 产品画面,且没有把 `/morning`
+和 `/view` 作为最新能力前置展示。D0 强传播前如果 README 仍把 GIF 放在首屏,应先按
+[`examples/release-room/shot-rhythm.md`](../../examples/release-room/shot-rhythm.md) 复剪。
+
+Agent 负责 tag / GitHub Release / D0 运维时,还要读
+[`docs/agent/09-github-release-ops.md`](../agent/09-github-release-ops.md)。
 
 ## References
 

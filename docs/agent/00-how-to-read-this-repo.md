@@ -27,6 +27,17 @@
 
 预计耗时 3 分钟。
 
+### 场景 D:接到 GitHub 发布 / public / tag / Release 任务
+最小阅读集:
+1. `STATUS.md` 的当前轮次和"下一轮建议"
+2. `docs/agent/09-github-release-ops.md`
+3. `docs/human/github-publication.md`
+4. `docs/launch/playbook.md`
+5. `docs/launch/v0.1.0-release-notes.md`
+
+预计耗时 5-8 分钟。public、tag、GitHub Release、D0 宣发都属于外部信号动作,不要只按普通
+commit 流程处理。
+
 ---
 
 ## 阅读时的注意事项

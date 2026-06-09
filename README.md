@@ -238,6 +238,8 @@ probably too much.
 
 Near-term work:
 
+- Re-cut the README Release Room GIF so the first frame is the current IM product
+  surface and the flow foregrounds `/morning` and `/view` before D0 launch.
 - Real-IM dogfood of `/view` IM-delivered HTML snapshot and operator inbox flow.
 - Split the orchestrator after Phase 8 wraps (B-005).
 - Finish Feishu production callback smoke testing.
@@ -252,6 +254,10 @@ Repository description, topics, and social preview are GitHub repository metadat
 they must be configured in the GitHub UI by a repository admin. Use
 [docs/human/github-publication.md](docs/human/github-publication.md) for the exact text,
 topic list, image guidance, and click path.
+
+AI agents preparing a public release should also follow
+[docs/agent/09-github-release-ops.md](docs/agent/09-github-release-ops.md) before
+tagging or creating a GitHub Release.
 
 ## Contributing
 

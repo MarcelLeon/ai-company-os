@@ -74,12 +74,13 @@ Release Room 更像真实工作:
 
 当前阶段已落地:
 
-- 按 `shot-rhythm.md` 录制真实 Telegram dogfooding GIF:组队、记忆、派工、日报、审计。
+- 录制过真实 Telegram dogfooding GIF,用于证明 Release Room 可以进入真实 IM dogfood。
 - README 首页已嵌入 `docs/assets/release-room-demo.gif`。
 - 没有 `gifski` 时可用 `examples/release-room/make-gif.sh` 调 `ffmpeg` 转 GIF。
 
 后续可继续优化:
 
-- 复剪更干净的 public GIF,减少旧聊天记录露出。
+- D0 前复剪 README GIF:首帧必须是当前 IM 产品画面,控制在 30-60 秒,并前置展示
+  `/morning` 和 `/view`。
 - 补更清晰的 approval gate 镜头。
 - 可选:脚本化生成 demo audit JSONL,用于 `/metrics` / `aico-glance` 展示。

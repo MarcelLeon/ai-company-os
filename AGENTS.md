@@ -47,6 +47,7 @@
 - 写 Python → [`docs/agent/05-python-best-practices.md`](docs/agent/05-python-best-practices.md)
 - 写测试 → [`docs/agent/06-testing-guide.md`](docs/agent/06-testing-guide.md)
 - 涉及部署 → [`docs/agent/07-deployment-guide.md`](docs/agent/07-deployment-guide.md)
+- 涉及 GitHub 发布 / public / tag / Release → [`docs/agent/09-github-release-ops.md`](docs/agent/09-github-release-ops.md)
 - 抽象设计 → [`docs/agent/03-design-patterns.md`](docs/agent/03-design-patterns.md)
 
 ---
@@ -80,6 +81,7 @@
 - [ ] 如果我遇到卡点,有没有写到 `BLOCKERS.md`?
 - [ ] 如果我踩了新坑,有没有写到 `PITFALLS.md`?
 - [ ] 如果我做了重要架构决策,有没有写一个 ADR 到 `docs/decisions/`?
+- [ ] 如果我做 GitHub 发布相关动作,有没有按 `docs/agent/09-github-release-ops.md` 核对 public / tag / Release / social preview?
 
 ---
 

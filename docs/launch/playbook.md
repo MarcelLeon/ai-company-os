@@ -8,13 +8,14 @@
 ## 0. 前置假设
 
 - 仓库已经处于 **可被陌生开发者 30 秒看懂** 的状态
-  (no-token demo + GIF + How-it-compares 表格)。✅ 已完成
+  (no-token demo + README 首屏 + How-it-compares 表格)。✅ README 文案和 no-token demo 已完成;
+  ⚠️ D0 强传播前还要复剪 README GIF,让首帧是当前 IM 产品画面,并展示 `/morning` + `/view`。
 - `LICENSE` / `CONTRIBUTING.md` / `SECURITY.md` / `CODE_OF_CONDUCT.md` /
   `.github/PULL_REQUEST_TEMPLATE.md` / good-first-issue 模板齐全。✅ 已完成
 - CI 绿,徽章可见。✅ 已完成
-- README 头部有 Star History chart 与 1 行的"问题–方案"金句。✅ 已完成
-- 仓库 GitHub 页 description / topics / social preview 配齐(详见
-  [`docs/human/github-publication.md`](../human/github-publication.md))。✅ 已完成
+- README 有 1 行定位、How-it-compares 表格和 Star History chart。✅ 已完成
+- 仓库 GitHub 页 description / topics / social preview 配齐并在 public 前复核(详见
+  [`docs/human/github-publication.md`](../human/github-publication.md))。⚠️ 需要仓库 owner 在 UI 中最终确认
 
 如果上面任何一项是 ❌,**先回去把它做完**。提前点火只会浪费弹药。
 
