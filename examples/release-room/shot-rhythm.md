@@ -25,7 +25,7 @@
 | 20-30s | Approval Gate | `/ask implementer ...` + `Approval required` + `/approve` | 写文件/跑测试要审批 | Risky actions still need approval. |
 | 30-39s | Independent Checks | `/ask tester ...` + `/ask reviewer ...` | 测试和 review 分离 | Testing and review are separate jobs. |
 | 39-48s | Overnight | `/overnight ...` + morning handoff 摘要 | 睡前派工,早上有交接 | Wake up to a handoff. |
-| 48-56s | Traceability | `/daily release-room` + `/audit` | done / blocked / risks / next + audit events | No mystery work. Every action is traceable. |
+| 48-56s | Traceability | `/morning` + `/audit` | done / blocked / risks / next + audit events | No mystery work. Every action is traceable. |
 
 ## 精简命令清单
 
@@ -43,7 +43,7 @@
 /ask tester 检查 tests/test_v02_contract.py 的回归策略并报告失败项。
 /ask reviewer review v0.2 release risk, test gaps, README and CHANGELOG consistency.
 /overnight 推进 v0.2 release room，早上给我 done/blocked/risks/next actions。
-/daily release-room
+/morning
 /audit
 ```
 
@@ -56,7 +56,7 @@
 - PM 输出中的四类 role handoff。
 - `Approval required` 和 `/approve` 这组安全边界。
 - tester / reviewer 的不同结论。
-- `/daily` 的 Done / Blocked / Risks / Next actions。
+- `/morning` 的 Done / Blocked / Risks / Next actions。
 - `/audit` 中的 `approval_requested` / `approval_approved` / `task_completed`。
 
 删掉:

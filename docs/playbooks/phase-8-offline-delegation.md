@@ -35,7 +35,7 @@
    - `project: aico`
    - `lead: <role> -> <agent>`
    - `tracking: /task <id>`
-   - `Morning: /daily aico` 和 `/tasks`
+   - `morning: /morning` 和 `exact trace: /task <id>`
 
 4. 验证风险门禁。
 
@@ -53,12 +53,11 @@
 
    ```text
    /inbox
-   /daily aico
-   /tasks
+   /morning
    /task <id>
    ```
 
-   `/inbox` 先接住 approvals、running quiet tasks、failed/interrupted tasks、托管工单、Goal Brief 和 decision follow-up;`/daily` 看项目级进展和风险,`/tasks` 找最近工单,`/task <id>` 看单任务状态和可用动作。
+   `/inbox` 先接住 approvals、running quiet tasks、failed/interrupted tasks、托管工单、Goal Brief 和 decision follow-up;`/morning` 看 done / blocked / risks / next actions,`/task <id>` 看单任务状态、原始输出和可用动作。
 
 ## 验证
 

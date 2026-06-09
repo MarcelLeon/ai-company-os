@@ -110,6 +110,7 @@ from aico.core.native_output import (
     NATIVE_OUTPUT_FORMAT_METADATA_KEY,
     agent_output_message,
     native_output_format_from_task,
+    normalize_agent_output_for_im,
     task_with_native_output_format,
     telegram_html_message,
 )
@@ -283,6 +284,7 @@ __all__ = [
     "build_status_island_snapshot",
     "collaboration_payload",
     "metrics_report_to_dict",
+    "normalize_agent_output_for_im",
     "parse_collaboration_directive",
     "parse_command",
     "parse_response_language",

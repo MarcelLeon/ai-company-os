@@ -62,6 +62,15 @@ async def test_telegram_channel_parses_text_update_and_advances_offset() -> None
     assert requests[1].read() == b'{"timeout":1,"offset":42}'
 
 
+async def test_telegram_channel_default_client_allows_long_poll_timeout() -> None:
+    channel = TelegramChannel("token", poll_timeout_seconds=30)
+
+    try:
+        assert channel._client.timeout.read == 35.0
+    finally:
+        await channel.stop()
+
+
 async def test_telegram_channel_does_not_block_polling_on_long_handler() -> None:
     requests: list[bytes] = []
     received: list[str] = []

@@ -12,6 +12,7 @@ from typing import Protocol
 from aico.channel import IMChannel
 from aico.core.agent_session import AgentSession
 from aico.core.command_messages import short_id_text
+from aico.core.message_rendering import rich_text_message
 from aico.core.models import IncomingMessage, MessageContent, MetadataEntry, Task, utc_now
 from aico.core.project_assignment import (
     AssignmentProfile,
@@ -220,10 +221,12 @@ class OfflineDelegationCommandHandler:
             for record in records
         )
         lines.append("")
-        lines.append("Morning:")
-        lines.append(f"- /daily {project.id}")
-        lines.append("- /tasks")
-        await self._channel.send_message(message.source, MessageContent(text="\n".join(lines)))
+        lines.append("Boss route:")
+        lines.append("- now: /inbox")
+        lines.append("- morning: /morning")
+        lines.append("- exact trace: /task <short_id>")
+        lines.append("- visual snapshot: /view")
+        await self._channel.send_message(message.source, rich_text_message("\n".join(lines)))
 
     def records_for_scope(
         self,
@@ -290,28 +293,30 @@ def offline_delegation_started_message(record: OfflineDelegationRecord) -> Messa
         f"lead: {record.role} -> {record.agent}\n"
         f"goal: {record.goal}\n"
         f"tracking: /task {short_id_text(record.task_id)}\n\n"
-        "Morning:\n"
-        f"- /daily {record.project_id}\n"
-        "- /tasks\n\n"
+        "Boss route:\n"
+        "- now: /inbox shows the first action and running work\n"
+        "- morning: /morning shows done / blocked / risks / next actions\n"
+        f"- exact trace: /task {short_id_text(record.task_id)} opens the lead handoff\n"
+        "- visual snapshot: /view sends the HTML board when enabled\n"
+        "- project context: /brief explains the project, not the overnight execution log\n\n"
         "Guardrails:\n"
         "- risky work still pauses for /approve\n"
         "- the lead should report done, blocked, risks, and next actions"
     )
-    return MessageContent(text=text)
+    return rich_text_message(text)
 
 
 def offline_delegation_incomplete_message(task_id: str, issue: str) -> MessageContent:
     short_id = short_id_text(task_id)
-    return MessageContent(
-        text=(
-            "Overnight delegation output incomplete\n"
-            f"task: {short_id}\n"
-            f"reason: {issue}\n\n"
-            "This was marked failed so it does not look like a successful morning handoff.\n\n"
-            "Next:\n"
-            f"- /task {short_id}\n"
-            "- rerun /overnight with a narrower goal, or ask the lead to continue"
-        )
+    return rich_text_message(
+        "Overnight delegation output incomplete\n"
+        f"task: {short_id}\n"
+        f"reason: {issue}\n\n"
+        "This was marked failed so it does not look like a successful morning handoff.\n\n"
+        "Next:\n"
+        f"- /task {short_id}\n"
+        "- /inbox\n"
+        "- rerun /overnight with a narrower goal, or ask the lead to continue"
     )
 
 

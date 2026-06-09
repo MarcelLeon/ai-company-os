@@ -18,6 +18,39 @@
 
 ## 当前活跃与近期归档卡点
 
+### [B-006] 人工 dogfood 待测队列缺少机器验收分层
+
+**状态**:🟢 RESOLVED
+**提出于**:Round 143
+**最后更新**:2026-06-09(Round 145)
+**影响**:`/overnight`、父子 agent 委派、delegate 输出可读性和 `/view` 等长链路修复后,如果每次都要求人类完整重跑历史 prompt,会把验证周期变成新的进度阻塞。
+
+**问题描述**
+Round 138-142 连续修复了协作风险误判、`/overnight` handoff 完整性、delegate 输出粘连、移动端长墙和老板查看动线。每一项都有 targeted tests 或 full clean env 验证,但下一轮队列仍容易被理解成"必须先人工完整复验同一长链路",导致机器已覆盖的确定性 contract 仍反复占用人工时间。
+
+**已尝试的方向**
+- 方向 A:继续把真实 IM 复验放在最高优先级并要求重跑同一类 `/overnight`。问题是父子委派和 provider 长输出耗时不可控,每次修复后完整人工回归成本过高。
+- 方向 B:取消人工 dogfooding,只看测试通过。问题是 AICO 的核心价值是老板手机上的可接手体感,真实 provider / Channel 漂移和移动端可读性不能只靠 mock 判断。
+- 方向 C:引入验收分层。机器 Gate 先覆盖确定性 contract,人工 Sample 只验证真实 IM 体感和平台漂移。Round 145 后修正为:Agent 能访问本机 Telegram / provider 时先跑真实样本,人工只看体感和接手便利性。
+
+**解决结果**
+- `NORTH_STAR.md` 第三句下新增 "Dogfooding 的验收分层":Dogfooding 仍是最终验收,但不替代机器回归。
+- `docs/agent/06-testing-guide.md` 新增 "Dogfooding 与机器验收的边界",把机器 Gate / 人工 Sample / 人工 Blocking 固化为默认顺序。
+- `STATUS.md` 下一轮建议已按该规则重排:当前 `/overnight` delegate 输出和老板动线从"人工完整复验阻塞"降级为"机器 Gate 后 1 条代表性 IM 样本"。
+- Round 144 在 `docs/playbooks/phase-8-absence-loop.md` 固化当前 Phase 8 AI 前置 contract gate;实测 40 passed in 0.30s。
+- Round 145 将 playbook 修正为机器 Gate -> Agent 本机真实样本 -> human 体感 Sample,并实测真实 Telegram 中 `implementer/claude-code -> reviewer/codex` 协作链路完成;当前 gate 更新为 41 passed in 0.36s。
+
+**当前 workaround**
+- 无。后续若某条真实 IM 待测无法由当前 Agent 环境覆盖,必须把缺口显式写入 `STATUS.md` 或新 BLOCKER。
+
+**相关链接**
+- NORTH_STAR.md 第三句 Dogfooding 分层
+- docs/agent/06-testing-guide.md Dogfooding 与机器验收的边界
+- docs/playbooks/phase-8-absence-loop.md AI 前置 Contract Gate
+- ROUNDS Round 143
+- ROUNDS Round 144
+- ROUNDS Round 145
+
 ### [B-005] Orchestrator class size regression
 
 **状态**:🟡 DEFERRED

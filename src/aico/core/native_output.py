@@ -48,6 +48,7 @@ def agent_output_message(
     *,
     preferred_format: MessageNativeFormat | None = None,
 ) -> MessageContent:
+    text = normalize_agent_output_for_im(text)
     if preferred_format is MessageNativeFormat.TELEGRAM_HTML:
         if message := telegram_html_message(text):
             return message
@@ -87,6 +88,85 @@ def _metadata_value(task: Task, key: str) -> object | None:
         if entry.key == key:
             return entry.value
     return None
+
+
+def normalize_agent_output_for_im(text: str) -> str:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = _split_glued_native_headings(normalized)
+    normalized = _split_glued_bullets(normalized)
+    return _collapse_excess_blank_lines(normalized)
+
+
+def _split_glued_native_headings(text: str) -> str:
+    text = re.sub(
+        r"(</(?:b|strong)>)(?=<(?:b|strong)>)",
+        r"\1\n\n",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        rf"(?<!^)(?<!\n)(?=<(?:b|strong)>({_NATIVE_SECTION_HEADING_PATTERN})(?::)?</(?:b|strong)>)",
+        "\n",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        rf"<(b|strong)>({_NATIVE_SECTION_HEADING_PATTERN})</\1>:\s*",
+        lambda match: f"<{match.group(1)}>{match.group(2)}:</{match.group(1)}>\n",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(<(?:b|strong)>[^<:\n]{1,96}</(?:b|strong)>)(?=[^\s<:，,。.;；!?！？])",
+        r"\1\n",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text
+
+
+def _split_glued_bullets(text: str) -> str:
+    bullet_pattern = (
+        r"(?<!^)(?<!\n)(?P<gap>[ \t]*)"
+        r"(?P<bullet>•\s+(?:High|Medium|Low|Critical|Done|Blocked|Risks?|Next|"
+        r"Suggestion|Recommendation|[A-Z][A-Za-z0-9_-]*|[\u4e00-\u9fff]))"
+    )
+    return re.sub(bullet_pattern, r"\n\n\g<bullet>", text)
+
+
+def _collapse_excess_blank_lines(text: str) -> str:
+    return re.sub(r"\n{3,}", "\n\n", text)
+
+
+_NATIVE_SECTION_HEADINGS = (
+    "Acceptance",
+    "Acceptance Criteria",
+    "Approval Need",
+    "Blocked",
+    "Boss Next Action",
+    "Consulted Roles",
+    "Decision",
+    "Decision Memo",
+    "Done",
+    "Evidence",
+    "Evidence / Memory Refs",
+    "Evidence / Memory References",
+    "Findings",
+    "Goal received",
+    "Next",
+    "Next Actions",
+    "Operating Rules",
+    "Recommendation",
+    "Rejected Alternatives",
+    "Risks",
+    "Status",
+    "Summary",
+    "Verdict",
+    "Why",
+)
+_NATIVE_SECTION_HEADING_PATTERN = "|".join(
+    re.escape(heading) for heading in sorted(_NATIVE_SECTION_HEADINGS, key=len, reverse=True)
+)
 
 
 class _TelegramHTMLSanitizer(HTMLParser):

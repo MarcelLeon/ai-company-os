@@ -6857,3 +6857,333 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - 不开 ADR:本轮没有新架构决策,只是公开发布工程。
 - 不新增 PITFALLS / BLOCKERS。
 - 触达硬约束自检:本轮新增/改的全部是 markdown / yaml,无单类 / 单方法变化。
+
+---
+
+## Round 141 — 2026-06-04 — Codex
+
+### 输入
+- 人类继续验收 `/overnight` 真实效果,反馈 task `/task 4667de18` 两类 Telegram 可读性问题:
+  1. reviewer 子任务输出的多条 `• High` / `• Medium` finding 全部粘在一段里。
+  2. implementer handoff 截图中 `<b>Goal received</b>`、`<b>Decision</b>`、`<b>Why</b>` 等 label 与正文粘连,手机上难以扫读。
+- 本轮目标:修复 delegate / collaboration agent 输出进入 Telegram 时的结构粘连,并给出可复验的 markdown/IM 结构边界。
+
+### 思考与讨论
+- 证据:
+  - `.aico/state.db` 中 parent task `4667de18-8bfd-40b1-911d-04a7bfec1c86` 状态为 `done`,adapter 是 `claude-code`。
+  - 日志显示 reviewer child task `5499a5ea-f184-452a-a555-86dc4cbaee85` 被 Codex 接收并 `done`,stdout chunks=17,最终文本约 1686 字。
+  - child payload 的 parent context 已经包含真实粘连片段:`<b>Overnight delegation handoff...</b><b>Goal received</b>"..."<b>Decision</b>...`。
+- 候选 A:只强化 Telegram HTML prompt,要求模型分行 → ❌ 否决。Round 125 已经加过“标题、段落、列表项要分行”的 prompt,真实 provider 仍可能不遵守;prompt 不能是唯一边界。
+- 候选 B:在 Telegram Channel 里按 HTML 字符串补换行 → ❌ 否决。Channel 应只映射 `MessageContent.native_format` / `spans`,不应该理解 agent 语义,否则 Feishu 等 Channel 会重复踩坑。
+- 候选 C:在 `agent_output_message()` 入口做保守 IM normalization → ✅ 选定。所有流式 agent 输出都会经过这个总入口,且可在 native HTML sanitizer / rich fallback 前统一处理。
+- 重要边界:不做“无限 Markdown 兼容”。本轮只拆明显粘连的 native heading、已知 section label 和 `• High/Medium/...` bullet。
+
+### 产出
+- `src/aico/core/native_output.py`:
+  - `agent_output_message()` 新增 `_normalize_agent_output_for_im()` 前置归一化。
+  - 拆分相邻 `<b>/<strong>` heading、正文后接已知 section heading、`<b>Why</b>:` 这类 label。
+  - 拆分行内 `• High` / `• Medium` / `• Recommendation` 等 bullet,让 reviewer findings 独立成行。
+- `tests/unit/test_native_output.py`:
+  - 新增 native HTML heading 粘连回归。
+  - 新增 reviewer bullet 粘连回归。
+- `tests/unit/test_streaming.py`:
+  - 新增 writer 级别回归,模拟 provider 分 chunk 输出后最终 Telegram HTML 仍保持分段。
+- `docs/journal/PITFALLS.md`:新增 P-036,记录 agent native heading / bullet 被流式拼接后糊成 Telegram 一整段。
+- `STATUS.md` / `CHANGELOG.md`:同步记录 Round 141 和用户可见修复。
+
+### 验证结果
+- Targeted:`uv run pytest tests/unit/test_native_output.py tests/unit/test_streaming.py -q` → **10 passed**。
+- Full clean env:`env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest` → **425 passed / 1 skipped**。
+- `uv run ruff check .`:All checks passed。
+- `uv run ruff format --check .`:141 files already formatted。
+- `uv run mypy src tests`:Success: no issues found in 136 source files。
+- `git diff --check`:clean。
+
+### 关键决策
+- 🔒 **决策 1**:delegate 输出可读性不能只靠模型 prompt;core renderer 入口必须有保守兜底。
+- 🔒 **决策 2**:不把 agent 语义规则写进 Telegram Channel。Channel 继续只做平台能力映射。
+- 🔒 **决策 3**:本轮不扩展成完整 Markdown/HTML 重排器,只修真实 dogfood 中出现的结构粘连。
+
+### 留给下一轮
+- 重启 AICO 后重新跑同类 `/overnight` 或能触发 implementer -> reviewer 的 delegate 任务。
+- 预期效果:implementer handoff 的 heading/Decision/Why/Done 分段清晰;reviewer findings 每条 severity bullet 独立成行。
+- 若仍有粘连,先收集 `/task <id>` 和截图,确认是新的模型格式 case,再决定是否扩展 normalization。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 141;下一轮建议第一项改为真实 IM 回归本修复。
+- `docs/journal/PITFALLS.md` 新增 P-036。
+- `CHANGELOG.md` Fixed 新增 delegate Telegram 输出可读性修复。
+- 不开 ADR:这是既有 IM render/native output 合同的 bug fix,没有新增架构决策。
+
+---
+
+## Round 142 — 2026-06-05 — Codex
+
+### 输入
+- 人类继续复验最近一次 `/overnight` 和 implementer -> reviewer 协作,反馈:
+  - `Collaboration requested / source: implementer / target: reviewer` 之后 reviewer 文案仍然太大坨,手机上看不动。
+  - 老板看 overnight 执行内容的动线不清楚:应该用 `/aico-view`、`/brief`,还是别的命令?
+- 本轮目标:从老板秘书视角收紧两个体验面:长 reviewer 输出必须像可扫读卡片;`/overnight` 回执必须告诉老板现在看哪里、早上看哪里、深挖看哪里。
+
+### 思考与讨论
+- 证据:
+  - 日志显示 2026-06-05 11:09 真实协作 child task `5f080b95-7c94-4875-a623-d460e85551db` 被 Codex 接收;该截图对应的消息约 1800 字,低于旧 3900 字分片上限。
+  - 2026-06-05 17:51 日志里有 `target=aico-view status=rejected reason=unknown adapter or persona: aico-view`,说明老板按产品名输入 `/aico-view` 时没有进入 `/view` 命令。
+- 候选 A:继续只补 bullet 换行正则 → ❌ 否决。Round 141 已经解决粘连换行,但 1800 字仍会形成手机长墙;问题已经从“换行”升级为“移动端阅读上限”。
+- 候选 B:把 reviewer 输出强制摘要到 N 条 → ❌ 暂缓。语义摘要会丢失原始审阅证据,需要更明确的 trace/original-output 设计;本轮先做无损分片。
+- 候选 C:降低 streaming 阅读上限 + 修 overnight 老板动线 → ✅ 选定。无损、跨 adapter 生效,且直接回应老板“我现在该看哪里”的问题。
+
+### 产出
+- `src/aico/core/streaming.py`:
+  - `STREAM_MESSAGE_TEXT_LIMIT` 从 3900 改为 1400,从 Telegram API 上限转为手机阅读上限。
+  - `StreamedMessageWriter.append()` 先复用 `normalize_agent_output_for_im()` 处理累计输出,再按可读边界分段。
+  - 新增 `_readable_segments()` / `_readable_split_index()`,优先按空行、换行、句号、空格切分,避免硬切单词或路径。
+- `src/aico/core/native_output.py`:
+  - `_normalize_agent_output_for_im()` 改为公开的 `normalize_agent_output_for_im()`,供 writer 和 renderer 共用。
+  - severity bullet 前从单换行改为空行,让 `• High` / `• Medium` 成为更清晰的审阅卡片。
+- `src/aico/core/offline_delegation.py`:
+  - `/overnight` queued / listing / incomplete 回执改成老板秘书动线:
+    `now: /inbox`, `morning: /morning`, `exact trace: /task`, `visual snapshot: /view`,
+    `project context: /brief`。
+  - 回执走 `rich_text_message()`,让 Next/Boss route 和 slash command 在 IM 中更清楚。
+- `src/aico/core/commands.py`:
+  - `/aico-view` 新增为 `/view` alias。
+  - help 文案标注 `/aico-view is an alias`。
+- `tests/unit/test_streaming.py`:新增移动端分片回归。
+- `tests/unit/test_commands.py`:新增 `/aico-view` alias 回归。
+- `tests/unit/test_orchestrator.py`:更新 `/overnight` 老板动线断言。
+- `docs/journal/PITFALLS.md`:新增 P-037,记录“Telegram API 上限不是老板手机阅读上限”。
+
+### 验证结果
+- Targeted:
+  - `uv run pytest tests/unit/test_native_output.py tests/unit/test_streaming.py tests/unit/test_commands.py tests/unit/test_orchestrator.py::test_orchestrator_queues_overnight_delegation_to_project_lead tests/unit/test_orchestrator.py::test_orchestrator_marks_short_overnight_handoff_failed tests/unit/test_orchestrator.py::test_orchestrator_splits_long_stream_output_across_messages -q` → **25 passed**。
+- Full clean env:
+  - `env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest` → **427 passed / 1 skipped**。
+- Static:
+  - `uv run ruff check .`:All checks passed。
+  - `uv run ruff format --check .`:141 files already formatted。
+  - `uv run mypy src tests`:Success: no issues found in 136 source files。
+  - `git diff --check`:clean。
+
+### 关键决策
+- 🔒 **决策 1**:IM streaming 上限要按老板手机阅读体验定,不是按 Telegram API 极限定。
+- 🔒 **决策 2**:长 reviewer 输出本轮先无损拆卡片,不做语义摘要;原文仍可通过 `/task` 追溯。
+- 🔒 **决策 3**:`/brief` 不是 overnight 执行日志入口。老板执行动线应是 `/inbox` → `/morning` → `/task` → `/view`。
+- 🔒 **决策 4**:`/aico-view` 作为 `/view` alias,降低产品名和命令名不一致造成的误路由。
+
+### 留给下一轮
+- 重启 AICO 后复验同一类 `/overnight`:期望 reviewer 长审阅拆成多条 Telegram 消息,每条约 1400 字以内,且 severity bullet 前有空行。
+- 复验老板动线:
+  1. `/project aico`
+  2. `/overnight <goal>`
+  3. 进行中看 `/inbox`
+  4. 回来接手看 `/morning`
+  5. 深挖看 `/task <id>`
+  6. 需要 HTML 看 `/view` 或 `/aico-view`
+- 如果老板仍觉得 `/task` 原文太长,下一轮考虑“secretary summary + full trace link”双层输出,但要保留审计原文。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 142;下一轮建议改为复验移动端分片和老板动线。
+- `docs/journal/PITFALLS.md` 新增 P-037。
+- `CHANGELOG.md` Fixed 新增 mobile-readable streaming、overnight boss route、`/aico-view` alias。
+- 不开 ADR:这是既有 IM-first / absence-first 产品合同的 UX bug fix,没有新增架构路线。
+
+---
+
+## Round 143 — 2026-06-09 — Codex
+
+### 输入
+- 人类追问北极星中的"人工 dogfooding"前提是否应当是机器尽量测得比较全面。
+- 具体背景:父子 agent 委派、`/overnight` delegate 输出和真实 IM 体感这类验证耗时较长,每次修复后完整人工复验周期过长。
+- 本轮目标:微调北极星解释层,并让当前阻塞待测项快速按新口径生效。
+
+### 思考与讨论
+- 候选 A:直接改北极星第三句话,弱化 "Dogfooding 是唯一验收标准" → ❌ 否决。三句话是项目宪法,过往决策也要求优先补解释层,不要随意重写核心句。
+- 候选 B:保持原文不动,只在聊天里说明机器测试先行 → ❌ 否决。下一轮 Agent 仍会从 `STATUS.md` 看到"人工复验长链路"高优队列,继续把验证成本当阻塞。
+- 候选 C:不改三句话本体,在第三句下新增 "Dogfooding 的验收分层",并同步测试指南 / BLOCKERS / STATUS → ✅ 选定。Dogfooding 仍是最终验收,但确定性 contract 先由机器 Gate 覆盖,人工只做代表性样本和真实体感确认。
+
+### 产出
+- `NORTH_STAR.md`:第三句下新增 "Dogfooding 的验收分层",明确机器验收先行、人工 dogfooding 验机器测不到的部分、长链路人工复验默认抽样。
+- `docs/agent/06-testing-guide.md`:新增 "Dogfooding 与机器验收的边界",把机器 Gate / 人工 Sample / 人工 Blocking 固化为默认验收顺序。
+- `docs/journal/BLOCKERS.md`:新增并关闭 B-006 "人工 dogfood 待测队列缺少机器验收分层"。
+- `STATUS.md`:更新当前轮次和 Phase 8 进度;下一轮建议改为先按机器 Gate 收口当前待测项,`/overnight` delegate 输出只需 1 条代表性真实 IM 样本确认体感。
+
+### 验证结果
+- `git diff --check`:clean。
+- 本轮仅改文档,未跑 Python 单测。
+
+### 关键决策
+- 🔒 **决策 1**:Dogfooding 是最终验收标准,不是机器回归的替代品。
+- 🔒 **决策 2**:父子 agent 委派、风险识别、handoff 完整性、IM render 分片、命令 alias 和审计状态等确定性 contract 必须优先机器覆盖。
+- 🔒 **决策 3**:长链路真实 IM 复验默认抽样;只有真实凭据、真实 IM 平台、真实 provider / Channel 或跨设备体验无法机器覆盖时,才把人工 dogfood 标成阻塞。
+
+### 留给下一轮
+- 当前 `/overnight` delegate 输出和老板查看动线:先确认对应 targeted tests 已过;重启 AICO 后只跑 1 条代表性真实 IM 样本。
+- `/view` 真实 Telegram `sendDocument` 和手机打开体验仍保留人工 Sample,但 HTML 结构和 handler 注入继续靠机器测试覆盖。
+- 后续如果某个待测项没有机器覆盖,必须写清 `/task <id>`、截图/原始输出、预期效果和实际偏差,并登记到 `STATUS.md` 或 `BLOCKERS.md`。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 143;下一轮建议切换为 Dogfooding 验收分层。
+- `docs/journal/BLOCKERS.md` 新增 B-006 并标记 RESOLVED。
+- 不新增 PITFALLS:本轮是验收治理规则微调,没有新踩坑。
+- 不开 ADR:这是北极星第三句下的验收解释层,不改变运行架构。
+
+---
+
+## Round 144 — 2026-06-09 — Codex
+
+### 输入
+- 人类继续追问:结合当前北极星指标和需要 human 验证的功能,能否让 AI 前置做更多确定性 contract 验证。
+- 背景是 Round 143 已明确机器 Gate → 人工 Sample,但还缺一个当前 Phase 8 可直接执行的 gate 清单。
+
+### 思考与讨论
+- 当前北极星约束:Dogfooding 仍是最终验收,但确定性问题要先由机器挡住;人工只看真实 IM / 手机体感和 provider / Channel 漂移。
+- 当前仍需 human sample 的功能:
+  - `/overnight` delegate 输出在真实 Telegram 手机端是否仍像长墙。
+  - 老板是否能按 `/inbox` → `/morning` → `/task` → `/view` 自然接手。
+  - `/view` 是否真的通过 Telegram 附件到手机,HTML 第一屏是否符合接手习惯。
+- 候选 A:只在 `STATUS.md` 继续写"先跑机器 Gate" → ❌ 否决。没有具体命令,下一轮 Agent 仍可能靠记忆拼测试名。
+- 候选 B:把所有 human sample 都替换为测试 → ❌ 否决。真实 Telegram、手机附件打开、provider 长输出漂移仍然只能抽样 dogfood。
+- 候选 C:在 Phase 8 playbook 固化当前 contract gate,并把 human sample 限缩到剩余不可自动化体感 → ✅ 选定。
+
+### 产出
+- `docs/playbooks/phase-8-absence-loop.md`:新增 "AI 前置 Contract Gate",包含一条可执行 targeted pytest 命令、覆盖范围表和 human sample 剩余职责。
+- `STATUS.md`:当前轮次更新为 Round 144;Phase 8 进度新增 contract gate;下一轮建议改为先跑 playbook gate,再做 1 条代表性真实 IM 样本。
+- `docs/journal/BLOCKERS.md`:B-006 补充 Round 144 解决结果,说明当前 gate 已固化且实测通过。
+
+### 验证结果
+- 首次尝试点名两个不存在的旧测试名,pytest 返回 no tests ran;随后查真实测试名并修正命令。
+- 修正后的 contract gate:
+  `env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest ... -q` → **40 passed in 0.30s**。
+- `git diff --check`:clean。
+
+### 关键决策
+- 🔒 **决策 1**:当前 Phase 8 human sample 前必须先跑 playbook 中的 contract gate。
+- 🔒 **决策 2**:human sample 只保留真实 IM / 手机 / provider 漂移判断;如果样本暴露新 deterministic failure signature,下一轮先把它补进 gate。
+- 🔒 **决策 3**:测试名不能靠口头传承;可执行 gate 必须写进 playbook,否则下一轮很容易跑错或漏跑。
+
+### 留给下一轮
+- 若要复验 `/overnight` delegate 输出:先跑 `docs/playbooks/phase-8-absence-loop.md` 的 AI 前置 Contract Gate;通过后,真实 IM 只跑 1 条代表性样本。
+- 若要复验 `/view`:机器 gate 已覆盖 handler、自包含 HTML 和 Telegram `sendDocument`;human 只看手机能否打开、第一屏是否有用、是否发到可信聊天。
+- 如果 human sample 失败,记录 `/task <id>`、截图/原始输出、预期效果和实际偏差,并优先补进 contract gate。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 144。
+- `docs/playbooks/phase-8-absence-loop.md` 增加 AI 前置 Contract Gate。
+- `docs/journal/BLOCKERS.md` B-006 追加 Round 144 解决结果。
+- 不新增 PITFALLS:首次测试命名失误已被 playbook 固化命令消除,没有形成新的运行坑。
+
+---
+
+## Round 145 — 2026-06-09 — Codex
+
+### 输入
+- 人类纠正验收边界:
+  - 真实 Telegram 手机端观感,当前 Mac 有 Telegram App,Agent 可以先验。
+  - 真实 provider 是否稳定触发 implementer -> reviewer 协作,Agent 也应该先验。
+  - human dogfooding 应主要看体感是否顺畅、是否方便接手;请求 human 验收时必须给出 Agent 已验证结果、重点验证点、问题、预期和后续步骤。
+
+### 思考与讨论
+- 候选 A:继续把真实 provider / Channel 漂移放在 human sample → ❌ 否决。当前环境已有 Telegram App、AICO 运行进程、真实 provider 凭据和日志,本机能验证的事项不应推给人类。
+- 候选 B:只口头承认并不改文档 → ❌ 否决。Round 144 playbook 仍写着真实 provider 是否触发协作属于 human sample,下一轮会继续误分层。
+- 候选 C:把验收顺序改成机器 Gate -> Agent 本机真实样本 -> human 体感 Sample → ✅ 选定。human 只看“像不像可接手的老板交接”,不背确定性 contract。
+
+### 产出
+- `NORTH_STAR.md`:Dogfooding 分层新增 "Agent 先跑真实样本",明确真实 provider、真实 IM 客户端和本机 App 可访问时先由 Agent 验证。
+- `docs/agent/06-testing-guide.md`:默认验收顺序改为机器 Gate -> Agent 本机真实样本 -> 人工 Sample -> 人工 Blocking;请求 human 前必须附 Agent 验证结果、重点验证点、验证问题、预期效果和后续步骤。
+- `docs/playbooks/phase-8-absence-loop.md`:覆盖表新增 "Agent 本机真实样本" 列;写入最小 implementer -> reviewer 样本、通过标准和非预期路由处理规则。
+- `src/aico/channel/telegram.py`:默认 `httpx.AsyncClient` 的 read timeout 改为 `poll_timeout_seconds + 5`,避免 Telegram long polling 正常等待时每约 6 秒刷空 warning。
+- `tests/unit/test_telegram_channel.py`:新增默认 client timeout 回归。
+- `STATUS.md`、`docs/journal/BLOCKERS.md`、`CHANGELOG.md`:同步记录本轮真实样本和 polling warning 修复。
+
+### 验证结果
+- 机器 Gate(Round 145):`env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest ... -q` → **41 passed in 0.36s**。
+- 本机真实 Telegram:
+  - `ai_co` bot 在 Telegram App 中可见。
+  - `/project aico` 被真实 bot 收到并回包;日志有 incoming text、command=project、sendMessage。
+- 真实 provider 协作:
+  - parent `9efe8b4c-bd03-47ee-8f99-cc7dde5af17a`:target=implementer,adapter=claude-code,status=done。
+  - 日志有 `Collaboration directive: parent_task=9efe8b4c... source=implementer target=reviewer payload_chars=170`。
+  - child `a27d61ef-ea41-44b3-8a81-a4ad74d40a01`:target=reviewer,adapter=codex,status=done。
+  - Telegram 发送了 `Collaboration requested`、reviewer accepted 和 reviewer 输出;最终截图 `/tmp/aico_telegram_collab_done.png`。
+- 真实输出观感:
+  - reviewer 输出触发移动端分片,message `1278` 约 1299 字后发送后一条约 98 字短消息。
+  - 可见问题:reviewer 回包仍偏 review report,是否顺手接手仍应由 human 体感 Sample 判断。
+- 运行坑:
+  - 修复前日志持续出现空 `Telegram polling failed:`;根因是默认 httpx read timeout 短于 long-poll timeout。
+
+### 关键决策
+- 🔒 **决策 1**:真实 Telegram App 和真实 provider 样本在当前 Mac 可访问时属于 Agent 验收,不是默认 human 阻塞项。
+- 🔒 **决策 2**:human sample 前必须给出 Agent 已验证结果、推荐重点、验证问题、预期效果和后续步骤。
+- 🔒 **决策 3**:真实样本如果误入 lead decision / challenger 等非预期路由,不能算 implementer -> reviewer 验收通过,必须换短样本重跑。
+- 🔒 **决策 4**:Telegram long-poll 空 warning 是运行层 deterministic bug,应修复并测试,不能让 human 通过多试几次兜底。
+
+### 留给下一轮
+- Telegram polling timeout 修复需要重启当前 AICO 进程后生效;本轮未强制重启,避免打断正在运行的 bot。
+- 若继续 `/view` dogfood,Agent 先发 `/view`,确认 `sendDocument`、附件名、无 localhost 链接和首屏可打开;再请求 human 判断手机第一屏是否方便接手。
+- human 验收问题模板:
+  - 你在手机上看到的 reviewer 输出是否像能接手的工作交接,还是仍像审查报告?
+  - `/inbox`、`/morning`、`/task <id>`、`/view` 的下一步是否不需要猜?
+  - 如果你要早上接手,第一眼还缺哪一条行动信息?
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 145。
+- `docs/playbooks/phase-8-absence-loop.md` 将 human sample 前置条件改为机器 Gate + Agent 本机真实样本。
+- `docs/journal/BLOCKERS.md` B-006 追加 Round 145 修正。
+- 验证通过:targeted 25 passed in 0.46s;Phase 8 gate 41 passed in 0.36s。
+- 不新增 ADR:这是验收流程和 Telegram runtime 小修,不改变架构边界。
+
+---
+
+## Round 146 — 2026-06-09 — Codex
+
+### 输入
+- 人类确认按发布建议开始收口 `launch/oss-public-readiness` 分支,准备把仓库从 private 改为 public,并要求像助理一样对发布效果负责。
+- 本轮目标:用少步骤把当前分支整理成 release candidate,先完成发布前可逆收口,不可逆动作(public、tag、release)留到明确确认点。
+
+### 思考与讨论
+- 候选 A:直接让老板改 public 并打 tag → ❌ 否决。当前工作树仍有 Round 141-145 未提交修复,release notes / README 数字也滞后;抢先公开会把外部第一印象赌在脏状态上。
+- 候选 B:先做一轮完整新功能,例如多 step overnight 或 Feishu 附件 → ❌ 否决。发布窗口需要冻结 v0.1.0 范围;继续加功能会让 Show HN / README 描述继续漂。
+- 候选 C:RC 收口:校正文档口径、跑机器 gate、跑 no-token demo、提交当前分支,再进入 GitHub public / release 动作 → ✅ 选定。它最符合北极星第三句的可追溯、可回滚、可观测。
+- 发布前实际运行 `uv run aico-release-room-demo` 暴露出一个 drift:产品动线已经要求早上看 `/morning`,但 no-token demo 还在演示 `/daily release-room`。这不是运行 bug,但会伤害公开发布的第一印象。
+
+### 产出
+- README / README.zh-CN:
+  - overnight 接手路径改为 `/inbox` / `/morning` / `/task` / `/audit`。
+  - 当前可用能力补充 `/view` IM HTML snapshot,并标明需要 `AICO_VIEW_ENABLED=true`。
+  - 中文 README 近期路线图对齐当前真实队列(`/view` dogfood、B-005、Feishu smoke、多 step overnight)。
+- `docs/launch/v0.1.0-release-notes.md` / `docs/launch/playbook.md`:
+  - 发布测试数更新为 428 passed / 1 skipped。
+  - journal 口径更新到 Round 146,PITFALLS 更新到 P-038。
+- Release Room public demo:
+  - `aico-release-room-demo` 早上验收命令改为 `/morning`。
+  - transcript、demo script、shot rhythm、recording storyboard、docs example 和 release-room playbook 全部对齐 `/morning`。
+- `docs/journal/PITFALLS.md`:新增 P-038 "公开 demo 在产品动线变化后仍教旧命令"。
+- `STATUS.md`:当前轮次更新为 Round 146,下一轮最高优调整为 RC push / GitHub public / release 确认。
+
+### 验证结果
+- Phase 8 contract gate:
+  `env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest ... -q` → **41 passed in 0.94s**。
+- Full clean env:
+  `env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest` → **428 passed / 1 skipped**。
+- Release Room:
+  `uv run pytest tests/unit/test_release_room_acceptance.py tests/unit/test_release_room_demo.py -q` → **3 passed**。
+  `uv run aico-release-room-demo` → 成功输出 `/morning` handoff 和 `/audit`。
+- Static:
+  `uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check` 全绿。
+
+### 关键决策
+- 🔒 **决策 1**:v0.1.0 发布前不再扩功能,只做 RC 收口、验证、提交、push、PR/merge、public/tag/release。
+- 🔒 **决策 2**:公开 no-token demo 是发布 gate 的一部分。它不是普通示例,而是陌生开发者判断项目是否可信的首个可执行入口。
+- 🔒 **决策 3**:GitHub private -> public、`v0.1.0` tag 和 GitHub Release 是不可逆或强外部信号动作,需要老板确认后执行。
+
+### 留给下一轮
+- Stage 1:提交并 push `launch/oss-public-readiness` RC。
+- Stage 2:用 PR 合到 `main` 或快进合并;确认 GitHub About metadata / social preview 后由老板改 public。
+- Stage 3:public 后创建 `v0.1.0` tag 和 GitHub Release,随后按 launch playbook 执行 D0。
+- 发布当天不要再做大功能改动;只允许 blocker bugfix / 文档纠错。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 146。
+- `docs/journal/PITFALLS.md` 新增 P-038。
+- 不新增 ADR:本轮是发布治理和公开 demo 对齐,不改变架构边界。

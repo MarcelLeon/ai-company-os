@@ -67,18 +67,18 @@ remotely, not a smarter chat UI for one agent.
 - **Observable work**: inspect tasks, child tasks, metrics, audit history, and compact
   local glance output.
 - **Offline delegation**: use `/overnight` to leave work with a project lead, then review
-  `/daily`, `/tasks`, and `/audit` later.
+  `/inbox`, `/morning`, `/task`, and `/audit` later.
 
 ## Use It Today
 
 Three concrete workflows are ready to try:
 
 - **Maintain an open-source repo like a release room**: appoint PM, implementer, tester,
-  reviewer, and release manager roles; then use `/ask`, `/tasks`, `/daily`, and `/audit`
+  reviewer, and release manager roles; then use `/ask`, `/inbox`, `/morning`, and `/audit`
   to drive a small release without losing the project thread.
 - **Leave a bugfix overnight**: use `/overnight` to hand a scoped bugfix plan to the
-  current project lead, keep risky writes behind `/approve`, and review `/daily` the
-  next morning.
+  current project lead, keep risky writes behind `/approve`, and review `/morning` and
+  `/task` the next morning.
 - **Approve a release from your commute**: when an agent needs file writes or shell
   execution, approve or reject from Telegram, then inspect `/task` and `/audit` without
   opening the laptop.
@@ -115,6 +115,8 @@ Current status is tracked in [STATUS.md](STATUS.md). As of the current public pa
   project prompt injection.
 - Offline delegation: `/overnight` work orders persist across restart when
   `AICO_STATE_DB_PATH` is configured.
+- aico-view: `/view` can send a self-contained read-only HTML snapshot through IM when
+  `AICO_VIEW_ENABLED=true`.
 - Local state tooling: `aico-state --db <path>` prints SQLite schema version and
   table counts; `reset --yes` clears known AICO state tables for fast iteration.
 
@@ -177,6 +179,8 @@ Then message your Telegram bot:
 /project aico
 /team
 /ask pm summarize the next release plan in 3 bullets
+/inbox
+/morning
 /tasks
 /audit
 ```

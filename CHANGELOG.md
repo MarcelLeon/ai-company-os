@@ -22,6 +22,11 @@
 - `CONTRIBUTING.md` 顶部加 Code of Conduct 引用 + first-time contributor 入口。
 
 ### Fixed
+- Telegram long polling default client timeout now exceeds the Bot API poll timeout, preventing empty timeout warnings during normal `getUpdates` waits.
+- Streamed agent output now uses a mobile-readable 1400-character split target with readable boundaries, so long reviewer handoffs no longer wait until Telegram's API limit before splitting.
+- `/overnight` queued / listing / incomplete messages now explain the boss route: `/inbox` for current attention, `/morning` for handoff, `/task` for exact trace, `/view` for HTML snapshot, and `/brief` only for project context.
+- `/aico-view` is now accepted as an alias for `/view`.
+- Delegate agent 的流式 Telegram 输出现在会在进入 native HTML / rich text renderer 前拆分粘连 heading、section label 和 `• High/Medium/...` 列表,避免 implementer / reviewer handoff 糊成一整段。
 - `/overnight` 现在会校验最终 handoff 是否可交接:CLI exit 0 但输出过短或缺少 done / blocked / risks / next actions 时,任务会改标 failed 并回 IM 提示不完整,避免半句输出伪装成成功。
 - `/goal` / Outcome Grader / `/dream` / `/recall` 等 Phase 8 内置命令消息现在统一走 IM rich text renderer,标题、列表、字段 label 和 slash command 能正确格式化。
 - `/dream` 输出从逐条任务日志改为按阻塞/失败原因聚合的 reusable lesson candidates,并显式说明 candidate memory 不会自动注入 prompt。

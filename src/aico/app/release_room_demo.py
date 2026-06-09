@@ -42,7 +42,7 @@ DEMO_COMMANDS = (
     "/ask tester 检查 tests/test_v02_contract.py 的回归策略并报告失败项。",
     "/ask reviewer review v0.2 release risk, test gaps, README and CHANGELOG consistency.",
     "/overnight 推进 v0.2 release room，早上给我 done/blocked/risks/next actions。",
-    "/daily release-room",
+    "/morning",
     "/audit",
 )
 

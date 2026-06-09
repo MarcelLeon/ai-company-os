@@ -85,3 +85,53 @@ async def test_streamed_writer_ignores_late_status_after_output_started() -> Non
     await writer.show_status("Still running: no adapter output for 120s.")
 
     assert [message.text for message in channel.edited_messages] == ["partial"]
+
+
+async def test_streamed_writer_keeps_glued_agent_sections_readable() -> None:
+    channel = RecordingChannel()
+    target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+    writer = StreamedMessageWriter(
+        channel,
+        target,
+        SentMessage(message_id="message-1", target=target),
+        preferred_format=MessageNativeFormat.TELEGRAM_HTML,
+    )
+
+    await writer.append('<b>Goal received</b>"prepare launch"')
+    await writer.append("<b>Decision</b>Ship docs only.。")
+    await writer.append("• High — Quickstart promise needs tightening.")
+
+    assert channel.edited_messages[-1] == MessageContent(
+        text=(
+            "<b>Goal received</b>\n"
+            '"prepare launch"\n'
+            "<b>Decision</b>\n"
+            "Ship docs only.。\n\n"
+            "• High — Quickstart promise needs tightening."
+        ),
+        native_format=MessageNativeFormat.TELEGRAM_HTML,
+    )
+
+
+async def test_streamed_writer_splits_long_output_at_readable_boundary() -> None:
+    channel = RecordingChannel()
+    target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+    writer = StreamedMessageWriter(
+        channel,
+        target,
+        SentMessage(message_id="message-1", target=target),
+        max_text_length=120,
+    )
+
+    await writer.append(
+        "Review summary. "
+        "• High — workspace is dirty before tagging and should be resolved first. "
+        "Details include several changed files and status docs. "
+        "• Medium — release notes need a final consistency pass."
+    )
+
+    assert len(channel.edited_messages[-1].text) <= 120
+    assert channel.sent_messages
+    assert all(len(message.text) <= 120 for message in channel.sent_messages)
+    assert "\n\n• High" in channel.edited_messages[-1].text
+    assert any("• Medium" in message.text for message in channel.sent_messages)

@@ -1644,7 +1644,13 @@ async def test_orchestrator_queues_overnight_delegation_to_project_lead() -> Non
     assert "project: aico [AI Company OS]\n" in queued
     assert "lead: implementer -> claude\n" in queued
     assert "tracking: /task task-nig\n" in queued
-    assert "Morning:\n- /daily aico\n- /tasks" in queued
+    assert "Boss route:\n• now: /inbox shows the first action and running work" in queued
+    assert "• morning: /morning shows done / blocked / risks / next actions" in queued
+    assert "• exact trace: /task task-nig opens the lead handoff" in queued
+    assert "• visual snapshot: /view sends the HTML board when enabled" in queued
+    assert (
+        "• project context: /brief explains the project, not the overnight execution log" in queued
+    )
     assert "Offline delegation request for the project lead." in task.payload
     assert "Boss goal: finish the phase 8 plan" in task.payload
     assert "Leave a morning handoff with: done, blocked, risks, and next 3 actions." in task.payload
@@ -1654,6 +1660,7 @@ async def test_orchestrator_queues_overnight_delegation_to_project_lead() -> Non
     assert provider.mode is ProviderSessionMode.NEW
     assert channel.sent_messages[-1].text.startswith("Overnight delegations for aico:\n")
     assert "• night-task-nig: implementer -> claude (task-nig)" in channel.sent_messages[-1].text
+    assert "Boss route:\n• now: /inbox\n• morning: /morning" in channel.sent_messages[-1].text
 
 
 async def test_orchestrator_marks_short_overnight_handoff_failed() -> None:
@@ -1690,8 +1697,9 @@ async def test_orchestrator_marks_short_overnight_handoff_failed() -> None:
         "reason: handoff output is too short for an overnight delegation\n\n"
         "This was marked failed so it does not look like a successful morning handoff.\n\n"
         "Next:\n"
-        "- /task task-nig\n"
-        "- rerun /overnight with a narrower goal, or ask the lead to continue"
+        "• /task task-nig\n"
+        "• /inbox\n"
+        "• rerun /overnight with a narrower goal, or ask the lead to continue"
     )
 
 

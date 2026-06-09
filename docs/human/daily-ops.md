@@ -210,7 +210,7 @@ Adapter 未来若能稳定提供 usage,应记录 `task_usage_recorded` 审计事
 
 没有真实 usage 时不要估算或手填 token/cost;`/metrics` 和 `aico-metrics` 会继续显示 unavailable。
 
-老板回来看当前项目时优先用 `/inbox`。它只读聚合当前 active project 的 pending approvals、running quiet tasks、failed/interrupted tasks、`/overnight` handoff、Goal Brief 和 lead decision follow-up,并给出 `/approve`、`/reject`、`/task`、`/interrupt`、`/daily`、`/audit` 等下一步入口。
+老板回来看当前项目时优先用 `/inbox`。它只读聚合当前 active project 的 pending approvals、running quiet tasks、failed/interrupted tasks、`/overnight` handoff、Goal Brief 和 lead decision follow-up,并给出 `/approve`、`/reject`、`/task`、`/interrupt`、`/morning`、`/audit` 等下一步入口。
 
 需要看更完整的可视化留痕时,在启动前设置 `AICO_VIEW_ENABLED=true`,然后在 IM 里发送 `/view`。AICO 会把当前 active project 的 Boss Brief / Timeline / Trace / Memory 渲染成自包含 HTML 文件并通过支持附件的 Channel(当前 Telegram)发送;这不会启动本机 HTTP 服务,也不会要求手机访问 `127.0.0.1`。注意 HTML 内容会进入 Telegram 聊天记录,只发到可信私聊或可信小群。
 
@@ -251,7 +251,7 @@ Project Team / Appointment 命令用于项目办公室语义:
 - `/next [project]` 查看下一步建议动作,优先提示待审批、失败任务、路由/配置问题;没有卡点时建议把任务交给当前 lead role。顶部会尝试生成 `Boss summary`,下方 `Facts` 保留原始事实并渲染小节标题 / slash command 样式。
 - `/daily [project]` 查看日报式项目报告,聚合最近 24 小时本地 AICO 状态里的团队、完成项、未完成项、风险和项目文档短片段。顶部会尝试生成 `Boss summary`,下方 `Facts` 保留原始事实并渲染小节标题 / slash command 样式。
 - `/weekly [project]` 查看周报式项目报告,聚合最近 7 天本地 AICO 状态里的团队、完成项、未完成项、风险和项目文档短片段。顶部会尝试生成 `Boss summary`,下方 `Facts` 保留原始事实并渲染小节标题 / slash command 样式。
-- `/overnight <goal>` 创建 Phase 8 离线托管工单,把目标派给当前项目 lead/default role。它不是自动越权执行器;写文件、执行命令或破坏性动作仍会进入 `/approve`。早上用 `/daily <project>`、`/tasks`、`/task <id>` 验收。
+- `/overnight <goal>` 创建 Phase 8 离线托管工单,把目标派给当前项目 lead/default role。它不是自动越权执行器;写文件、执行命令或破坏性动作仍会进入 `/approve`。早上先用 `/morning` 接手,再用 `/task <id>` 追溯单任务原文。
 - `/overnight` 不带目标时,展示当前 active project 最近的托管工单和早报入口;配置 `AICO_STATE_DB_PATH` 后,这些工单可跨重启恢复。
 - `/project`、`/team`、`/roles`、`/role <id>` 这类查看命令末尾会给出简短 `Next` 指导命令,帮助顺手进入 brief/team/next/daily/weekly、appoint、ask、lead 等下一步。
 - `/roles [project]` 查看紧凑项目岗位板,默认只展示核心/专家岗位;`/roles all` 展示支持岗位和全部 role。
@@ -472,7 +472,7 @@ export AICO_AUDIT_LOG_PATH="/tmp/aico-release-room-audit.jsonl"
 /ask tester 根据 tests/test_v02_contract.py 设计回归验证，运行必要测试并报告失败项。
 /ask reviewer review v0.2 release 风险，重点检查行为回归、测试缺口和 README/CHANGELOG 一致性。
 /overnight 推进 v0.2 release room，早上给我 done/blocked/risks/next actions。
-/daily release-room
+/morning
 /audit
 ```
 

@@ -46,7 +46,14 @@ class TelegramChannel:
         self._name = name
         self._api_base_url = api_base_url.rstrip("/")
         self._bot_token = bot_token
-        self._client = client or httpx.AsyncClient()
+        self._client = client or httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=5.0,
+                read=float(poll_timeout_seconds + 5),
+                write=5.0,
+                pool=5.0,
+            )
+        )
         self._owns_client = client is None
         self._poll_timeout_seconds = poll_timeout_seconds
         self._handler: IncomingMessageHandler | None = None

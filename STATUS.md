@@ -3,8 +3,8 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-06-04
-**当前轮次**:Round 140(OSS public-launch readiness)
+**最后更新**:2026-06-09
+**当前轮次**:Round 146(release-candidate closure)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -304,6 +304,12 @@ AICO 的产品边界是 absence-first:
 - [x] Sprint V4 — `AICO_VIEW_ENABLED=true` 启用 IM `/view` HTML 快照,通过 Telegram `sendDocument` 发送自包含只读文件,不启动本机 HTTP 服务;ADR-0036(Round 137)。
 - [x] `/overnight` dogfood 修复:协作子任务用 `Current task:` 标记真实委托内容,避免 reviewer/Codex 因 parent context 中的 `git` / `run` 词被误判为 `shell_exec`(Round 138)。
 - [x] `/overnight` handoff 完整性兜底:CLI exit 0 但输出过短或缺少 done/blocked/risks/next actions 时,任务改标 failed 并回 IM 提示不完整,避免半句输出伪装成成功(Round 139)。
+- [x] Delegate agent 输出 IM 可读性兜底:流式 agent 结果进入 Telegram/native renderer 前会拆分粘连 `<b>Heading</b>`、已知 section label 和 `• High/Medium/...` 列表,避免 implementer/reviewer 结果糊成一整段(Round 141)。
+- [x] `/overnight` 老板秘书动线:回执明确 now `/inbox`、morning `/morning`、exact trace `/task`、visual snapshot `/view`;`/aico-view` 作为 `/view` 别名;流式输出按 1400 字移动端阅读上限分段(Round 142)。
+- [x] Dogfooding 验收分层:机器 Gate 先覆盖父子 agent 委派、handoff、render、命令和审计等确定性 contract;Agent 能访问本机 Telegram / provider 时先跑真实样本,人工 dogfood 只抽样确认体感和接手便利性(Round 143,Round 145 修正)。
+- [x] Phase 8 human sample 前置 contract gate:在 `docs/playbooks/phase-8-absence-loop.md` 固化当前 41-test gate,覆盖父子委派、`/overnight` handoff、delegate 分片、老板动线、`/view` 附件上传和 Telegram long-poll timeout(Round 144-145)。
+- [x] 本机真实 Telegram/provider 样本:Mac Telegram App 中 `ai_co` bot 可收发;`/project aico` 实回;真实 `implementer/claude-code` 输出触发 `source=implementer target=reviewer`,reviewer/codex 子任务完成;同时修复 Telegram long-poll 默认 timeout 太短导致的空 warning(Round 145)。
+- [x] Release candidate 收口:README / release notes / no-token Release Room demo 已对齐 `/inbox` -> `/morning` -> `/task` 的老板接手动线;Phase 8 gate、full pytest、ruff、mypy 和 no-token demo 均通过(Round 146)。
 
 ### 开源 Demo 进度
 
@@ -313,10 +319,77 @@ AICO 的产品边界是 absence-first:
 - [x] Release Room Stage 3 real Telegram dogfooding first pass, with provider-output blocker recorded。
 - [x] Release Room Stage 3 Codex provider-output cleanup and real Telegram dry run。
 - [x] Release Room Stage 3 public GIF / README showcase。
+- [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 146**(2026-06-09,Codex — release-candidate closure):
+- 按发布助理口径收口 `launch/oss-public-readiness` 分支,先把当前未提交的 Round 141-145 修复纳入同一 RC 范围,没有启动新功能。
+- 校正公开材料:
+  - README / README.zh-CN 的 overnight 接手路径从旧 `/daily` / `/tasks` 改为 `/inbox` / `/morning` / `/task` / `/audit`。
+  - `docs/launch/v0.1.0-release-notes.md` 和 launch playbook 的测试数更新为 **428 passed / 1 skipped**,journal 更新为 Round 145。
+  - no-token Release Room demo、transcript、shot rhythm、recording storyboard 和 release-room playbook 改为用 `/morning` 做早上接手入口。
+- 发现并记录 P-038:公开 demo 会在产品动线变化后滞后,发布前必须跑 demo 而不只是跑 pytest。
+- 发布前验证:
+  - Phase 8 contract gate: **41 passed in 0.94s**。
+  - full clean env pytest: **428 passed / 1 skipped**。
+  - Release Room no-token demo 可执行,输出包含 `/morning` handoff 和 `/audit`。
+  - `uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check` 全绿。
+- 当前 RC 仍未执行不可逆动作:未改 GitHub public/private,未打 `v0.1.0` tag,未发 GitHub Release。
+
+**Round 145**(2026-06-09,Codex — local Telegram/provider validation first):
+- 人类纠正验收边界:真实 Telegram 手机端观感和真实 provider 是否稳定触发 implementer -> reviewer 协作,在当前 Mac 有 Telegram App 和运行凭据时,Agent 必须先验,不能默认交给 human。
+- 已把验收分层从"机器 Gate -> human sample"修正为"机器 Gate -> Agent 本机真实样本 -> human 体感 sample"。human 只看是否顺、是否方便接手、是否信任交接。
+- 本机实测:
+  - Telegram App 可打开 `ai_co` bot;`/project aico` 被真实 bot 收到并回包。
+  - 真实协作样本 parent `9efe8b4c-bd03-47ee-8f99-cc7dde5af17a`:target=implementer,adapter=claude-code,done。
+  - 日志明确记录 `Collaboration directive: parent_task=9efe8b4c... source=implementer target=reviewer payload_chars=170`。
+  - reviewer child `a27d61ef-ea41-44b3-8a81-a4ad74d40a01`:target=reviewer,adapter=codex,done。
+  - Telegram 输出触发移动端分片,reviewer 输出被拆为 message `1278` 和后一条短消息;最终截图保存在 `/tmp/aico_telegram_collab_done.png`。
+- 运行坑修复:真实验收发现 Telegram long polling 每约 6 秒打印空 warning。原因是默认 `httpx.AsyncClient` read timeout 约 5 秒,短于 Telegram `getUpdates timeout=30`;已把默认 read timeout 改为 `poll_timeout_seconds + 5` 并补单测。
+- 验证通过:targeted 25 passed in 0.46s;Phase 8 gate **41 passed in 0.36s**。
+
+**Round 144**(2026-06-09,Codex — Phase 8 contract gate before human sample):
+- 对当前北极星 Dogfooding 分层和 `STATUS.md` human sample 队列做二次收口:需要人类看的功能主要剩 `/overnight` delegate 真实 IM 体感、老板查看动线、`/view` Telegram 附件/手机打开体验。
+- 盘点现有测试后确认 AI 可以前置验证更多确定性 contract:父子 agent 委派 payload、`Current task:` 风险边界、只读 reviewer 不被 risky parent context 误判、`/overnight` handoff 完整性、移动端分片、`/aico-view` alias、自包含 HTML snapshot 和 Telegram `sendDocument` multipart 上传。
+- `docs/playbooks/phase-8-absence-loop.md` 新增 "AI 前置 Contract Gate",写入当前可直接执行的 targeted pytest 命令、覆盖范围表和 human sample 剩余职责。
+- 本轮实际执行 contract gate:40 passed in 0.30s。
+- 决策:下一轮或后续修同类问题时,先跑 playbook 里的 gate;只有 gate 通过后,才请人类跑 1 条代表性真实 IM 样本。
+
+**Round 143**(2026-06-09,Codex — dogfood validation ladder):
+- 人类指出北极星里的"人工 dogfooding"不应理解为每次修复后都靠人完整重跑长链路;父子 agent 委派、`/overnight` 和真实 IM 输出修复周期长,需要机器测试尽量先覆盖。
+- 决策:不改北极星三句话本体,只在第三句下新增 Dogfooding 验收分层。Dogfooding 仍是最终标准,但顺序变成机器 Gate → 人工 Sample → 人工 Blocking。
+- `docs/agent/06-testing-guide.md` 固化同一规则:确定性 contract 先单测 / 集成 / 模拟 E2E;人工只抽样验证手机体感、真实 provider / Channel 漂移和老板是否知道下一步。
+- `docs/journal/BLOCKERS.md` 新增并关闭 B-006,说明当前待测队列不再因为"必须完整人工复验同一长链路"而阻塞。
+- 当前 `/overnight` delegate 输出和老板动线复验从"最高优人工完整回归"降级为"机器 Gate 后 1 条代表性真实 IM 样本";如果样本失败,必须留下 `/task <id>`、截图/原始输出、预期效果和实际偏差。
+- 本轮仅改文档,未改运行代码;`git diff --check` clean,未跑 Python 单测。
+
+**Round 142**(2026-06-05,Codex — secretary route + mobile readable handoff):
+- 人类复验最近一次 `/overnight` 和 implementer -> reviewer 协作,反馈 `Collaboration requested` 后 reviewer 文案仍然是手机上看不动的大块输出。
+- 进一步定位:Round 141 解决了“粘连 heading / bullet 换行”,但 Telegram API 3900 字安全上限不等于老板手机阅读上限;约 1800 字 reviewer 审阅仍会形成一整面长墙。
+- `StreamedMessageWriter` 改为先复用 `normalize_agent_output_for_im()` 归一化当前累计输出,再按 1400 字移动端阅读上限分段;分段优先选择空行、换行、句号或空格,避免按字符硬切。
+- `agent_output_message()` 的 severity bullet 归一化从单换行改为 bullet 前空行,让 `• High` / `• Medium` 变成真正的审阅卡片分隔。
+- `/overnight` 回执改成“老板秘书动线”:现在看 `/inbox`,回来接手看 `/morning`,查精确原文看 `/task <id>`,需要 HTML 看 `/view`,项目背景才看 `/brief`。
+- `/aico-view` 现在是 `/view` 的别名,避免老板按产品名输入时被当成 unknown persona / adapter。
+- 验证通过:targeted 25 passed;full clean env `env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest` **427 passed / 1 skipped**;`ruff check .`;`ruff format --check .`;`mypy src tests`;`git diff --check`。
+
+**Round 141**(2026-06-04,Codex — delegate Telegram readability):
+- 人类复验 `/overnight 为我准备好上线github的全部工作...` 后指出两类真实 IM 问题:
+  implementer handoff 中 `<b>Heading</b><b>Heading</b>`、`<b>Decision</b>正文` 粘成一段;
+  reviewer 输出中 `• High ...。• Medium ...` 多条 finding 被拼到同一行。
+- 日志确认 task `4667de18-8bfd-40b1-911d-04a7bfec1c86` 正常完成,reviewer 子任务
+  `5499a5ea-f184-452a-a555-86dc4cbaee85` 也正常完成;问题不是任务失败,而是 agent 流式
+  chunk 被 `StreamedMessageWriter` 忠实累加后缺少 IM 结构分隔。
+- 修复 `agent_output_message()`:agent 输出在进入 Telegram HTML sanitizer 或 rich text fallback 前,
+  先做保守 IM normalization,只拆明显粘连的 native heading、已知 section label 和 `•` bullet。
+- 不把规则写进 Telegram Channel,保持 core 继续输出平台无关 `MessageContent`;Telegram 仍只负责
+  native HTML / spans 映射。
+- 新增 native output + streaming 回归测试,覆盖 implementer 截图里的 `<b>Goal received</b>"..."`
+  / `<b>Decision</b>正文` 以及 reviewer 文案里的 `。• High` 列表粘连。
+- 验证通过:`env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest` **425 passed / 1 skipped**;
+  `uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check`。
 
 **Round 140**(2026-06-04,Claude — OSS public-launch readiness):
 - 老板任务"为我准备好上线 GitHub 的全部工作,要奔着 1k 或 10k star 方向去设计和发力"。
@@ -1427,19 +1500,37 @@ AICO 的产品边界是 absence-first:
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【最高】v0.1.0 公开打 tag + GitHub Release**(操作必须由老板亲自点确认):
+1. **【最高】发布 RC 到 GitHub 并由老板执行 public / release 确认**:
+   - 将 `launch/oss-public-readiness` 当前 RC commit 推到 GitHub,开 PR 或合并到 `main`。
+   - 老板把仓库从 private 改为 public 前,先确认 README、release notes、GitHub About metadata 和 social preview。
+   - public 后再创建 `v0.1.0` tag + GitHub Release;不要在仓库仍 private 或 README 未最终确认时抢先打 tag。
+2. **【最高】按 Dogfooding 验收分层收口当前待测项**:
+   - 先跑机器 Gate:见 [`docs/playbooks/phase-8-absence-loop.md`](docs/playbooks/phase-8-absence-loop.md)
+     的 "AI 前置 Contract Gate"。Round 146 实测 **41 passed in 0.94s**。
+   - Gate 覆盖父子 agent 委派、`/overnight` handoff、delegate 输出分段、`/aico-view` alias、老板动线、
+     `/view` HTML snapshot 和 Telegram `sendDocument` 上传;后续修同类问题要先补/跑对应快速测试。
+   - Agent 必须先跑本机真实样本:当前 Mac 有 Telegram App 时,先在 `ai_co` bot 中发短样本,
+     用日志和截图确认真实 provider / Channel 行为。
+   - Round 145 已验证真实 `implementer/claude-code -> reviewer/codex` 协作链路完成;后续只需在代码或 provider
+     变更后重跑同类短样本,不把它默认交给 human。Telegram polling timeout 修复需要重启当前 AICO 进程后生效。
+   - 代表性样本预期效果:reviewer 长审阅按移动端阅读上限拆成多条消息,`• High` / `• Medium`
+     前有空行;排活后看 `/inbox`,早上接手看 `/morning`,深挖看 `/task <id>`,HTML 看 `/view` 或
+     `/aico-view`;`/brief` 只用于项目背景。
+   - 请求 human 时必须附上 Agent 已验证结果、推荐重点验证点、验证问题、预期效果、后续步骤。
+   - 如果样本失败,必须留下 `/task <id>`、截图/原始输出、预期效果和实际偏差;不要只写“体验不好”。
+3. **【最高】v0.1.0 公开打 tag + GitHub Release**(操作必须由老板亲自点确认):
    - 把 `launch/oss-public-readiness` 分支的 PR 合到 `main`。
    - `git tag v0.1.0 && git push --tags`。
    - 用 [`docs/launch/v0.1.0-release-notes.md`](docs/launch/v0.1.0-release-notes.md)
      创建 GitHub Release。
    - 检查 GitHub UI 的 description / topics / social preview(见
      [`docs/human/github-publication.md`](docs/human/github-publication.md))。
-2. **【高】按 [`docs/launch/playbook.md`](docs/launch/playbook.md) 执行 D0 上线**:
+4. **【高】按 [`docs/launch/playbook.md`](docs/launch/playbook.md) 执行 D0 上线**:
    - HN Show HN 单次上线只有一次机会,失败不能复发同主题。
    - HN 帖子贴出后 1 分钟内贴作者首条评论,30 分钟内开始值守评论区。
    - 同窗口 Reddit r/LocalLLaMA / r/programming / r/ChatGPTCoding / r/Anthropic
      各发 1 帖,内容互不重复(模板见 playbook §3)。
-3. **【高】Phase 8 dogfood 复盘 + `/view` 真实 IM 验收**:
+5. **【高】Phase 8 dogfood 复盘 + `/view` 真实 IM human 体感 Sample**:
    - 直接可问的问题:
      - `/project aico`
      - `/view`
@@ -1447,16 +1538,17 @@ AICO 的产品边界是 absence-first:
      - `/inbox`
      - `/why <short_id>`
    - 预期效果:老板不需要访问 Mac 本机端口,能在 Telegram 收到 `aico-view-aico.html`;HTML 能看懂 Boss Brief / Timeline / Trace / Memory,且敏感内容只出现在可信聊天里。
-4. **【高】Orchestrator 类拆分(B-005)**:
+   - 验收口径:Agent 先验证真实 `sendDocument`、附件文件名、无 localhost 链接和可打开性;human 只判断手机第一屏是否方便接手、是否发到可信聊天、是否看得顺。
+6. **【高】Orchestrator 类拆分(B-005)**:
    - 把 command handler 实例化 + 分发表迁到 `OrchestratorCommandRegistry` 或类似模块。
    - Orchestrator 主体回到 task 提交 / 流式输出 / 状态协调,恢复单类 <500 行硬约束。
-5. **【中】aico-view Boss Brief 产品化**:
+7. **【中】aico-view Boss Brief 产品化**:
    - 根据 `/view` dogfood 调整 HTML 第一屏:审批、阻塞、昨夜产出、第一行动优先于原始 Timeline。
    - 暂不自动 `/project` 后发送;如真实体验需要,再加 `AICO_VIEW_AUTO_SEND_ON_PROJECT=true`。
-6. **【中】Feishu 文件附件能力评估**:
+8. **【中】Feishu 文件附件能力评估**:
    - 若 Feishu dogfood 需要 `/view`,新增 Feishu 文件上传 Channel capability。
    - 不要在 core 中写平台分支;复用 `DocumentChannel`。
-7. **【低】Future F-1 / F-2**:
+9. **【低】Future F-1 / F-2**:
    - Lead 主动机制和 Team Karpathy Loop 只在 Phase 8 dogfood 确认三块基础体验跑顺后再启动。
 
 ---
@@ -1464,8 +1556,9 @@ AICO 的产品边界是 absence-first:
 ## 当前卡点
 
 参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。当前最高优工程债是 B-005
-`Orchestrator class size regression`(🟡 DEFERRED);本轮 `/view` 继续只做最小接入,
-下一轮建议独立拆分。
+`Orchestrator class size regression`(🟡 DEFERRED)。B-006 已把"人工 dogfood 待测队列缺少机器验收分层"
+关闭为 RESOLVED;当前长链路待测默认按机器 Gate → Agent 本机真实样本 → 1 条 human 体感 Sample 执行,
+不再把本机可验证事项或完整人工回归当成阻塞。
 
 ---
 

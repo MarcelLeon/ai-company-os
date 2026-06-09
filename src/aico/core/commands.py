@@ -104,6 +104,8 @@ def parse_command(text: str) -> Command | None:
         return None
 
     name = first[1:].split("@", maxsplit=1)[0].lower()
+    if name in _COMMAND_ALIASES:
+        return Command(_COMMAND_ALIASES[name], rest.strip() if separator else "")
     try:
         command_name = CommandName(name)
     except ValueError:
@@ -142,7 +144,8 @@ def help_text() -> str:
         "/experience review|list|promote|archive - lead-internal experience lifecycle\n"
         "/undo - reverse the most recent AICO-internal mutation (memory/experience only)\n"
         "/why [short_id] - explain what produced an event (defaults to most recent)\n"
-        "/view [project] - send a read-only HTML aico-view snapshot into IM\n"
+        "/view [project] - send a read-only HTML aico-view snapshot into IM"
+        " (/aico-view is an alias)\n"
         "/timeline [--since 24h --source memory|task|audit --limit 30 --trace <id>]"
         " - lead-internal filtered timeline\n"
         "/rollback memory|experience|task <id> - lead-internal precise reversal"
@@ -181,3 +184,8 @@ def help_text() -> str:
         "/codex <task> - send read-only task to Codex\n"
         "@codex <task> or codex: <task> also work"
     )
+
+
+_COMMAND_ALIASES = {
+    "aico-view": CommandName.VIEW,
+}

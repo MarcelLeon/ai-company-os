@@ -47,7 +47,7 @@ Release Room 更像真实工作:
 5. `/ask challenger ...` 在重要取舍前提出反方意见和隐藏成本。
 6. `/ask implementer ...` 进入真实代码仓库,需要写文件或执行命令时仍走审批。
 7. `/ask reviewer ...` / `/ask tester ...` 做交付前检查,不是同一个 AI 自说自话。
-8. `/overnight ...` 把剩余 release 工作托管给 lead,早上 `/daily` 验收。
+8. `/overnight ...` 把剩余 release 工作托管给 lead,早上 `/morning` 验收。
 9. `/audit` / `/task` 证明发生过的动作可追溯、可回看、可中断。
 
 ## 分阶段落地
@@ -66,7 +66,7 @@ Release Room 更像真实工作:
 当前阶段已落地:
 
 - 用 fake adapters 驱动 release-room 全流程 acceptance test。
-- 覆盖 `/team`、`/remember`、`/ask`、`/approve`、`/overnight`、`/daily`、
+- 覆盖 `/team`、`/remember`、`/ask`、`/approve`、`/overnight`、`/morning`、
   `/tasks`、`/metrics`、`/audit`。
 - 生成无真实 token 的本地文本 transcript,作为 README/GIF 脚本素材。
 

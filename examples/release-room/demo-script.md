@@ -96,7 +96,7 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 ## 7. 早报验收
 
 ```text
-/daily release-room
+/morning
 /tasks
 /metrics
 /audit
@@ -104,7 +104,6 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 
 镜头重点:
 
-- `/daily` 是老板早上真正要看的东西。
+- `/morning` 是老板早上真正要看的交接入口。
 - `/tasks` 和 `/task` 能追踪每个 role 的具体工作。
 - `/audit` 证明 AI 行为不是黑箱。
-

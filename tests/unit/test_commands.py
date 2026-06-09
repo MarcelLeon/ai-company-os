@@ -84,6 +84,14 @@ def test_parse_command_accepts_interrupt_command() -> None:
     assert command.payload == "abcdef12"
 
 
+def test_parse_command_accepts_aico_view_alias() -> None:
+    command = parse_command("/aico-view aico")
+
+    assert command is not None
+    assert command.name is CommandName.VIEW
+    assert command.payload == "aico"
+
+
 def test_parse_command_accepts_memory_commands() -> None:
     remember = parse_command("/remember Phase 7 memory must be agent-driven.")
     recall = parse_command("/recall agent-driven")

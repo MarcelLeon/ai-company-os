@@ -33,7 +33,7 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo
 ```
 
-终端应看到 `/team`、`/remember`、`/ask`、`/approve`、`/overnight`、`/daily` 等命令的完整
+终端应看到 `/team`、`/remember`、`/ask`、`/approve`、`/overnight`、`/morning` 等命令的完整
 transcript。看到这一段说明本机环境就绪。
 
 ## 2. 跑测试基线(2 分钟)

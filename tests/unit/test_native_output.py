@@ -48,6 +48,47 @@ def test_agent_output_message_prefers_native_format_and_falls_back_to_rich_text(
     assert any(span.style is MessageTextStyle.CODE for span in fallback.spans)
 
 
+def test_agent_output_message_splits_glued_native_html_sections() -> None:
+    message = agent_output_message(
+        "<b>Overnight delegation handoff — GitHub launch</b>"
+        '<b>Goal received</b>"prepare launch"'
+        "<b>Decision</b>Ship docs only."
+        "<b>Why</b>:Scope is frozen."
+        "• Done — added launch playbook.",
+        preferred_format=MessageNativeFormat.TELEGRAM_HTML,
+    )
+
+    assert message.native_format is MessageNativeFormat.TELEGRAM_HTML
+    assert message.text == (
+        "<b>Overnight delegation handoff — GitHub launch</b>\n\n"
+        "<b>Goal received</b>\n"
+        '"prepare launch"\n'
+        "<b>Decision</b>\n"
+        "Ship docs only.\n"
+        "<b>Why:</b>\n"
+        "Scope is frozen.\n\n"
+        "• Done — added launch playbook."
+    )
+
+
+def test_agent_output_message_splits_glued_review_bullets() -> None:
+    message = agent_output_message(
+        "• High — Quickstart promise is too strong."
+        "docs/contributors/quickstart.md:22-46 needs GitHub CLI."
+        "。• Medium — Show HN details are mostly defensible."
+        "。• Recommendation — tighten public copy before launch."
+    )
+
+    assert message.text == (
+        "• High — Quickstart promise is too strong."
+        "docs/contributors/quickstart.md:22-46 needs GitHub CLI."
+        "。\n\n"
+        "• Medium — Show HN details are mostly defensible."
+        "。\n\n"
+        "• Recommendation — tighten public copy before launch."
+    )
+
+
 def test_task_with_native_output_format_injects_telegram_contract_when_enabled() -> None:
     task = Task(
         task_id="task-1",

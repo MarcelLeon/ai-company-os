@@ -82,12 +82,12 @@ Claude/PM> Morning handoff: done = release plan and checks staged; blocked = rea
 ## 7. Morning Review
 
 ```text
-Boss> /daily release-room
-AICO> Boss summary
-      - Done: PM, implementer, tester, reviewer, and overnight handoff tasks are visible.
-      - Blocked: v0.2 contract tests are still skipped in the seed repo.
-      - Risks: do not publish until tests are unskipped and passing.
-      - Next actions: implement release, run tests, update release notes.
+Boss> /morning
+AICO> Morning handoff: release-room
+      done: PM, implementer, tester, reviewer, and overnight handoff tasks are visible.
+      blocked: v0.2 contract tests are still skipped in the seed repo.
+      risks: do not publish until tests are unskipped and passing.
+      next actions: implement release, run tests, update release notes.
 
 Boss> /tasks
 AICO> Recent tasks: release-task-001 ... release-task-006
@@ -98,4 +98,3 @@ AICO> Metrics (live)
 Boss> /audit
 AICO> Recent audit events: task_submitted, approval_requested, approval_approved, adapter_dispatched, task_completed.
 ```
-

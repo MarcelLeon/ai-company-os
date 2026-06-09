@@ -124,10 +124,10 @@ async def test_release_room_stage2_local_acceptance_transcript(tmp_path: Path) -
     assert overnight_task is not None
     assert "Morning handoff:" in channel.edited_messages[-1].text
 
-    await _send(orchestrator, "/daily release-room")
-    assert "Boss summary" in channel.sent_messages[-1].text
+    await _send(orchestrator, "/morning")
+    assert "Morning handoff: release-room" in channel.sent_messages[-1].text
     assert "Done:" in channel.sent_messages[-1].text
-    assert "Daily report" in channel.sent_messages[-1].text
+    assert "Risks:" in channel.sent_messages[-1].text
 
     await _send(orchestrator, "/tasks")
     assert "Recent tasks:" in channel.sent_messages[-1].text
@@ -158,7 +158,7 @@ def test_release_room_stage2_transcript_documents_the_acceptance_path() -> None:
         "/ask tester",
         "/ask reviewer",
         "/overnight",
-        "/daily release-room",
+        "/morning",
         "/metrics",
         "/audit",
     ):
