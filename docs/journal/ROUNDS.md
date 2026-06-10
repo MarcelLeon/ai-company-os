@@ -7396,3 +7396,57 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 149。
 - 不新增 ADR:本轮是发布视觉表达修正,不改变运行架构。
+
+---
+
+## Round 150 — 2026-06-10 — Codex
+
+### 输入
+- 人类要求 review 中英文 README,确认是否有不符合事实的描述;如果没有问题,推送代码到远程
+  `main`。
+
+### 思考与讨论
+- 当前发布口径必须区分“已实现切片”和“稳定公开入口”:
+  - Telegram 控制链路已经 dogfooding,可以作为当前主入口写进 README。
+  - Feishu Channel 已实现文本发送、编辑、删除、URL verification、事件解析、webhook runtime
+    和本地幂等,但生产 callback smoke test 仍待完成,不能与 Telegram 并列成稳定入口。
+- “老板不在电脑前”是北极星,但 AICO 仍是本机 AI CLI 前面的控制层;公开文案不能让读者误解为
+  完全不需要本机 laptop / Mac 运行。
+- 其余 README 主张与当前 repo 状态一致:Release Room no-token demo、boss-absent GIF/social
+  preview、`/morning`、`/view`、审批审计、Cursor / CodeFlicker / Trae / Gemini smoke 状态均有
+  STATUS / quickstart / 代码入口支撑。
+
+### 产出
+- `README.md`:
+  - 开头从 `Telegram or Feishu` 改为 `Telegram today`,并明确 Feishu 仍待 production smoke。
+  - 从 `with no laptop required` 改为 `without sitting at the laptop`。
+  - 对比表从 `Run while you're away from the laptop` 收紧为 `Control local agents while you're away
+    from the laptop`。
+  - IM-native control 行标注 `Telegram; Feishu first slice`。
+- `README.zh-CN.md`:
+  - 开头改为当前通过 Telegram 远程管理;飞书是第一个非 Telegram Channel 切片,待生产 smoke
+    后再作为稳定入口推荐。
+  - “IM 主控台”能力点同步标注飞书仍待生产 smoke test。
+- `STATUS.md`:当前轮次更新为 Round 150,并记录 README 发布前事实审校完成。
+
+### 验证结果
+- `uv run ruff check .` → **passed**。
+- `uv run ruff format --check .` → **142 files already formatted**。
+- `git diff --check` → **passed**。
+- `uv run pytest tests/unit/test_release_room_acceptance.py tests/unit/test_release_room_demo.py -q`
+  → **3 passed**。
+- `env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo`
+  → 成功输出 Release Room no-token demo,包含 `/morning` handoff 和 `/audit`。
+
+### 关键决策
+- 🔒 **决策 1**:README 不把 Feishu 写成稳定公开入口,直到生产 callback smoke test 完成。
+- 🔒 **决策 2**:boss-absent 文案强调“无需坐在电脑前操作”,不暗示 AICO 脱离本机运行。
+
+### 留给下一轮
+- 仓库 owner 改 public 前,仍需按 `docs/human/github-publication.md` 在 GitHub UI 最终确认
+  social preview 和 visibility。
+- Feishu 完成生产 smoke 后,再把 README / quickstart 中的 Feishu 口径升级为稳定入口。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 150。
+- 不新增 ADR:本轮是发布文案事实审校,不改变运行架构。

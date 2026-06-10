@@ -15,8 +15,9 @@
 
 AICO turns the AI tools already on your laptop — Claude Code, Codex, Cursor, Gemini,
 Trae, CodeFlicker, or your own CLI — into a remote project team you can manage from
-Telegram or Feishu. Roles, project memory, approval gates, audit trails, task status,
-and a morning handoff — all over IM, with no laptop required.
+Telegram today. Feishu is implemented as the first non-Telegram channel slice and is
+still awaiting production smoke. Roles, project memory, approval gates, audit trails,
+task status, and a morning handoff — all over IM, without sitting at the laptop.
 
 > **Try it in 30 seconds, no tokens needed:**
 > ```bash
@@ -41,8 +42,8 @@ remotely, while they're not at the desk.
 
 |  | Cursor / Aider / Continue | SWE-agent / OpenDevin | Multi-agent frameworks (CrewAI / AutoGen) | **AI Company OS** |
 |---|:---:|:---:|:---:|:---:|
-| Run while you're away from the laptop | ❌ | ❌ | partial | ✅ |
-| IM-native control (Telegram / Feishu) | ❌ | ❌ | ❌ | ✅ |
+| Control local agents while you're away from the laptop | ❌ | ❌ | partial | ✅ |
+| IM-native control (Telegram; Feishu first slice) | ❌ | ❌ | ❌ | ✅ |
 | Multi-CLI orchestration (Claude + Codex + Cursor + …) | ❌ | ❌ | rebuild yourself | ✅ |
 | Approval gate before file/shell writes | ❌ | ❌ | ❌ | ✅ |
 | Audit log + restart-aware state | ❌ | partial | ❌ | ✅ |

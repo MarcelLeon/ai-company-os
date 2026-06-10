@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-06-10
-**当前轮次**:Round 149(boss-absent-public-assets)
+**当前轮次**:Round 150(readme-factual-review)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -327,11 +327,24 @@ AICO 的产品边界是 absence-first:
 - [x] Release Room Stage 3 public GIF / README showcase。
 - [x] Release Room README GIF D0 复剪:按 `examples/release-room/shot-rhythm.md` 展示
   `/morning` 和 `/view`,首帧直接进入 boss-absent 产品画面(Round 149)。
+- [x] README 发布前事实审校:中英文 README 已收紧 Feishu 稳定性边界,避免把尚待生产
+  smoke 的 Feishu Channel 写成与 Telegram 同等稳定公开入口(Round 150)。
 - [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 150**(2026-06-10,Codex — readme factual review):
+- 按人类要求 review 中英文 README,核对当前实现状态和公开发布口径。
+- 发现并修正两处容易造成外部误解的表述:
+  - 英文 README 不再写成 `Telegram or Feishu` 同等稳定入口,改为 Telegram today;
+    Feishu 是 first non-Telegram channel slice,仍待 production smoke。
+  - 英文 README 不再写 `with no laptop required`,改为不用坐在电脑前;中文 README 同步说明
+    当前主入口是 Telegram,飞书待生产 smoke 后再作为稳定入口推荐。
+- 其余 README 主张与当前状态一致:boss-absent 叙事、Release Room demo、`/morning`、
+  `/view`、审批审计、Cursor / CodeFlicker / Trae / Gemini smoke 状态均与 STATUS / quickstart
+  口径一致。
 
 **Round 149**(2026-06-10,Codex — boss-absent public assets):
 - 人类指出 Round 148 生成的 `social-preview.png` 和 GIF 虽有 `while you are away`、`/morning`
