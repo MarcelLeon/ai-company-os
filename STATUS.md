@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-06-10
-**当前轮次**:Round 148(public-assets-and-pre-public-checks)
+**当前轮次**:Round 149(boss-absent-public-assets)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -87,7 +87,8 @@ AICO 的产品边界是 absence-first:
 - [x] Stage 3 Codex 输出清理:修复跨 provider session resume、role 改任命 session 复用和 CLI warning/HTML 噪音入镜问题;真实 Telegram dry run 可用。
 - [x] Stage 3:真实 IM + Claude/Codex dogfooding 录屏,生成 README 首页可嵌入 GIF。
 - [x] README GIF D0 复剪:新增 transcript-driven public GIF,`docs/assets/release-room-demo.gif`
-  约 36 秒、`960 x 540`,首帧为当前 IM 产品画面,并展示 `/morning` + `/view`(Round 148)。
+  约 36 秒、`960 x 540`;Round 149 已把首帧 / social preview 改为明确 boss-absent 假设,
+  并展示 `/morning` + `/view`。
 - [x] GitHub social preview 资产生成:`docs/assets/social-preview.png`,`1280 x 640`,小于 1 MB,
   public 前需仓库 owner 在 GitHub UI 上传 / 确认(Round 148)。
 - [x] 开源首屏第一版:英文主 README、中文 README、痛点/差异化/当前可用能力、Quickstart 状态修正、MIT License、SECURITY 和 issue templates。
@@ -325,12 +326,32 @@ AICO 的产品边界是 absence-first:
 - [x] Release Room Stage 3 Codex provider-output cleanup and real Telegram dry run。
 - [x] Release Room Stage 3 public GIF / README showcase。
 - [x] Release Room README GIF D0 复剪:按 `examples/release-room/shot-rhythm.md` 展示
-  `/morning` 和 `/view`,首帧直接进入当前 IM 产品画面(Round 148)。
+  `/morning` 和 `/view`,首帧直接进入 boss-absent 产品画面(Round 149)。
 - [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 149**(2026-06-10,Codex — boss-absent public assets):
+- 人类指出 Round 148 生成的 `social-preview.png` 和 GIF 虽有 `while you are away`、`/morning`
+  和 `/view`,但没有把 boss-absent 假设作为第一视觉信号;要求判断这是能力不足还是疏忽。
+- 判断:这是表达疏忽,不是能力不足。当前能力已经有 `/overnight`、`/morning`、`/view`、
+  审批和审计链路,足以支撑 boss-absent 叙事。
+- 更新 `examples/release-room/generate-public-gif.py`:
+  - GIF 首帧 title 改为 `Boss-Absent Mode`。
+  - 顶部副标题改为 `Boss-absent release room`。
+  - 右侧面板改为 `Boss-absent loop` / `What still works while you are away`。
+  - footer 改为 `Boss absent - local agents still work - approval and audit stay visible`。
+  - social preview 主文案改为 `Boss absent. Local agents still work.`。
+  - social preview 大字改为 `Leave the laptop. Keep the team moving.`。
+- 重新生成资产:
+  - `docs/assets/release-room-demo.gif`:36 秒、`960 x 540`、约 278 KB。
+  - `docs/assets/social-preview.png`:`1280 x 640`、约 48 KB。
+- 视觉复核:
+  - `/tmp/aico_absent_first_frame.png`:首帧明确 boss-absent。
+  - `/tmp/aico_absent_contact.png`:8 帧均可读,后段包含 `/morning` 和 `/view`。
+  - `/tmp/aico_absent_social.png`:social preview 首屏明确 boss-absent。
 
 **Round 148**(2026-06-10,Codex — public assets and pre-public checks):
 - 按人类要求继续 public 前收口,优先解决 Round 147 标出的 README GIF 首印象 blocker。
@@ -339,7 +360,7 @@ AICO 的产品边界是 absence-first:
     public GIF,不依赖真实 Telegram 录屏、provider token 或手工剪辑。
   - 同时生成 GitHub Social preview 静态图。
 - 生成并替换发布资产:
-  - `docs/assets/release-room-demo.gif`:约 36 秒、`960 x 540`、约 279 KB、8 个场景;首帧就是当前
+  - `docs/assets/release-room-demo.gif`:约 36 秒、`960 x 540`、约 279 KB、8 个场景;首帧为当前
     IM 产品画面,并覆盖 `/team`、`/remember`、`/ask`、`/approve`、`/overnight`、`/morning`、
     `/view`、`/audit`。
   - `docs/assets/social-preview.png`:`1280 x 640`、约 51 KB,用于 GitHub Social preview 上传。
@@ -1556,7 +1577,8 @@ AICO 的产品边界是 absence-first:
 
 1. **【最高】GitHub UI 最终复核并改 public**:
    - README 文案、no-token demo、README GIF 和 social preview asset 已对齐当前 RC。
-   - `docs/assets/release-room-demo.gif` 已是 36 秒、`960 x 540`,包含 `/morning` + `/view`。
+   - `docs/assets/release-room-demo.gif` 已是 36 秒、`960 x 540`,首屏明确 boss-absent,
+     包含 `/morning` + `/view`。
    - `docs/assets/social-preview.png` 已生成,仓库 owner 需要在 GitHub UI 的 Social preview 上传 / 确认。
    - GitHub About description 可通过 `gh repo view` 看到;topics / visibility / social preview 仍需 public 前 live 复核。
    - public / tag / Release 按 [`docs/agent/09-github-release-ops.md`](docs/agent/09-github-release-ops.md)

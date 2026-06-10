@@ -45,11 +45,11 @@ class Scene:
 
 SCENES = (
     Scene(
-        title="Project Office",
-        subtitle="Open a release room from IM.",
+        title="Boss-Absent Mode",
+        subtitle="Leave the laptop. Your local AI team stays reachable by IM.",
         boss=("/use project release-room", "/team"),
         aico=("release-room", "lead: pm -> claude", "pm / implementer / tester / reviewer"),
-        focus="Team",
+        focus="Away",
         duration_ms=4000,
     ),
     Scene(
@@ -65,7 +65,7 @@ SCENES = (
         subtitle="A fuzzy goal becomes owned jobs.",
         boss=("/ask pm split v0.2 into role tasks",),
         aico=("implementer: code + docs", "tester: contract tests", "reviewer: release risk"),
-        focus="Plan",
+        focus="Team",
         duration_ms=4500,
     ),
     Scene(
@@ -85,8 +85,8 @@ SCENES = (
         duration_ms=4500,
     ),
     Scene(
-        title="Overnight Delegation",
-        subtitle="Leave the lead with work while you are away.",
+        title="Away From Laptop",
+        subtitle="Delegate overnight without giving up approval.",
         boss=("/overnight push v0.2 and report done/blocked/risks/next",),
         aico=("Overnight delegation queued", "project: release-room", "lead: pm -> claude"),
         focus="Overnight",
@@ -115,14 +115,14 @@ SCENES = (
 )
 
 FOCUS_ITEMS = (
+    ("Away", "boss absent"),
     ("Team", "project roles"),
     ("Memory", "shared context"),
-    ("Plan", "role handoff"),
     ("Approval", "write/run gate"),
     ("Review", "independent checks"),
     ("Overnight", "offline delegation"),
     ("Morning", "done / blocked / next"),
-    ("View", "HTML snapshot + audit"),
+    ("View", "HTML snapshot"),
 )
 
 
@@ -162,7 +162,7 @@ def _draw_header(draw: ImageDraw.ImageDraw, scene: Scene, index: int) -> None:
     draw.rounded_rectangle((28, 22, WIDTH - 28, 82), radius=18, fill="#ffffff")
     draw.ellipse((52, 46, 64, 58), fill="#18a058")
     draw.text((76, 35), "AI Company OS", fill="#111827", font=_font(24, bold=True))
-    draw.text((284, 41), "Release Room demo", fill="#64748b", font=_font(17))
+    draw.text((284, 41), "Boss-absent release room", fill="#64748b", font=_font(17))
     draw.text(
         (WIDTH - 158, 39), f"{index + 1}/{len(SCENES)}", fill="#64748b", font=_font(18, bold=True)
     )
@@ -225,8 +225,10 @@ def _bubble(
 def _draw_panel(draw: ImageDraw.ImageDraw, scene: Scene) -> None:
     x0, y0, x1, y1 = 500, 166, 920, 492
     draw.rounded_rectangle((x0, y0, x1, y1), radius=20, fill="#ffffff")
-    draw.text((x0 + 26, y0 + 24), "Operating surface", fill="#111827", font=_font(22, bold=True))
-    draw.text((x0 + 26, y0 + 54), "What the boss sees from IM", fill="#64748b", font=_font(16))
+    draw.text((x0 + 26, y0 + 24), "Boss-absent loop", fill="#111827", font=_font(22, bold=True))
+    draw.text(
+        (x0 + 26, y0 + 54), "What still works while you are away", fill="#64748b", font=_font(16)
+    )
     grid_y = y0 + 92
     col_w = 176
     row_h = 45
@@ -256,14 +258,14 @@ def _draw_panel(draw: ImageDraw.ImageDraw, scene: Scene) -> None:
     draw.rounded_rectangle((x0 + 24, y1 - 58, x1 - 24, y1 - 24), radius=12, fill="#0f172a")
     draw.text(
         (x0 + 42, y1 - 49),
-        "Local agents stay local. Approval and audit stay visible.",
+        "The boss can leave. Approval and audit stay visible.",
         fill="#ffffff",
         font=_font(13, bold=True),
     )
 
 
 def _draw_footer(draw: ImageDraw.ImageDraw) -> None:
-    footer = "No-token transcript - Telegram / Feishu - Claude Code / Codex / Cursor"
+    footer = "Boss absent - local agents still work - approval and audit stay visible"
     draw.text(
         (44, HEIGHT - 34),
         footer,
@@ -285,11 +287,11 @@ def _render_social_preview() -> Image.Image:
     draw.text((110, 120), "AI Company OS", fill="#111827", font=_font(64, bold=True))
     draw.text(
         (112, 202),
-        "Run local AI coding agents from Telegram or Feishu.",
+        "Boss absent. Local agents still work.",
         fill="#334155",
         font=_font(30, bold=True),
     )
-    tags = ("Telegram / Feishu", "Claude Code / Codex", "Approval + Audit")
+    tags = ("IM control", "Overnight handoff", "Approval + Audit")
     x = 112
     for tag in tags:
         width = int(draw.textlength(tag, font=_font(22, bold=True))) + 42
@@ -310,7 +312,7 @@ def _render_social_preview() -> Image.Image:
     _social_bubble(draw, 938, 426, "HTML snapshot attached", mine=False)
     draw.text(
         (112, 430),
-        "Run a local AI team while you are away.",
+        "Leave the laptop. Keep the team moving.",
         fill="#0f172a",
         font=_font(34, bold=True),
     )

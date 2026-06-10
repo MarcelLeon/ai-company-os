@@ -79,8 +79,8 @@ gh release list --repo MarcelLeon/ai-company-os --limit 5
 
 2026-06-10 的 public 前复核结论:
 
-- `docs/assets/release-room-demo.gif` 已重新生成:约 36 秒、`960 x 540`,首帧是当前 IM
-  产品画面,并展示 `/morning` 和 `/view`。
+- `docs/assets/release-room-demo.gif` 已重新生成:约 36 秒、`960 x 540`,首帧明确
+  boss-absent 假设,并展示 `/morning` 和 `/view`。
 - `docs/assets/social-preview.png` 已生成:GitHub 推荐比例 `1280 x 640`,小于 1 MB。
 - 后续如果替换成真实 IM 精剪版,必须保持同等首帧质量、时长和 `/view` 展示。
 

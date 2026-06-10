@@ -15,9 +15,10 @@
 - README GIF 优先 45 秒左右;长版视频可以保留 70-90 秒。
 - 如果真实 Claude CLI 额度不足,先用 Stage 2 transcript 做无 token 展示稿;真实 IM 录屏只作为 dogfooding 证据补拍。
 
-Round 148 已用 `generate-public-gif.py` 生成 transcript-driven public GIF:
-`docs/assets/release-room-demo.gif` 约 36 秒、`960 x 540`,首帧为当前 IM 产品画面,并展示
-`/morning` 和 `/view`。同轮还生成 `docs/assets/social-preview.png` 用于 GitHub Social preview。
+Round 148 已用 `generate-public-gif.py` 生成 transcript-driven public GIF。Round 149 根据
+boss-absent 反馈更新文案:`docs/assets/release-room-demo.gif` 约 36 秒、`960 x 540`,首帧明确
+boss-absent 假设,并展示 `/morning` 和 `/view`;`docs/assets/social-preview.png` 用于 GitHub
+Social preview。
 
 ## README GIF 节奏
 

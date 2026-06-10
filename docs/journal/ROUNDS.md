@@ -7339,3 +7339,60 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - `STATUS.md` 当前轮次更新为 Round 148。
 - `docs/journal/PITFALLS.md` P-039 标记 RESOLVED。
 - 不新增 ADR:本轮是发布素材生成和 public 前资产治理,不改变运行架构。
+
+---
+
+## Round 149 — 2026-06-10 — Codex
+
+### 输入
+- 人类质疑 `docs/assets/social-preview.png` 和 README GIF 是否真正体现核心价值观,尤其是
+  boss-absent 假设。
+- 人类明确指出:如果没加是因为当前能力不足可以理解;如果是疏忽,就补全并重新生成发布到 `main`。
+
+### 思考与讨论
+- 结论:这是表达疏忽,不是能力不足。
+- 当前能力已经支撑 boss-absent 叙事:
+  - `/overnight` 支持离线托管。
+  - `/morning` 支持早上接手。
+  - `/view` 支持 IM 里拿 HTML snapshot。
+  - `/approve` / `/audit` 让老板离开电脑后仍保留审批和追责边界。
+- Round 148 的资产虽然写了 `while you are away`,但放在 secondary copy 中;第一眼仍像普通 Release Room
+  demo,没有把北极星第一句的 absence-first wedge 打出来。
+
+### 产出
+- `examples/release-room/generate-public-gif.py`:
+  - GIF 第一帧 title 改为 `Boss-Absent Mode`。
+  - 顶部副标题改为 `Boss-absent release room`。
+  - 右侧面板改为 `Boss-absent loop` / `What still works while you are away`。
+  - footer 改为 `Boss absent - local agents still work - approval and audit stay visible`。
+  - social preview 主文案改为 `Boss absent. Local agents still work.`。
+  - social preview 大字改为 `Leave the laptop. Keep the team moving.`。
+- 重新生成发布资产:
+  - `docs/assets/release-room-demo.gif`:36 秒、`960 x 540`、约 278 KB。
+  - `docs/assets/social-preview.png`:`1280 x 640`、约 48 KB。
+- 文档同步:
+  - `STATUS.md` 当前轮次更新为 Round 149。
+  - `docs/human/github-publication.md`、`docs/examples/release-room.md`、
+    `examples/release-room/shot-rhythm.md` 和 P-039 说明 Round 149 的 boss-absent 修正。
+
+### 验证结果
+- `python3 examples/release-room/generate-public-gif.py` → 成功写出 GIF 和 PNG。
+- `file docs/assets/release-room-demo.gif docs/assets/social-preview.png`
+  → GIF `960 x 540`;PNG `1280 x 640`。
+- `ffprobe docs/assets/release-room-demo.gif`
+  → duration `36.000000`,nb_frames `8`,size `284831` bytes。
+- PIL 抽取首帧到 `/tmp/aico_absent_first_frame.png`,视觉检查通过。
+- PIL 抽取 8 帧 contact sheet 到 `/tmp/aico_absent_contact.png`,确认全流程可读。
+- `docs/assets/social-preview.png` 另存到 `/tmp/aico_absent_social.png`,视觉检查通过。
+
+### 关键决策
+- 🔒 **决策 1**:公开首屏资产必须把 boss-absent 当作第一视觉信号,不是藏在说明文案里。
+- 🔒 **决策 2**:这是产品表达修正,不是新功能扩展;不改变 v0.1.0 范围。
+
+### 留给下一轮
+- 上传 / 确认 GitHub Social preview 时使用新的 `docs/assets/social-preview.png`。
+- public / tag / release 前最后再按 `docs/agent/09-github-release-ops.md` live 复核仓库状态。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 149。
+- 不新增 ADR:本轮是发布视觉表达修正,不改变运行架构。

@@ -1466,8 +1466,9 @@ D0 首印象验收:第一帧、时长、是否展示最新命令、是否适合 
   `/approve`、`/overnight`、`/morning`、`/view`、`/audit` 的最短闭环。
 - GitHub social preview 另做静态 `1280 x 640` PNG,不要直接上传 README 动图。
 - Round 148 新增 `examples/release-room/generate-public-gif.py`,生成稳定 transcript-driven
-  README GIF 和 social preview:
-  - `docs/assets/release-room-demo.gif`:约 36 秒、`960 x 540`,首帧为当前 IM 产品画面。
+  README GIF 和 social preview;Round 149 根据人类反馈把首帧和 social preview 主文案改为明确
+  boss-absent 假设:
+  - `docs/assets/release-room-demo.gif`:约 36 秒、`960 x 540`,首帧明确 boss-absent 假设。
   - `docs/assets/social-preview.png`:`1280 x 640`,小于 1 MB,用于 GitHub Social preview。
 
 **如何避免再次踩中**
@@ -1481,5 +1482,6 @@ D0 首印象验收:第一帧、时长、是否展示最新命令、是否适合 
 
 **相关链接**
 - ROUNDS Round 148
+- ROUNDS Round 149
 - ROUNDS Round 147
 - P-038

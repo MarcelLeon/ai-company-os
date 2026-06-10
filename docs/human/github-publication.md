@@ -121,8 +121,8 @@ docs/assets/social-preview.png
 4. 点击 `Edit` -> `Upload an image...`。
 5. 上传 `1280 x 640` 且小于 1 MB 的 PNG / JPG / GIF。
 
-当前 `docs/assets/release-room-demo.gif` 已在 Round 148 重新生成:约 279 KB、`960 x 540`、
-36 秒,首帧为当前 IM 产品画面,并展示 `/morning` 和 `/view`。README 可继续引用该 GIF。
+当前 `docs/assets/release-room-demo.gif` 已在 Round 149 更新:约 278 KB、`960 x 540`、
+36 秒,首帧明确 boss-absent 假设,并展示 `/morning` 和 `/view`。README 可继续引用该 GIF。
 GitHub social preview 仍建议上传上面的静态 PNG,不要直接上传 README 动图。
 
 Agent 负责 tag / GitHub Release / D0 运维时,还要读
