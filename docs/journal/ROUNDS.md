@@ -7450,3 +7450,67 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 150。
 - 不新增 ADR:本轮是发布文案事实审校,不改变运行架构。
+
+---
+
+## Round 151 — 2026-06-10 — Codex
+
+### 输入
+- 人类指出 README 中“GitHub 发布页怎么配置”与项目展示无关,要求删除。
+- 人类要求检查 README 中的 cmd 命令是否经得起推敲,能本地运行的必须确认,避免公开首印象
+  被错误命令破坏。
+
+### 思考与讨论
+- README 是面向外部读者的首屏,GitHub metadata / social preview 的后台配置属于发布运维,
+  不应该占用项目展示篇幅。
+- README 命令要分层处理:
+  - 无 token demo 和 `uv sync` 应按 README 原样实际运行。
+  - `aico-phase1` 是需要真实 Telegram token 的长驻 runtime,不能当作会跑完退出的 demo;
+    README 需要明确这一点。
+  - Telegram 内 `/help`、`/status`、`/project aico`、`/team`、`/ask`、`/inbox`、`/morning`、
+    `/tasks`、`/audit` 应由命令解析 / orchestrator / release-room acceptance 测试覆盖。
+- 中文 README 开头把 OpenClaw / 公司内部 CLI 与已实现 Adapter 并列,也会造成事实误解;当前代码
+  没有 OpenClaw adapter,应改成后续可按 Adapter 协议接入。
+
+### 产出
+- `README.md`:
+  - 删除 `GitHub Publication Checklist` 段落。
+  - 在 Quickstart 后补充 `aico-phase1` 是 long-running Telegram runtime,使用 bot 时保持运行,
+    停止用 `Ctrl-C`。
+  - `What It Does` 中 Feishu first slice 继续标注 pending production smoke。
+- `README.zh-CN.md`:
+  - 删除 `GitHub 发布页怎么配置` 段落。
+  - 在 Quickstart 后补充 `aico-phase1` 是长驻 Telegram runtime。
+  - 开头把 OpenClaw / 公司内部 AI CLI 从当前已收编对象改为后续可按 Adapter 协议接入。
+- `STATUS.md`:当前轮次更新为 Round 151,记录 README 展示面和命令验证完成。
+
+### 验证结果
+- README 命令:
+  - `env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo`
+    → 成功输出 Release Room no-token demo。
+  - `env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11`
+    → `Resolved 31 packages`;`Checked 30 packages`。
+  - `env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1 --help`
+    → 成功显示 `Run the Phase 1 Telegram -> Claude Code local runtime`。
+  - `env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-state --db /tmp/aico-readme-state.db`
+    → 成功显示 schema version 和 table counts。
+- Telegram 命令测试:
+  - 第一次 pytest selector 写错,返回 `not found`,未作为产品失败处理。
+  - 改跑真实存在的命令 / orchestrator / release-room 测试:
+    `uv run pytest tests/unit/test_commands.py tests/unit/test_orchestrator.py tests/unit/test_release_room_acceptance.py tests/unit/test_release_room_demo.py -q`
+    → **90 passed**。
+
+### 关键决策
+- 🔒 **决策 1**:README 首屏不放 GitHub metadata / release ops 配置,这些留在
+  `docs/human/github-publication.md` 和 `docs/agent/09-github-release-ops.md`。
+- 🔒 **决策 2**:README 只把已实现并验证的 Adapter 写成当前能力;OpenClaw 等未实现工具只作为
+  协议扩展目标出现。
+- 🔒 **决策 3**:长驻 runtime 命令必须说明运行形态,不能让读者误以为它会像 demo 一样退出。
+
+### 留给下一轮
+- 仓库公开前如果 README 再加任何 bash 命令,必须同步跑一次 README command smoke。
+- public / tag / release 仍按 `docs/agent/09-github-release-ops.md` 执行,但不再放进 README 首屏。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 151。
+- 不新增 ADR:本轮是 README 展示面和命令 smoke,不改变运行架构。

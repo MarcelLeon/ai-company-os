@@ -56,7 +56,7 @@ remotely, not a smarter chat UI for one agent.
 ## What It Does
 
 - **IM-first command center**: manage agents from Telegram today, with Feishu as the first
-  non-Telegram channel slice.
+  non-Telegram channel slice still pending production smoke.
 - **Real local adapters**: route work to Claude Code, Codex, Cursor, CodeFlicker, Trae,
   Gemini, and future local or company CLIs through one adapter contract.
 - **Project office semantics**: model projects, roles, appointments, leads, team views,
@@ -172,6 +172,9 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
 ```
 
+`aico-phase1` is the long-running Telegram runtime. Leave it open while you use the bot;
+stop it with `Ctrl-C`.
+
 Then message your Telegram bot:
 
 ```text
@@ -246,17 +249,6 @@ Near-term work:
 - Pluggable semantic backend behind the memory retriever.
 
 See [STATUS.md](STATUS.md) for the live roadmap.
-
-## GitHub Publication Checklist
-
-Repository description, topics, and social preview are GitHub repository metadata, so
-they must be configured in the GitHub UI by a repository admin. Use
-[docs/human/github-publication.md](docs/human/github-publication.md) for the exact text,
-topic list, image guidance, and click path.
-
-AI agents preparing a public release should also follow
-[docs/agent/09-github-release-ops.md](docs/agent/09-github-release-ops.md) before
-tagging or creating a GitHub Release.
 
 ## Contributing
 

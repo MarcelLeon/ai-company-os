@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-06-10
-**当前轮次**:Round 150(readme-factual-review)
+**当前轮次**:Round 151(readme-showcase-command-review)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -329,11 +329,35 @@ AICO 的产品边界是 absence-first:
   `/morning` 和 `/view`,首帧直接进入 boss-absent 产品画面(Round 149)。
 - [x] README 发布前事实审校:中英文 README 已收紧 Feishu 稳定性边界,避免把尚待生产
   smoke 的 Feishu Channel 写成与 Telegram 同等稳定公开入口(Round 150)。
+- [x] README 展示面收口:移除 GitHub 发布页配置段,补充 `aico-phase1` 是长驻 runtime,
+  并实际验证 README 中可运行命令和 Telegram 命令测试覆盖(Round 151)。
 - [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 151**(2026-06-10,Codex — readme showcase command review):
+- 人类指出 README 中“GitHub 发布页怎么配置”与项目展示无关,要求删除,并要求 README
+  中的 cmd 命令经得起推敲,不能给错命令影响第一印象。
+- README 展示面调整:
+  - 英文 `GitHub Publication Checklist` 段落删除。
+  - 中文 `GitHub 发布页怎么配置` 段落删除。
+  - 中英文 Quickstart 均补充 `aico-phase1` 是长驻 Telegram runtime,需要保持运行,
+    停止时按 `Ctrl-C`。
+  - 中文开头把 OpenClaw / 公司内部 CLI 从当前已收编对象改为后续可按 Adapter 协议接入,
+    避免把未实现 Adapter 写成当前能力。
+  - 英文能力点再次标注 Feishu first slice 仍待 production smoke。
+- README 命令验证:
+  - `env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo`
+    本地跑通。
+  - `env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11` 本地跑通。
+  - `env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1 --help`
+    本地跑通,确认 entrypoint 存在;真实 `aico-phase1` 仍需要 Telegram token 并会长驻运行。
+  - `env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-state --db /tmp/aico-readme-state.db`
+    本地跑通。
+  - Telegram README 命令由 `tests/unit/test_commands.py`、`tests/unit/test_orchestrator.py`
+    和 Release Room acceptance 覆盖。
 
 **Round 150**(2026-06-10,Codex — readme factual review):
 - 按人类要求 review 中英文 README,核对当前实现状态和公开发布口径。

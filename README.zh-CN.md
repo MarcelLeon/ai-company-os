@@ -5,8 +5,9 @@
 [English](README.md) · [快速上手](docs/human/quickstart.md) · [Release Room Demo](docs/examples/release-room.md) · [路线图](STATUS.md) · [老板第一路线图](docs/architecture/boss-first-grounding.md) · [Agent 接手入口](AGENTS.md)
 
 AI Company OS 把你电脑上的 Claude Code、Codex、Cursor、Gemini、Trae、CodeFlicker、
-OpenClaw 或公司内部 AI CLI 收编成一个可以通过 Telegram 远程管理的项目团队。飞书已经实现
-第一个非 Telegram Channel 切片,但仍待生产 smoke test 后再作为稳定入口推荐。
+或你自己的 CLI 收编成一个可以通过 Telegram 远程管理的项目团队。飞书已经实现第一个非
+Telegram Channel 切片,但仍待生产 smoke test 后再作为稳定入口推荐;OpenClaw 或公司内部
+AI CLI 可以按同一 Adapter 协议后续接入。
 
 它不是另一个聊天 UI。它更像一个小型运营层:当你离开电脑时,仍能用 IM 派工、审批、
 打断、看日报、查审计,让本机 agent 以项目、岗位、记忆和交付状态的方式继续工作。
@@ -153,6 +154,8 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
 ```
 
+`aico-phase1` 是长驻 Telegram runtime。使用 bot 时保持它运行;停止时按 `Ctrl-C`。
+
 然后在 Telegram Bot 中发送:
 
 ```text
@@ -213,15 +216,6 @@ agent 的操作契约:
 - 在 absence loop 上继续做多 step / 多 agent 夜间编排。
 
 实时路线图见 [STATUS.md](STATUS.md)。
-
-## GitHub 发布页怎么配置
-
-仓库 description、topics 和 social preview 是 GitHub 仓库 metadata,需要仓库管理员在
-GitHub UI 中手动配置,不能只靠 README 自动生效。可复制的文案、topic 列表和点击路径见
-[docs/human/github-publication.md](docs/human/github-publication.md)。
-
-AI Agent 负责公开发布、tag 或 GitHub Release 时,还必须按
-[docs/agent/09-github-release-ops.md](docs/agent/09-github-release-ops.md) 做发布前核对。
 
 ## 贡献
 
