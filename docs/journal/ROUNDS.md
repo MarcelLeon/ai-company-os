@@ -7262,3 +7262,80 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - `STATUS.md` 当前轮次更新为 Round 147。
 - `docs/journal/PITFALLS.md` 新增 P-039(active)。
 - 不新增 ADR:本轮是发布运维 SOP 和公开素材 gate,不改变运行架构。
+
+---
+
+## Round 148 — 2026-06-10 — Codex
+
+### 输入
+- 人类要求:生成新 GIF,并搞定改为 public 前的其他动作。
+- 本轮目标:优先解决 P-039 的 README GIF 首印象问题,再继续 public 前可由 Agent 完成的资产和仓库状态检查。
+
+### 思考与讨论
+- 候选 A:继续手剪旧 `release-room-demo.gif` → ❌ 否决。旧素材首帧和内容结构已经不适合当前产品故事,继续剪会把精力花在补救历史录屏上。
+- 候选 B:录一段新的真实 Telegram GIF → ❌ 暂缓。真实 provider / Telegram 录屏适合作为 dogfooding 证据,但当前 public 前最紧急的是生成稳定、干净、无 token、无私聊露出的 README 首屏资产。
+- 候选 C:新增 transcript-driven public asset generator → ✅ 选定。它复用 Release Room shot rhythm,可重复生成,不冒充真实 Telegram 截图,也不依赖 provider token。
+
+### 产出
+- 新增 `examples/release-room/generate-public-gif.py`:
+  - 用 PIL 生成干净 IM 风格 Release Room GIF。
+  - 覆盖 `/team`、`/remember`、`/ask`、`/approve`、`/overnight`、`/morning`、`/view`、`/audit`。
+  - 同时生成 GitHub Social preview PNG。
+- 重新生成 `docs/assets/release-room-demo.gif`:
+  - `960 x 540`。
+  - 36 秒。
+  - 8 帧 / 8 个场景。
+  - 约 279 KB。
+  - 首帧为当前 IM 产品画面,不是旧分镜或表格。
+- 新增 `docs/assets/social-preview.png`:
+  - `1280 x 640`。
+  - 约 51 KB。
+  - 用于 GitHub Settings -> Social preview 上传。
+- 文档同步:
+  - README / README.zh-CN 移除"待复剪 GIF" roadmap 项。
+  - `docs/human/github-publication.md` 写入 `social-preview.png` 上传路径,并更新当前 GIF 口径。
+  - `docs/launch/playbook.md` 把 README GIF gate 标为完成,但保留 GitHub UI social preview 上传 / 确认。
+  - `docs/examples/release-room.md`、`docs/playbooks/release-room-demo.md`、`examples/release-room/README.md`、`examples/release-room/shot-rhythm.md` 写入生成器使用方式。
+  - `docs/agent/09-github-release-ops.md` 更新 public 前资产复核结论。
+  - `docs/journal/PITFALLS.md` 将 P-039 标记 RESOLVED。
+  - `STATUS.md` 当前轮次更新为 Round 148,下一轮最高优改为 GitHub UI 最终复核并改 public。
+
+### 验证结果
+- `python3 examples/release-room/generate-public-gif.py` → 成功写出 GIF 和 PNG。
+- `file docs/assets/release-room-demo.gif docs/assets/social-preview.png`
+  → GIF `960 x 540`;PNG `1280 x 640`。
+- `ffprobe docs/assets/release-room-demo.gif`
+  → duration `36.000000`,nb_frames `8`,size `286008` bytes。
+- PIL 抽取首帧到 `/tmp/aico_new_gif_first_frame.png`,视觉检查通过。
+- PIL 抽取 8 帧 contact sheet 到 `/tmp/aico_gif_contact_new.png`,确认 `/morning` 和 `/view` 出现在后两段。
+- `docs/assets/social-preview.png` 视觉检查通过。
+- Release Room targeted tests:`uv run pytest tests/unit/test_release_room_acceptance.py tests/unit/test_release_room_demo.py -q`
+  → **3 passed**。
+- Full clean env:`env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest`
+  → **428 passed / 1 skipped**。
+- Static:`uv run ruff check .`;`uv run ruff format --check .`;`uv run mypy src tests`;`git diff --check`
+  → 全绿。
+- Public 前敏感内容扫描:
+  - 高危 token / 私钥 regex 未发现真实凭据。
+  - 命中项均为文档占位符或 token 相关 ADR / skipped golden test。
+- GitHub live metadata:
+  - repository still `PRIVATE`,default branch `main`。
+  - description / homepage 已配置,issues enabled,wiki disabled。
+  - topics 已补齐到 19 个,包括 `ai-coding`、`audit-log`、`memory`、`llm`、`fastapi`、`mcp`。
+  - `git tag --list v0.1.0` 为空,`gh release list` 为空。
+
+### 关键决策
+- 🔒 **决策 1**:README GIF 现在采用 transcript-driven public demo,避免公开首屏依赖 provider 稳定性或真实聊天录屏。
+- 🔒 **决策 2**:后续可用真实 IM 精剪版替换,但不能降低首帧、时长、`/morning` 和 `/view` 展示质量。
+- 🔒 **决策 3**:GitHub social preview 使用静态 PNG,不直接上传 README GIF。
+
+### 留给下一轮
+- 用 GitHub UI 上传 / 确认 `docs/assets/social-preview.png`。
+- 仓库 owner 将 visibility 从 private 改为 public 前,最后再跑一次 `gh repo view` / `gh release list`
+  防漂移。
+- 仓库 owner 改 public 后,按 `docs/agent/09-github-release-ops.md` 创建 `v0.1.0` tag 和 GitHub Release。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 148。
+- `docs/journal/PITFALLS.md` P-039 标记 RESOLVED。
+- 不新增 ADR:本轮是发布素材生成和 public 前资产治理,不改变运行架构。

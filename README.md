@@ -238,8 +238,6 @@ probably too much.
 
 Near-term work:
 
-- Re-cut the README Release Room GIF so the first frame is the current IM product
-  surface and the flow foregrounds `/morning` and `/view` before D0 launch.
 - Real-IM dogfood of `/view` IM-delivered HTML snapshot and operator inbox flow.
 - Split the orchestrator after Phase 8 wraps (B-005).
 - Finish Feishu production callback smoke testing.

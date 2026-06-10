@@ -37,6 +37,7 @@ GitHub topics 最多 20 个,建议先填这组:
 ai-agents
 agent-os
 multi-agent
+mcp
 developer-tools
 claude-code
 codex
@@ -104,6 +105,14 @@ Telegram / Feishu · Claude Code / Codex / Cursor · Approval · Audit · Memory
 - 右侧:Telegram Release Room 截图或简化流程图。
 - 底部:3 个短标签,例如 `IM-first`, `Local agents`, `Approval + audit`。
 
+当前已生成可上传文件:
+
+```text
+docs/assets/social-preview.png
+```
+
+该文件为 `1280 x 640` PNG,小于 1 MB,用于 GitHub Social preview。
+
 上传路径:
 
 1. 打开仓库页面。
@@ -112,13 +121,9 @@ Telegram / Feishu · Claude Code / Codex / Cursor · Approval · Audit · Memory
 4. 点击 `Edit` -> `Upload an image...`。
 5. 上传 `1280 x 640` 且小于 1 MB 的 PNG / JPG / GIF。
 
-当前 `docs/assets/release-room-demo.gif` 约 1.5 MB、`360 x 730`、约 95 秒,即使体积已经压缩,
-也不适合作为 social preview 上传:它是竖版 README 动图,不是 GitHub 推荐的 `1280 x 640`
-横版预览图。建议单独做一张静态 PNG。
-
-Round 147 发布复核还发现:当前 README GIF 首帧不是 Telegram 产品画面,且没有把 `/morning`
-和 `/view` 作为最新能力前置展示。D0 强传播前如果 README 仍把 GIF 放在首屏,应先按
-[`examples/release-room/shot-rhythm.md`](../../examples/release-room/shot-rhythm.md) 复剪。
+当前 `docs/assets/release-room-demo.gif` 已在 Round 148 重新生成:约 279 KB、`960 x 540`、
+36 秒,首帧为当前 IM 产品画面,并展示 `/morning` 和 `/view`。README 可继续引用该 GIF。
+GitHub social preview 仍建议上传上面的静态 PNG,不要直接上传 README 动图。
 
 Agent 负责 tag / GitHub Release / D0 运维时,还要读
 [`docs/agent/09-github-release-ops.md`](../agent/09-github-release-ops.md)。

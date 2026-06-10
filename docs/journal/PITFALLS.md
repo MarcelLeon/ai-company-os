@@ -1439,9 +1439,9 @@ shot rhythm 和 contributor quickstart 没有和 runtime gate 一起进入验证
 
 ### [P-039] README GIF 首帧和最新能力比文件是否存在更重要
 
-**状态**:🟡 ACTIVE
+**状态**:🟢 RESOLVED
 **首次踩中**:Round 147
-**最后更新**:2026-06-09
+**最后更新**:2026-06-10
 **影响范围**:`README.md`, `README.zh-CN.md`, `docs/assets/release-room-demo.gif`,
 `examples/release-room/shot-rhythm.md`, `docs/launch/playbook.md`
 
@@ -1465,6 +1465,10 @@ D0 首印象验收:第一帧、时长、是否展示最新命令、是否适合 
 - 复剪要求:首帧是当前 IM 产品画面;控制在 30-60 秒;保留 `/team`、`/remember`、`/ask`、
   `/approve`、`/overnight`、`/morning`、`/view`、`/audit` 的最短闭环。
 - GitHub social preview 另做静态 `1280 x 640` PNG,不要直接上传 README 动图。
+- Round 148 新增 `examples/release-room/generate-public-gif.py`,生成稳定 transcript-driven
+  README GIF 和 social preview:
+  - `docs/assets/release-room-demo.gif`:约 36 秒、`960 x 540`,首帧为当前 IM 产品画面。
+  - `docs/assets/social-preview.png`:`1280 x 640`,小于 1 MB,用于 GitHub Social preview。
 
 **如何避免再次踩中**
 - 发布前把 README GIF 当作 release gate,像 no-token demo 一样实际打开检查。
@@ -1472,7 +1476,10 @@ D0 首印象验收:第一帧、时长、是否展示最新命令、是否适合 
 - 每次新增老板入口命令或改变接手动线后,同步搜索 README、release notes、demo script、
   transcript、shot rhythm 和 GIF 说明。
 - 不要在 `STATUS.md` 里只写"GIF 已嵌入";要写它是否适合当前 D0 传播。
+- 如果后续用真实 IM 精剪版替换 transcript-driven GIF,必须保持首帧、时长、`/morning`
+  和 `/view` 展示质量不倒退。
 
 **相关链接**
+- ROUNDS Round 148
 - ROUNDS Round 147
 - P-038

@@ -75,12 +75,13 @@ Release Room 更像真实工作:
 当前阶段已落地:
 
 - 录制过真实 Telegram dogfooding GIF,用于证明 Release Room 可以进入真实 IM dogfood。
+- Round 148 新增 transcript-driven public GIF,首帧为当前 IM 产品画面,覆盖 `/morning` 和 `/view`。
 - README 首页已嵌入 `docs/assets/release-room-demo.gif`。
+- GitHub social preview 静态图已生成到 `docs/assets/social-preview.png`。
 - 没有 `gifski` 时可用 `examples/release-room/make-gif.sh` 调 `ffmpeg` 转 GIF。
 
 后续可继续优化:
 
-- D0 前复剪 README GIF:首帧必须是当前 IM 产品画面,控制在 30-60 秒,并前置展示
-  `/morning` 和 `/view`。
+- 补真实 IM 精剪版 GIF,替换 transcript-driven public GIF,但不能降低首帧、时长和 `/view` 展示质量。
 - 补更清晰的 approval gate 镜头。
 - 可选:脚本化生成 demo audit JSONL,用于 `/metrics` / `aico-glance` 展示。

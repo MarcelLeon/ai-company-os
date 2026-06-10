@@ -77,12 +77,12 @@ gh release list --repo MarcelLeon/ai-company-os --limit 5
   动图当 social preview。
 - release notes 是否能独立解释 Added / Fixed / Changed / Verification。
 
-2026-06-09 的 RC 复核结论:
+2026-06-10 的 public 前复核结论:
 
-- `docs/assets/release-room-demo.gif` 已存在,但当前文件约 95 秒、`360 x 730`,首帧不是
-  Telegram 产品画面,且没有把 `/morning` 和 `/view` 作为最新能力前置展示。
-- 这不是代码 blocker,但它是 D0 传播 blocker。如果 README 仍把 GIF 放在首屏,公开强传播前要复剪。
-- 复剪要求见 [`examples/release-room/shot-rhythm.md`](../../examples/release-room/shot-rhythm.md)。
+- `docs/assets/release-room-demo.gif` 已重新生成:约 36 秒、`960 x 540`,首帧是当前 IM
+  产品画面,并展示 `/morning` 和 `/view`。
+- `docs/assets/social-preview.png` 已生成:GitHub 推荐比例 `1280 x 640`,小于 1 MB。
+- 后续如果替换成真实 IM 精剪版,必须保持同等首帧质量、时长和 `/view` 展示。
 
 ---
 

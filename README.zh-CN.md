@@ -204,8 +204,6 @@ agent 的操作契约:
 
 近期重点:
 
-- 复剪 README Release Room GIF:首帧必须是当前 IM 产品画面,并在 D0 前明确展示
-  `/morning` 和 `/view`。
 - 真实 IM dogfood `/view` HTML 快照和 operator inbox 交接体验。
 - 根据 dogfood 结果产品化 aico-view Boss Brief 第一屏。
 - 完成飞书生产 callback smoke test。
