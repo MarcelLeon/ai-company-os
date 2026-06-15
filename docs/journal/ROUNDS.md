@@ -8155,3 +8155,46 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 161。
 - 不新增 ADR / PITFALL:本轮是发布运维验收工具,不改变 AICO runtime 架构。
+
+---
+
+## Round 162 — 2026-06-15 — Codex
+
+### 输入
+- 继续推进长期目标:“围绕本项目北极星目标,实事求是的 AI 闭环迭代实现北极星项目承诺,
+  并做到业界有特色的大模型应用项目”。
+- Round 161 已把 social preview owner-only 卡点机器化。当前最新远端 CI 成功,但 GitHub Actions
+  输出 Node.js 20 actions deprecation warning,提示 JavaScript actions 将在 2026-06-16 默认切到 Node 24。
+
+### 思考与讨论
+- 候选 A:忽略 warning,等 GitHub 默认切换后再看 → ❌ 否决。当前处在公开发布前,CI 是 release gate;
+  等 D0 当天 CI 因 runtime 切换漂移才发现风险,不符合“实事求是的发布证据”。
+- 候选 B:直接升级 `actions/checkout` / `actions/setup-python` / `astral-sh/setup-uv` 的 major 版本 → ❌ 暂缓。
+  这需要重新确认每个 action 的最新主版本和配置差异;当前 warning 已给出官方 opt-in preflight 方式。
+- 候选 C:按 warning 提供的方式设置 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` → ✅ 选定。
+  这让当前 CI 在 Node 24 runtime 下提前跑完整 release gate,如果不兼容会马上暴露。
+
+### 产出
+- 更新 `.github/workflows/ci.yml`:
+  - 在 `python` job 添加:
+    ```yaml
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+    ```
+- 更新 `STATUS.md` Round 162。
+
+### 验证结果
+- 本地 `git diff --check`:通过。
+- 需要 push 后用 GitHub Actions 验证 Node 24 runtime 下的 checkout / setup-uv / setup-python / tests / ruff / format / mypy。
+
+### 关键决策
+- 🔒 **决策 1**:release gate 要主动验证即将到来的 CI runtime 切换,不能只记录 warning。
+- 🔒 **决策 2**:本轮先做 Node 24 preflight,不同时升级 action major version,避免把版本升级差异和 runtime 切换混在一起。
+
+### 留给下一轮
+- 如果 push 后 CI 失败,优先修复对应 action/runtime 兼容问题。
+- 如果 CI 成功,下一步仍是 owner 上传 social preview 后运行 `uv run aico-github-social-preview`,再进入 tag / Release。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 162。
+- 不新增 ADR / PITFALL:本轮是 CI 发布门禁预检,不改变产品架构。

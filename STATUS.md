@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-06-15
-**当前轮次**:Round 161(social-preview-verifier)
+**当前轮次**:Round 162(ci-node24-preflight)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -356,11 +356,23 @@ AICO 的产品边界是 absence-first:
   用 GitHub `openGraphImageUrl` 下载当前 OG 图并识别疑似默认 repository card;当前 live check 返回
   `status: needs-owner-upload`,明确 tag / Release 前仍需 owner 上传 `docs/assets/social-preview.png`。
   同步更新 release notes / readiness / playbook 测试数为 `433 passed, 1 skipped`(Round 161)。
+- [x] GitHub Actions Node 24 预检:CI job 设置 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`,
+  提前验证 `actions/checkout@v4`、`actions/setup-python@v5`、`astral-sh/setup-uv@v5`
+  在 GitHub 即将默认切换 Node 24 后仍能跑 release gate(Round 162)。
 - [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 162**(2026-06-15,Codex — CI Node 24 preflight):
+- 继续推进长期目标,当前远端 CI 对 `21c6d5a` 已成功,但 GitHub Actions 给出 Node.js 20 actions deprecation
+  warning:2026-06-16 起 JavaScript actions 默认切 Node 24,2026-09-16 移除 Node 20。
+- 更新 `.github/workflows/ci.yml`:
+  - 在 `python` job 上设置 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"`。
+  - 目的不是绕过 CI,而是在 release 前主动让 `actions/checkout@v4`、`actions/setup-python@v5`、
+    `astral-sh/setup-uv@v5` 按 Node 24 runtime 跑一次,提前发现兼容性问题。
+- 本轮不改运行代码和发布文案;只改 CI runtime preflight。
 
 **Round 161**(2026-06-15,Codex — social preview verifier):
 - 继续推进长期目标,当前公开发布前最大的 owner-only 卡点是 GitHub social preview 仍显示默认 repository card。
