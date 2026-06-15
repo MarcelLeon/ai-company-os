@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-06-15
-**当前轮次**:Round 159(pushed-ci-coverage)
+**当前轮次**:Round 160(launch-article-final-edit)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -349,11 +349,38 @@ AICO 的产品边界是 absence-first:
   发布前 Go / No-Go 台账;同步收紧 launch playbook 的 CI 口径和 release notes 的易漂移 rounds 数字(Round 158)。
 - [x] Pushed CI coverage:release-readiness / 中文文章 / 测试隔离改动已提交并 push 到 `main`;
   pushed commit `958aa61` 的 GitHub Actions CI 已成功(Round 159)。
+- [x] 中文文章发布前总审稿:按人类反馈把共鸣版博客园痛点叙事重排为“多 agent 调度成本 / 风险动作”
+  优先,再到局面压缩、离开电脑、长任务接手和经验复用;同步优化技术 Lead 长文痛点-解法表、
+  两篇小红书稿和文章索引,保持小红书 1000 字以内且不扩大 Feishu / `/view` 等公开承诺(Round 160)。
 - [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 160**(2026-06-15,Codex — launch article final edit):
+- 人类要求从 MCN 助理角度审查四篇中文发布稿,重点修正共鸣版博客园:
+  - 原 P1 “AI 很强,但人离开电脑后链路断了”代入感不够,要更日常、更直接。
+  - 6 个痛点叙事优先级应为原 P3 / P6 最重要,再到 P2 / P5,最后 P1 / P4。
+  - 四篇文章要在发布前去掉 AI 味,并继续保证口径准确。
+- 更新 `docs/launch/articles/2026-06-10-worker-resonance-cnblogs.md`:
+  - 保留 P 编号用于和解法表对齐,但按真实传播优先级重排为 P3、P6、P2、P5、P1、P4。
+  - 将“离开电脑链路断”改成午饭、电梯、睡前、早上接手这些日常场景,强调“能不能继续管理项目”。
+  - 解法总览和 release room 场景闭环表同步按新优先级排序。
+- 更新 `docs/launch/articles/2026-06-10-tech-lead-cnblogs.md`:
+  - 将技术痛点表重排为 lead 调度瓶颈、权限不可控、IM 可读性、长任务恢复优先。
+  - 补充为什么前两项决定能不能任命 lead,中间两项决定离开电脑后能不能接手。
+- 更新两篇小红书稿:
+  - 共鸣版改成更生活化的“我还是得一直盯着它们”,优先呈现多 agent 调度、风险审批、局面压缩。
+  - 技术 Lead 版改成“反复切现场”的多项目管理痛点,保留 Telegram / Adapter / 审批 / 审计边界。
+- 更新 `docs/launch/articles/README.md`:
+  - 同步主诉求和推荐标题,避免发布索引仍使用旧痛点口径。
+- 复核 `docs/launch/readiness-audit.md`:
+  - GitHub live audit 仍显示仓库 `PUBLIC`,description / homepage / 19 个 topics 已配置。
+  - `openGraphImageUrl` 仍指向 GitHub 默认 repository card;下载的 OG 图为 `1200 x 600`,
+    本地 `docs/assets/social-preview.png` 为 `1280 x 640`,说明自定义 social preview 仍需 owner 上传。
+  - 将 latest pushed CI 口径更新为 `c3e7e72` 在 2026-06-15 的 GitHub Actions success;当前本地文章终稿仍需 push 后新 CI 覆盖。
+- 本轮只改发布 Markdown,未改运行代码;未进入 GitHub tag / Release。
 
 **Round 159**(2026-06-15,Codex — pushed CI coverage):
 - 持续推进长期目标,本轮把 Round 152-158 的本地 release-readiness 改动从“只在本机通过”推进到

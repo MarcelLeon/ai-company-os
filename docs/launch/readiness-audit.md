@@ -24,8 +24,11 @@
 | Formatting | `uv run ruff format --check .` | Pass | “format gate passes locally” |
 | Types | `uv run mypy src tests` | Pass | “mypy gate passes locally” |
 | Diff hygiene | `git diff --check` | Pass | “no whitespace errors in current diff” |
-| Latest pushed CI | `gh run list --limit 5` | latest pushed `main` CI success on 2026-06-10 before these local release-audit changes | “CI is configured”; require a fresh pushed-commit CI success before release |
+| Latest pushed CI | `gh run list` / `gh run view` | pushed `main` CI success for `c3e7e72` on 2026-06-15, before the current local final article edits | “CI is configured”; require a fresh pushed-commit CI success before release |
 | Chinese article pack | Markdown link check + draw.io XML parser | Pass | “Chinese launch materials are prepared” |
+| GitHub visibility | `gh repo view ... --json visibility` | `PUBLIC` | “repository is public” |
+| GitHub About metadata | `gh repo view ... --json description,homepageUrl,repositoryTopics` | description, homepage, and 19 recommended topics are configured | “GitHub About metadata is configured” |
+| GitHub social preview | `gh repo view ... --json openGraphImageUrl` + downloaded OG image | still GitHub default repository card, not `docs/assets/social-preview.png` | do not claim custom social preview is live yet |
 
 ## Claim Boundaries
 
@@ -56,9 +59,9 @@
 4. Record the pushed commit SHA and CI result in `STATUS.md` / `ROUNDS.md`.
 5. Re-run or spot-check the no-token demo from a clean checkout.
 6. Have the repository owner confirm GitHub UI:
-   - visibility is public,
-   - description and topics match `docs/human/github-publication.md`,
-   - `docs/assets/social-preview.png` is uploaded as Social preview.
+   - visibility is public (live audit already confirmed `PUBLIC`),
+   - description and topics match `docs/human/github-publication.md` (live audit confirmed configured metadata),
+   - `docs/assets/social-preview.png` is uploaded as Social preview (live audit still shows GitHub default OG card).
 7. Only then create and push `v0.1.0`, using `docs/launch/v0.1.0-release-notes.md`.
 
 ## Current Go / No-Go
@@ -66,5 +69,6 @@
 **Go for local RC quality**: yes. Local tests, lint, types, Phase 8 gate, no-token demo,
 article links, and diagram XML all pass.
 
-**Go for public release**: not yet. The release-audit changes still need a pushed-commit
-GitHub Actions success, and GitHub UI public/social preview actions still require the owner.
+**Go for public release**: almost, but not yet. The repository is public and metadata is
+configured, but the GitHub social preview is still the default repository card. The owner
+still needs to upload `docs/assets/social-preview.png` before tag / Release.

@@ -6,7 +6,7 @@
 
 | 素材 | 推荐平台 | 主诉求 | 使用方式 |
 |---|---|---|---|
-| [`2026-06-10-worker-resonance-cnblogs.md`](2026-06-10-worker-resonance-cnblogs.md) | 博客园 / 知乎 / 掘金 / 少数派 | 打工人共鸣:长任务不可接手、手机看不到局面、老板不在场 | 作为中文首发长文;建议插入两张架构图 PNG |
+| [`2026-06-10-worker-resonance-cnblogs.md`](2026-06-10-worker-resonance-cnblogs.md) | 博客园 / 知乎 / 掘金 / 少数派 | 打工人共鸣:多 agent 反而增加调度成本、风险动作不敢放飞、离开电脑后项目停住 | 作为中文首发长文;建议插入两张架构图 PNG |
 | [`2026-06-10-tech-lead-cnblogs.md`](2026-06-10-tech-lead-cnblogs.md) | 博客园 / 知乎 / 掘金 / 技术公众号 | 技术 Lead 视角:agent operations、领域模型、权限、task flow | 适合发给技术读者;标题可偏硬核 |
 | [`2026-06-10-worker-resonance-xiaohongshu.md`](2026-06-10-worker-resonance-xiaohongshu.md) | 小红书 / 即刻 / 朋友圈 | 生活化钩子:吃饭、路上被问 release、睡前托管 | 配痛点首图;正文保持短,不要塞架构细节 |
 | [`2026-06-10-tech-lead-xiaohongshu.md`](2026-06-10-tech-lead-xiaohongshu.md) | 小红书 / 即刻 / 朋友圈 | 多项目管理:需要 AI Lead 压缩局面 | 配项目组织关系图;重点讲“可靠项目负责人” |
@@ -60,7 +60,7 @@
 
 - `我做了一个“老板不在也能运转”的 AI 项目办公室`
 - `多项目打工人,可能真正需要一个 AI Lead`
-- `AI 很强,但我还是被电脑绑住了`
+- `我不在电脑前,AI 项目还能继续吗?`
 
 ## 评论区应对
 

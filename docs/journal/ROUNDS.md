@@ -8020,3 +8020,65 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 159。
 - 不新增 ADR / PITFALL:本轮是发布流程证据推进,不改变运行架构。
+
+---
+
+## Round 160 — 2026-06-15 — Codex
+
+### 输入
+- 人类准备发布四篇中文文章,要求以 MCN 助理角度做最后审稿。
+- 重点反馈:
+  - 共鸣版博客园里原 P1 “AI 很强,但人离开电脑后链路断了”代入感不强,需要更日常、更直接。
+  - 6 个痛点叙事优先级应调整为原 P3 / P6 最重要,然后 P2 / P5,最后 P1 / P4。
+  - 四篇文章都要检查是否有 AI 味、口吻不自然、痛点和解法不对齐的问题。
+
+### 思考与讨论
+- 候选 A:继续增加新文章或新图 → ❌ 否决。发布前主要风险不是素材不足,而是核心长文开头痛点顺序不够抓人,会削弱首发传播。
+- 候选 B:只改共鸣版博客园的 P1 段落 → ❌ 否决。单段改写无法解决用户指出的结构问题;后文解法表和 release room 场景闭环也必须同步重排。
+- 候选 C:按 MCN 总审稿做四篇联动优化 → ✅ 选定。共鸣版长文承担首发转化,技术长文承担可信度,小红书两篇承担短传播,四者需要同一套痛点优先级和能力边界。
+
+### 产出
+- 更新 `docs/launch/articles/2026-06-10-worker-resonance-cnblogs.md`:
+  - 保留 P 编号方便与后文解法对齐,但叙事按 P3、P6、P2、P5、P1、P4 重排。
+  - 将“离开电脑链路断”改为午饭、电梯、睡前、早上接手等日常场景,强调“手机能不能继续管理项目”。
+  - 解法总览表和“睡前托管 release room”闭环表同步按新优先级排序。
+- 更新 `docs/launch/articles/2026-06-10-tech-lead-cnblogs.md`:
+  - 技术痛点表改为 lead 调度瓶颈、权限不可控、IM 可读性、长任务恢复优先。
+  - 补充为什么前两项决定能否任命 lead,中间两项决定老板离开电脑后能否接手。
+- 更新 `docs/launch/articles/2026-06-10-worker-resonance-xiaohongshu.md`:
+  - 删除“AI 很强但被电脑绑住”的抽象开头,改成“我还是得一直盯着它们”。
+  - 短文优先呈现多 agent 调度、风险审批、局面压缩、离开 Mac 后项目停住。
+- 更新 `docs/launch/articles/2026-06-10-tech-lead-xiaohongshu.md`:
+  - 强化“反复切现场”的多项目管理痛点。
+  - 补齐 CodeFlicker adapter 名称,并继续保持 Telegram 为远程入口的准确口径。
+- 更新 `docs/launch/articles/README.md`:
+  - 主诉求和推荐标题同步为最新稿件口径。
+- 更新 `docs/launch/readiness-audit.md`:
+  - 重新只读核验 GitHub live state:visibility 为 `PUBLIC`,description、homepage 和 19 个 topics 已配置。
+  - `openGraphImageUrl` 仍为 GitHub 默认 repository card,下载的 OG 图是 `1200 x 600`;本地
+    `docs/assets/social-preview.png` 是 `1280 x 640`,所以仍不能宣称 custom social preview 已生效。
+  - 将 latest pushed CI 从旧的 2026-06-10 口径更新为 `c3e7e72` 在 2026-06-15 的 pushed `main`
+    GitHub Actions success;当前文章终稿仍需 push 后新 CI 覆盖。
+
+### 验证结果
+- 小红书两篇重新做字数检查,均低于 1000 字。
+- 搜索旧口径“AI 很强,但我还是被电脑绑住了”“这个产品”“一个具体场景”等,未在四篇正文中发现需保留外的 AI 味表达。
+- `gh repo view MarcelLeon/ai-company-os --json visibility,description,homepageUrl,repositoryTopics,openGraphImageUrl,pushedAt`:只读 live audit 成功。
+- `file /tmp/aico-og-current.png docs/assets/social-preview.png`:GitHub OG `1200 x 600`;本地 social preview asset `1280 x 640`。
+- `/usr/bin/python3` 检查 launch articles 本地 Markdown 链接:20 个链接,无缺失。
+- `/usr/bin/python3` 解析 `docs/launch/articles/diagrams/*.drawio`:5 张通过。
+- `git diff --check` 通过。
+- 本轮只改 Markdown 发布素材和项目状态记录,未改运行代码,未跑 Python 单测。
+
+### 关键决策
+- 🔒 **决策 1**:共鸣版首发长文优先打“多 agent 让人变成人肉调度器”和“风险动作不敢放飞”,再讲局面压缩、离开电脑、长任务接手和经验复用。
+- 🔒 **决策 2**:小红书稿继续保持 1000 字以内,不加入博客园硬核架构细节;技术可信度由博客园技术长文承接。
+- 🔒 **决策 3**:发布稿继续按当前事实边界写:Telegram 是稳定入口,Feishu 只写 first slice / 待生产 smoke;`/view` 是只读 HTML snapshot,不是 Web 控制台。
+
+### 留给下一轮
+- 如果人类确认发布,优先按 `docs/launch/articles/README.md` 的顺序先发共鸣长文,再发技术 Lead 长文。
+- GitHub tag / Release 仍需按 release ops 文档和 readiness audit 执行,不要因为中文文章已就绪就跳过 owner-only social preview / Release 检查。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 160。
+- 不新增 ADR / PITFALL:本轮是发布前文案审稿和口径收敛,不改变产品架构。
