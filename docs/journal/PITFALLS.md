@@ -23,7 +23,7 @@
 - (待填充)
 
 ### 技术栈
-- (待填充)
+- P-040:本机 dogfood `AICO_*` 环境变量污染单测
 
 ### Adapter 层
 - (待填充)
@@ -1485,3 +1485,38 @@ D0 首印象验收:第一帧、时长、是否展示最新命令、是否适合 
 - ROUNDS Round 149
 - ROUNDS Round 147
 - P-038
+
+### [P-040] 本机 dogfood `AICO_*` 环境变量污染单测
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 157
+**最后更新**:2026-06-14
+**影响范围**:`tests/unit/conftest.py`, `tests/unit/test_aico_view_routes.py`, `tests/unit/test_aico_view_deep_link.py`, `tests/unit/test_phase1_app.py`
+
+**症状**
+在本机真实 dogfood shell 中运行 `uv run pytest -q` 时,完整测试出现 9 个失败:
+
+- aico-view 路由测试期望本地 loopback 无 token 可访问,实际因 `AICO_VIEW_TOKEN` 存在返回 401。
+- `Phase1Settings(...)` 单测期望 view snapshot handler 默认关闭,实际因 `AICO_VIEW_ENABLED=true`
+  从环境注入而被开启。
+
+Phase 8 contract gate 因显式 `env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED` 可以通过,但完整测试不应该依赖
+调用者手动清理本机运行环境。
+
+**根因**
+项目本身鼓励真实 dogfooding,因此开发 shell 里经常保留 `AICO_TELEGRAM_BOT_TOKEN`、`AICO_VIEW_TOKEN`、
+`AICO_VIEW_ENABLED`、`AICO_MEMORY_PATH` 等真实运行配置。单测里直接构造 `build_view_app()` 或
+`Phase1Settings(...)` 时会读取当前进程环境,导致测试语义被本机状态污染。
+
+**解决方案 / 缓解措施**
+新增 `tests/unit/conftest.py` 的 autouse fixture,在每个 unit test 前清理当前进程中的 `AICO_*`
+环境变量。需要测试环境读取行为的用例必须在测试函数里用 `monkeypatch.setenv(...)` 显式设置。
+
+**如何避免再次踩中**
+- 不要假设开发者 shell 是干净的;AICO 的本机 dogfood 配置很可能长期存在。
+- 新增读取 `AICO_*` 环境变量的单测时,用 `monkeypatch.setenv` 声明输入,不要依赖外部环境。
+- 如果新增非 unit 的 golden / smoke 测试确实需要真实环境变量,不要放进 `tests/unit/`。
+
+**相关链接**
+- ROUNDS Round 157
+- NORTH_STAR.md Dogfooding 的验收分层

@@ -1,0 +1,49 @@
+<mxfile host="app.diagrams.net" modified="2026-06-14T00:00:00.000Z" agent="Codex" version="26.0.0" type="device">
+  <diagram id="project-lead-org" name="Project Lead Org">
+    <mxGraphModel dx="900" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1080" pageHeight="1350" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1080" height="1350" as="geometry" />
+        </mxCell>
+        <mxCell id="title" value="多项目打工人,需要一个 AI Lead" style="text;html=1;strokeColor=none;fillColor=none;fontSize=54;fontStyle=1;align=left;fontColor=#111827;" vertex="1" parent="1">
+          <mxGeometry x="80" y="70" width="920" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="不要让所有 agents 都直接找老板。" style="text;html=1;strokeColor=none;fillColor=none;fontSize=28;align=left;fontColor=#475569;" vertex="1" parent="1">
+          <mxGeometry x="80" y="155" width="920" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="boss" value="Boss&#10;定目标 · 批风险 · 看交付" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#1D4ED8;fillColor=#DBEAFE;fontSize=30;fontStyle=1;fontColor=#1E3A8A;" vertex="1" parent="1">
+          <mxGeometry x="310" y="260" width="460" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="lead" value="Project Lead&#10;压缩局面 · 分派任务 · 控制升级" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#047857;fillColor=#D1FAE5;fontSize=30;fontStyle=1;fontColor=#064E3B;" vertex="1" parent="1">
+          <mxGeometry x="260" y="510" width="560" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="impl" value="Implementer&#10;写代码 / 改实现" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=26;fontStyle=1;fontColor=#78350F;" vertex="1" parent="1">
+          <mxGeometry x="80" y="820" width="270" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="tester" value="Tester&#10;跑验证 / 找回归" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#6D28D9;fillColor=#EDE9FE;fontSize=26;fontStyle=1;fontColor=#4C1D95;" vertex="1" parent="1">
+          <mxGeometry x="405" y="820" width="270" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="reviewer" value="Reviewer&#10;挑风险 / 查遗漏" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#0E7490;fillColor=#CFFAFE;fontSize=26;fontStyle=1;fontColor=#164E63;" vertex="1" parent="1">
+          <mxGeometry x="730" y="820" width="270" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="boundary" value="边界:Lead 可以组织和只读协调;&#10;写文件 / shell / 发布风险仍走审批。" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#DC2626;fillColor=#FEE2E2;fontSize=28;fontStyle=1;fontColor=#7F1D1D;" vertex="1" parent="1">
+          <mxGeometry x="90" y="1080" width="900" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="目标 / 边界" style="endArrow=classic;html=1;rounded=0;strokeWidth=3;strokeColor=#1D4ED8;fontSize=18;fontStyle=1;" edge="1" parent="1" source="boss" target="lead">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="派工" style="endArrow=classic;html=1;rounded=0;strokeWidth=3;strokeColor=#047857;fontSize=18;fontStyle=1;" edge="1" parent="1" source="lead" target="impl">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="验证" style="endArrow=classic;html=1;rounded=0;strokeWidth=3;strokeColor=#047857;fontSize=18;fontStyle=1;" edge="1" parent="1" source="lead" target="tester">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="反方审查" style="endArrow=classic;html=1;rounded=0;strokeWidth=3;strokeColor=#047857;fontSize=18;fontStyle=1;" edge="1" parent="1" source="lead" target="reviewer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

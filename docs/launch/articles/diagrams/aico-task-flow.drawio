@@ -1,0 +1,105 @@
+<mxfile host="app.diagrams.net" agent="Codex">
+  <diagram id="aico-task-flow" name="AICO Task Flow">
+    <mxGraphModel dx="1501" dy="1060" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;align=left;verticalAlign=middle;fontColor=#111827;" value="AICO task flow: from IM command to adapter, approval, collaboration, and view" vertex="1">
+          <mxGeometry height="40" width="980" x="40" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="im" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#1D4ED8;fillColor=#DBEAFE;fontSize=13;fontStyle=1;fontColor=#1E3A8A;" value="IMChannel&#xa;Telegram text / command" vertex="1">
+          <mxGeometry height="85" width="190" x="50" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="router" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#2563EB;fillColor=#EFF6FF;fontSize=13;fontColor=#1E3A8A;" value="MessageRouter&#xa;target persona + payload" vertex="1">
+          <mxGeometry height="85" width="210" x="300" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="factory" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#047857;fillColor=#D1FAE5;fontSize=13;fontColor=#064E3B;" value="OrchestratorTaskFactory&#xa;active project · appointment · session" vertex="1">
+          <mxGeometry height="105" width="270" x="570" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="prompt" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=13;fontColor=#134E4A;" value="Prompt stack&#xa;agent + role + lead responsibility&#xa;project brief + memory + experience" vertex="1">
+          <mxGeometry height="125" width="330" x="910" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="taskbus" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#374151;fillColor=#F3F4F6;fontSize=13;fontStyle=1;fontColor=#111827;" value="TaskBus&#xa;record task · assess risk · dispatch" vertex="1">
+          <mxGeometry height="90" width="220" x="1300" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="risk" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;" value="RiskAssessor&#xa;read_only / write_files / shell_exec / destructive&#xa;scan Current task only when present" vertex="1">
+          <mxGeometry height="120" width="310" x="180" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="approval" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#DC2626;fillColor=#FEE2E2;fontSize=13;fontColor=#7F1D1D;" value="ApprovalPolicy&#xa;/approve or /reject&#xa;requester or listed reviewer" vertex="1">
+          <mxGeometry height="120" width="260" x="560" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="capability" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#7C3AED;fillColor=#EDE9FE;fontSize=13;fontColor=#4C1D95;" value="Adapter capability gate&#xa;reject unsupported risk level" vertex="1">
+          <mxGeometry height="120" width="260" x="900" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="adapter" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#6D28D9;fillColor=#F5F3FF;fontSize=13;fontStyle=1;fontColor=#4C1D95;" value="AIAdapter&#xa;Claude / Codex / Cursor / Gemini / Trae" vertex="1">
+          <mxGeometry height="120" width="280" x="1240" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="stream" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#1D4ED8;fillColor=#DBEAFE;fontSize=13;fontColor=#1E3A8A;" value="Streamed output&#xa;mobile-readable chunks" vertex="1">
+          <mxGeometry height="100" width="240" x="30" y="620" as="geometry" />
+        </mxCell>
+        <mxCell id="collab" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#B45309;fillColor=#FFFBEB;fontSize=13;fontColor=#78350F;" value="Collaboration directive&#xa;@reviewer: inspect ...&#xa;child task + parent audit link" vertex="1">
+          <mxGeometry height="120" width="300" x="400" y="610" as="geometry" />
+        </mxCell>
+        <mxCell id="audit" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#374151;fillColor=#F9FAFB;fontSize=13;fontColor=#111827;" value="TaskSnapshot + AuditEvent&#xa;submitted · waiting approval · dispatched&#xa;completed · failed · collaboration" vertex="1">
+          <mxGeometry height="120" width="330" x="780" y="610" as="geometry" />
+        </mxCell>
+        <mxCell id="view" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#0E7490;fillColor=#CFFAFE;fontSize=13;fontStyle=1;fontColor=#164E63;" value="/inbox /morning /task /audit /view&#xa;boss-facing recovery surfaces" vertex="1">
+          <mxGeometry height="120" width="310" x="1230" y="610" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="im" style="endArrow=classic;html=1;rounded=0;strokeColor=#1D4ED8;" target="router" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="router" style="endArrow=classic;html=1;rounded=0;strokeColor=#047857;" target="factory" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="factory" style="endArrow=classic;html=1;rounded=0;strokeColor=#0F766E;fontSize=11;" target="prompt" value="assemble task&amp;nbsp;&lt;div&gt;payload&lt;/div&gt;">
+          <mxGeometry relative="1" x="-0.0095" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="prompt" style="endArrow=classic;html=1;rounded=0;strokeColor=#374151;fontSize=11;" target="taskbus" value="Task">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="taskbus" style="endArrow=classic;html=1;rounded=0;strokeColor=#B45309;fontSize=11;edgeStyle=orthogonalEdgeStyle;" target="risk" value="classify">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1410" y="290" />
+              <mxPoint x="335" y="290" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="risk" style="endArrow=classic;html=1;rounded=0;strokeColor=#DC2626;fontSize=11;" target="approval" value="if risky">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="approval" style="endArrow=classic;html=1;rounded=0;strokeColor=#7C3AED;fontSize=11;" target="capability" value="approved or read-only">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="capability" style="endArrow=classic;html=1;rounded=0;strokeColor=#6D28D9;fontSize=11;" target="adapter" value="supported">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="adapter" style="endArrow=classic;html=1;rounded=0;strokeColor=#1D4ED8;fontSize=11;edgeStyle=orthogonalEdgeStyle;" target="stream" value="outputs">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1380" y="540" />
+              <mxPoint x="200" y="540" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="stream" style="endArrow=classic;html=1;rounded=0;strokeColor=#B45309;fontSize=11;" target="collab" value="may request child task">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="collab" style="endArrow=classic;html=1;rounded=0;strokeColor=#374151;fontSize=11;" target="audit" value="record trace">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="audit" style="endArrow=classic;html=1;rounded=0;strokeColor=#0E7490;fontSize=11;" target="view" value="summarize / recover">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="collab" style="endArrow=classic;html=1;rounded=0;dashed=1;strokeColor=#B45309;fontSize=11;" target="router" value="child task loops back">
+          <mxGeometry relative="1" x="-0.7827" y="10" as="geometry">
+            <mxPoint y="1" as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

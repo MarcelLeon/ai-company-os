@@ -3,8 +3,8 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-06-10
-**当前轮次**:Round 151(readme-showcase-command-review)
+**最后更新**:2026-06-15
+**当前轮次**:Round 159(pushed-ci-coverage)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -331,11 +331,219 @@ AICO 的产品边界是 absence-first:
   smoke 的 Feishu Channel 写成与 Telegram 同等稳定公开入口(Round 150)。
 - [x] README 展示面收口:移除 GitHub 发布页配置段,补充 `aico-phase1` 是长驻 runtime,
   并实际验证 README 中可运行命令和 Telegram 命令测试覆盖(Round 151)。
+- [x] 中文传播文章包:按打工人共鸣 / 技术 lead 两个视角,分别产出博客园风格和小红书风格
+  Markdown,并记录外部开源传播模式可借鉴点(Round 152)。
+- [x] 博客园长文硬核化:按人类反馈重写共鸣版和技术 Lead 版,补齐痛点-解法对齐、领域建模、
+  task/权限/跨 agent 委派/`/view`/Memory+Experience 的 why,并新增两张 draw.io XML 图(Round 153)。
+- [x] 发布前 MCN 审稿:调整共鸣版博客园痛点优先级为长任务接手 / 局面压缩优先,补强日常代入感,
+  并同步优化四篇文章的发布口吻、表格和小红书字数边界(Round 154)。
+- [x] 中文发布素材索引:新增 `docs/launch/articles/README.md`,汇总四篇文章、draw.io 图源、发布顺序、
+  口径检查、推荐标题和评论区应对,把中文内容分发从散文件变成可执行台账(Round 155)。
+- [x] 中文发布社交图源:补齐痛点首图、boss-absent loop、项目 Lead 组织关系三张 draw.io XML,
+  并接入 `docs/launch/articles/README.md` 图源清单(Round 156)。
+- [x] 发布前事实与测试门禁复核:修复本机 dogfood `AICO_*` 环境变量污染 unit tests 的问题,
+  重跑完整测试和 Phase 8 absence-loop gate,并校准 v0.1.0 release notes 的 rounds / pitfalls / Feishu
+  稳定性口径(Round 157)。
+- [x] Release readiness audit:新增 `docs/launch/readiness-audit.md`,把 no-token demo、完整本地测试、
+  Phase 8 gate、ruff/format/mypy、GitHub Actions 最新 pushed main 状态、中文文章图源和公开 claim 边界汇总成
+  发布前 Go / No-Go 台账;同步收紧 launch playbook 的 CI 口径和 release notes 的易漂移 rounds 数字(Round 158)。
+- [ ] Pushed CI coverage:当前 release-readiness / 中文文章 / 测试隔离改动已通过本地 release gates,正在提交并 push,
+  等待 GitHub Actions 覆盖该 pushed commit;未等到新 CI 绿前不能进入 `v0.1.0` tag / Release(Round 159 进行中)。
 - [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 159**(2026-06-15,Codex — pushed CI coverage):
+- 持续推进长期目标,本轮把 Round 152-158 的本地 release-readiness 改动从“只在本机通过”推进到
+  “可由 GitHub Actions 覆盖”的状态。
+- 更新 `docs/launch/readiness-audit.md`:
+  - 移除会在提交后立刻过期的 hardcoded `HEAD inspected: 564e598` 和 “当前 worktree uncommitted”口径。
+  - 改为 2026-06-15 local release-candidate audit window,并明确 local gates 只证明当前 workspace;
+    release candidate 只有在相同改动 commit + push 后 CI 绿才成立。
+  - 在 tag 前清单中新增:push 后记录 pushed commit SHA 和 CI result 到 `STATUS.md` / `ROUNDS.md`。
+- 本轮本地 release gates 已通过:
+  - `uv run pytest -q`:428 passed,1 skipped。
+  - `uv run ruff check .`:通过。
+  - `uv run ruff format --check .`:通过。
+  - `uv run mypy src tests`:通过。
+  - Phase 8 absence-loop gate:41 passed。
+  - `uv run aico-release-room-demo`:通过。
+  - draw.io XML 5 张解析通过;launch Markdown 本地链接 17 个检查通过;`git diff --check` 通过。
+- 本轮接下来执行:`git add -A`、commit、push `main`,再使用 `gh run` 查看新 pushed commit 的 CI 状态。
+
+**Round 158**(2026-06-15,Codex — release readiness audit):
+- 持续推进长期目标,本轮不新增功能和宣传稿,而是把公开发布前最容易漂移的事实证据整理成可复用审计台账。
+- 新增 `docs/launch/readiness-audit.md`:
+  - 记录当前 scope:branch `main`,HEAD `564e598`,并明确当前 worktree 有未提交变更。
+  - 记录证据:无 token demo 通过、完整本地测试 428 passed / 1 skipped、Phase 8 gate 41 passed、
+    ruff / format / mypy / diff hygiene 通过、中文文章链接和 draw.io XML 通过。
+  - 记录 GitHub Actions 事实:最新 pushed `main` CI 成功,但时间早于当前未提交变更;发布前必须 push 后等新 CI 绿。
+  - 记录 claim boundaries:Telegram primary、Feishu first slice still pending production smoke、AICO 不是 sandbox/cloud、
+    OpenClaw/company CLI 不是已实现 adapter、`/overnight` 不是完整 autonomous scheduler、`/view` 不是默认 Web console。
+  - 写入 `v0.1.0` tag 前 Go / No-Go 清单。
+- 更新 `docs/launch/v0.1.0-release-notes.md`:
+  - 把易漂移的 exact rounds 数字改为 `150+ documented development rounds`。
+  - 保留当前实测 `428 unit tests passing, 1 skipped` 和 P-040。
+  - 修正 release notes 作为 `docs/launch/` 内 Markdown 文件时的本地相对链接。
+- 更新 `docs/launch/playbook.md`:
+  - 将“CI 绿 ✅ 已完成”改成 CI workflow / badge 已配置,但 latest pushed main 需要发布前重新确认 CI 绿;
+    当前未提交变更只能用本地 gate 证明。
+- 更新 `docs/launch/articles/README.md`:
+  - 当前验证状态改为引用 `../readiness-audit.md`,避免文章索引继续维护过期 Round 号。
+- 验证:
+  - `uv run aico-release-room-demo`:通过,仍展示 `/morning` 和 `/view` 动线。
+  - `gh run list --limit 5`:最新 pushed `main` CI 为 success,但不覆盖当前 uncommitted worktree。
+  - `uv run pytest -q`:428 passed,1 skipped。
+  - Phase 8 absence-loop gate:41 passed。
+  - `uv run ruff check .`,`uv run ruff format --check .`,`uv run mypy src tests`,`git diff --check`:均通过。
+  - draw.io XML 5 张解析通过;launch Markdown 本地链接 17 个检查通过。
+
+**Round 157**(2026-06-14,Codex — test env isolation + release facts):
+- 持续推进长期目标,优先做能支撑“实事求是公开发布”的当前-state 验证,而不是继续增加宣传材料。
+- 先重跑 Phase 8 absence-loop AI 前置 contract gate:
+  - `41 passed in 0.90s`,覆盖父子 agent 委派、`/overnight` handoff、移动端分片、
+    `/aico-view` alias、`/view` HTML snapshot 和 Telegram `sendDocument` 上传路径。
+- 随后跑完整 `uv run pytest -q`,发现当前本机 dogfood shell 中的真实 `AICO_*` 环境变量会污染 unit tests:
+  - aico-view 路由测试被 `AICO_VIEW_TOKEN` 影响,返回 401。
+  - Phase1 runtime 默认值测试被 `AICO_VIEW_ENABLED=true` 影响,意外启用 view snapshot handler。
+- 新增 `tests/unit/conftest.py`:
+  - autouse fixture 在每个 unit test 前清理当前进程 `AICO_*` 环境变量。
+  - 需要测试环境读取行为的用例仍可在函数内用 `monkeypatch.setenv(...)` 显式设置。
+- 更新 `docs/journal/PITFALLS.md`:
+  - 新增 P-040,记录本机 dogfood 环境变量污染单测的症状、根因、修复方式和避免方式。
+- 更新 `docs/launch/v0.1.0-release-notes.md`:
+  - 保留当前实测 `428 passed, 1 skipped`。
+  - 将 pitfalls 索引更新为 P-040。
+  - 将 development rounds 更新为 156。
+  - 收紧 Feishu 兼容性口径:Telegram primary;Feishu first slice 已实现,但仍需生产 callback smoke 后再当作同等稳定公开 Channel。
+- 验证:
+  - `uv run pytest -q`:428 passed,1 skipped。
+  - Phase 8 absence-loop gate:41 passed。
+  - `uv run ruff check .`:通过。
+  - `uv run ruff format --check .`:通过。
+  - `uv run mypy src tests`:通过。
+  - `git diff --check`:通过。
+  - draw.io XML 解析 5 张图通过。
+  - `docs/launch/articles/README.md` 本地链接检查通过。
+
+**Round 156**(2026-06-14,Codex — social diagram sources):
+- 持续推进中文发布素材包收口,承接 Round 155 README 中“建议补 3 张面向社交平台静态图”的待办。
+- 新增三张 draw.io XML 图源:
+  - `docs/launch/articles/diagrams/social-pain-cover.drawio`:共鸣版痛点首图,用中午吃饭、路上被问 release、
+    睡前托管等场景强化日常代入。
+  - `docs/launch/articles/diagrams/boss-absent-loop.drawio`:展示 `/overnight`、operator inbox、`/morning`、
+    `/task`、`/audit`、`/view` 的老板不在场接手链路。
+  - `docs/launch/articles/diagrams/project-lead-org.drawio`:展示 Boss 任命 Project Lead,Lead 再协调
+    implementer / tester / reviewer 的项目组织关系。
+- 更新 `docs/launch/articles/README.md`:
+  - 将 3 张社交图从“建议额外补”改成正式图源清单。
+  - 为每张图写明推荐发布位置:共鸣版小红书首图、共鸣长文解释图、技术 Lead 版组织关系图。
+  - 更新验证状态,注明五张 draw.io XML 均已解析通过,`git diff --check` 在 Round 156 通过。
+- 验证:
+  - `/usr/bin/python3` 解析 `docs/launch/articles/diagrams/*.drawio` 通过。
+  - `/usr/bin/python3` 检查 `docs/launch/articles/README.md` 本地 Markdown 链接通过。
+  - `git diff --check` 通过。
+  - 本轮只改 Markdown / draw.io XML,未跑 Python 单测。
+
+**Round 155**(2026-06-14,Codex — launch article index):
+- 持续推进“围绕北极星目标做实事求是 AI 闭环迭代”的长期目标,选择不依赖 GitHub owner / 真机 IM 环境的下一步:
+  把已完成的中文文章、图源和发布口径整理成可执行素材索引。
+- 新增 `docs/launch/articles/README.md`:
+  - 汇总四篇中文文章及推荐平台、主诉求、使用方式。
+  - 汇总两张 draw.io 图源和发布建议。
+  - 给出发布顺序:GitHub public + v0.1.0 Release 后先发共鸣长文,再发技术 Lead 长文,
+    小红书短文分开发。
+  - 增加发布前口径检查:Telegram 稳定入口、飞书待 smoke、OpenClaw 未实现、AICO 不是云端运行/安全沙箱、
+    `/overnight` 还不是完整自动调度器、`/view` 是只读 HTML snapshot。
+  - 增加推荐标题和评论区应对,覆盖 CrewAI / AutoGen / LangGraph 对比、Telegram 原因、安全边界、
+    单 agent 是否太重、Codex 是否必要。
+- 清理 `docs/launch/articles/.DS_Store` 未跟踪系统文件,避免素材目录带 macOS 杂物。
+- 验证:
+  - `find docs/launch/articles -maxdepth 2 -type f` 确认目录只含文章、README、draw.io 和 research notes。
+  - `/usr/bin/python3` 解析两张 draw.io XML 通过。
+  - 小红书字数复核:共鸣版 817 字符,技术 Lead 版 838 字符。
+  - 本轮只改 Markdown / 清理未跟踪系统文件,未跑 Python 单测。
+
+**Round 154**(2026-06-10,Codex — prepublish MCN review):
+- 人类指出共鸣版博客园痛点部分仍不够日常,`P1:AI 很强,但人离开电脑后链路断了`
+  代入感弱;同时指出 6 个问题的叙事优先级应调整为 P3 / P6 最重要,再到 P2 / P5,
+  最后才是 P1 / P4。
+- 以“发布前 MCN 助理审稿”视角优化四篇文章:
+  - 共鸣版博客园开头补中午吃饭、路上被问 release、睡前托管、第二天翻现场等更日常的痛点场景。
+  - 共鸣版博客园 6 个痛点重排为:
+    1. 长任务不可接手。
+    2. 只想看局面,不是看日志。
+    3. 多 agent 增加调度成本。
+    4. 项目知识和经验不能每次重讲。
+    5. 离开电脑后链路断。
+    6. 风险动作不能默认放飞。
+  - 同步调整“解法总览”和“睡前托管 release room”场景里的痛点-解法表,保持前后一致。
+  - 技术 Lead 版博客园补“上午查 A 项目 CI / 午饭前被问 B 项目 release / 下午回 C 项目 PR”
+    的多项目打断场景,并强调长任务恢复和 IM 可读性是能否托付 lead 的关键。
+  - 两篇小红书同步补更日常的打断场景,并保留 1000 字以内。
+- 发布前校对:
+  - 修复共鸣版博客园“解法总览”表头重复问题。
+  - 将公开稿里的“一坨/一大坨”改为“一屏混杂输出 / 一整屏日志”。
+  - 扫描 `这个产品|一个具体场景|打中|赋能|颠覆|极致|全自动万能|无缝|行业领先|闭环|智能化`
+    等词,除正常表头外无不当命中。
+  - 小红书字数:共鸣版 816 字符,技术 Lead 版 839 字符。
+  - `git diff --check` 通过。
+  - 本轮只改 Markdown,未跑 Python 单测。
+
+**Round 153**(2026-06-10,Codex — cnblogs article hardening):
+- 人类指出共鸣版博客园文章需要更工整严谨:
+  - 前面提出的痛点要在后文逐项回答。
+  - 第一视角口吻要更自然,避免“这个产品真正打中的痛点”等客观 AI 腔。
+  - 博客园文章可以技术硬核,要深挖技术核心决策背后的动机。
+  - 需要回答 role/agent/team 关系、role 记忆和经验、lead 为什么能管理经验、`/view` 为什么存在、
+    跨 agent 委派如何实现、task 架构、权限如何管控。
+  - 涉及图要补 draw.io XML。
+- 重写两篇博客园长文:
+  - `docs/launch/articles/2026-06-10-worker-resonance-cnblogs.md`
+  - `docs/launch/articles/2026-06-10-tech-lead-cnblogs.md`
+- 新增两张 draw.io XML 图:
+  - `docs/launch/articles/diagrams/aico-domain-model.drawio`
+  - `docs/launch/articles/diagrams/aico-task-flow.drawio`
+- 文章新增/强化内容:
+  - 行业通用痛点:durable execution、human review、guardrails、memory、observability、RBAC、
+    multi-agent runtime、MCP/A2A 等,并引用 LangSmith / LangGraph、CrewAI、AutoGen 官方文档。
+  - 领域模型:Agent / Role / Project / Appointment / Team / Lead 的边界和为什么 Appointment 是关键抽象。
+  - Memory 与 Experience 分层:fact 按 query 召回,experience 按 role 注入,避免把项目事实和经验 lesson 混在一起。
+  - Task 架构:IMChannel -> MessageRouter -> OrchestratorTaskFactory -> TaskBus -> AIAdapter -> Audit/View。
+  - 跨 agent 委派:解析 `@reviewer:` 指令,child task 记录 parent audit,并用 `Current task:` 区分 context 与 instruction。
+  - 权限模型:RiskLevel、ApprovalPolicy、adapter capability gate 三层边界。
+  - `/view`:只读 HTML snapshot 经 IM `sendDocument` 发送,不默认让手机访问 localhost / tunnel。
+- 验证:
+  - `/usr/bin/python3` 解析两张 draw.io XML 通过。
+  - `rg` 扫描不再出现“这个产品”“一个具体场景”等被点名的 AI 腔表达。
+  - `git diff --check` 通过。
+  - 本轮仅改 Markdown / draw.io XML,未跑 Python 单测。
+
+**Round 152**(2026-06-10,Codex — launch article pack):
+- 人类要求围绕 AICO 核心内容写四篇宣传文章:
+  - 打工人共鸣视角:从真实公司 boss-absent 仍能运转,引出多个 agents 是否也能被组织起来继续执行。
+  - 技术视角:从一个人多项目精力上限出发,引出项目 lead 作为上下文、风险和 agent 指挥层。
+  - 两个视角均分别写博客园风格和小红书风格;小红书正文不超过 1000 字。
+- 新增 `docs/launch/articles/` 宣传文章包:
+  - `2026-06-10-worker-resonance-cnblogs.md`
+  - `2026-06-10-worker-resonance-xiaohongshu.md`
+  - `2026-06-10-tech-lead-cnblogs.md`
+  - `2026-06-10-tech-lead-xiaohongshu.md`
+  - `promotion-research-notes.md`
+- 文章事实边界:
+  - 当前稳定公开入口仍写 Telegram;飞书只写 first slice / 待生产 smoke。
+  - 不把 OpenClaw 或公司内部 CLI 写成已实现 Adapter。
+  - 不把 lead 主动机制写成完全自主 CEO;明确当前已实现的是项目/岗位/任命、审批审计、共享记忆、
+    `/overnight`、`/morning`、`/task`、`/audit`、`/view` 等 Phase 8 能力。
+- 外部传播调研提炼:
+  - Ollama / Dify / LangChain / Supabase 的共性是首屏窄定位、quickstart 证据、社区入口和场景先行。
+  - AICO 后续传播应继续把 boss-absent 作为第一信号,并反复给 no-token demo 命令。
+- 验证:
+  - 两篇小红书稿 `wc -m` 分别为 728 / 775 字符;扣掉图片行后 670 / 717,均低于 1000。
+  - 检查了 README GIF 相对路径存在。
+  - 以关键词扫描方式审掉了不合事实或过度营销的表述;本轮仅改 Markdown 文档,未跑 Python 单测。
 
 **Round 151**(2026-06-10,Codex — readme showcase command review):
 - 人类指出 README 中“GitHub 发布页怎么配置”与项目展示无关,要求删除,并要求 README
@@ -1622,7 +1830,7 @@ AICO 的产品边界是 absence-first:
      执行,不要在仓库仍 private 时抢先打 tag。
 2. **【最高】按 Dogfooding 验收分层收口当前待测项**:
    - 先跑机器 Gate:见 [`docs/playbooks/phase-8-absence-loop.md`](docs/playbooks/phase-8-absence-loop.md)
-     的 "AI 前置 Contract Gate"。Round 146 实测 **41 passed in 0.94s**。
+     的 "AI 前置 Contract Gate"。Round 157 实测 **41 passed in 0.46s**。
    - Gate 覆盖父子 agent 委派、`/overnight` handoff、delegate 输出分段、`/aico-view` alias、老板动线、
      `/view` HTML snapshot 和 Telegram `sendDocument` 上传;后续修同类问题要先补/跑对应快速测试。
    - Agent 必须先跑本机真实样本:当前 Mac 有 Telegram App 时,先在 `ai_co` bot 中发短样本,
@@ -1646,6 +1854,8 @@ AICO 的产品边界是 absence-first:
    - HN 帖子贴出后 1 分钟内贴作者首条评论,30 分钟内开始值守评论区。
    - 同窗口 Reddit r/LocalLLaMA / r/programming / r/ChatGPTCoding / r/Anthropic
      各发 1 帖,内容互不重复(模板见 playbook §3)。
+   - 中文平台可从 `docs/launch/articles/` 选择博客园 / 小红书稿先发;小红书稿已控制在
+     1000 字以内,博客园稿更适合做知乎 / 博客园长文底稿。
 5. **【高】Phase 8 dogfood 复盘 + `/view` 真实 IM human 体感 Sample**:
    - 直接可问的问题:
      - `/project aico`

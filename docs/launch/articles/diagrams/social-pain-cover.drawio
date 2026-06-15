@@ -1,0 +1,38 @@
+<mxfile host="app.diagrams.net" modified="2026-06-14T00:00:00.000Z" agent="Codex" version="26.0.0" type="device">
+  <diagram id="social-pain-cover" name="Social Pain Cover">
+    <mxGraphModel dx="900" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1080" pageHeight="1350" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1080" height="1350" as="geometry" />
+        </mxCell>
+        <mxCell id="brand" value="AI Company OS" style="text;html=1;strokeColor=none;fillColor=none;fontSize=28;fontStyle=1;align=left;fontColor=#0F172A;" vertex="1" parent="1">
+          <mxGeometry x="80" y="80" width="360" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="tag" value="老板不在场 / Boss-absent mode" style="rounded=1;whiteSpace=wrap;html=1;arcSize=50;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=22;fontStyle=1;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="80" y="150" width="390" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="headline" value="我离开电脑后,&#10;AI 项目还能继续吗?" style="text;html=1;strokeColor=none;fillColor=none;fontSize=66;fontStyle=1;align=left;verticalAlign=top;fontColor=#111827;spacingTop=0;" vertex="1" parent="1">
+          <mxGeometry x="80" y="270" width="860" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="pain1" value="中午去吃饭&#10;agent 还在跑测试" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#DC2626;fillColor=#FEE2E2;fontSize=28;fontStyle=1;fontColor=#7F1D1D;" vertex="1" parent="1">
+          <mxGeometry x="90" y="540" width="420" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="pain2" value="路上被问&#10;今天能不能发版" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=28;fontStyle=1;fontColor=#78350F;" vertex="1" parent="1">
+          <mxGeometry x="570" y="540" width="420" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="pain3" value="睡前想托管&#10;又怕早上只剩一屏混杂输出" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#1D4ED8;fillColor=#DBEAFE;fontSize=28;fontStyle=1;fontColor=#1E3A8A;" vertex="1" parent="1">
+          <mxGeometry x="90" y="740" width="900" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="answer" value="AICO 把本机 Claude Code / Codex / Cursor 等 AI CLI&#10;组织成一个能用 IM 远程管理的项目办公室" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#047857;fillColor=#D1FAE5;fontSize=30;fontStyle=1;fontColor=#064E3B;" vertex="1" parent="1">
+          <mxGeometry x="90" y="980" width="900" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="footer" value="/overnight · /morning · /task · /audit · /view" style="text;html=1;strokeColor=none;fillColor=none;fontSize=26;fontStyle=1;align=center;fontColor=#334155;" vertex="1" parent="1">
+          <mxGeometry x="90" y="1210" width="900" height="44" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+

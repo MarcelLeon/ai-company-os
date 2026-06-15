@@ -1,0 +1,71 @@
+<mxfile host="app.diagrams.net" modified="2026-06-10T00:00:00.000Z" agent="Codex" version="26.0.0" type="device">
+  <diagram id="aico-domain-model" name="AICO Domain Model">
+    <mxGraphModel dx="1290" dy="820" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="AICO domain model: manage agents like a project team" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;align=left;verticalAlign=middle;fontColor=#111827;" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="760" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="boss" value="Boss / requester&#10;IM-only management" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#1D4ED8;fillColor=#DBEAFE;fontSize=14;fontStyle=1;fontColor=#1E3A8A;" vertex="1" parent="1">
+          <mxGeometry x="70" y="130" width="190" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="project" value="Project&#10;repo · docs · phase · default role" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#047857;fillColor=#D1FAE5;fontSize=14;fontStyle=1;fontColor=#064E3B;" vertex="1" parent="1">
+          <mxGeometry x="420" y="120" width="260" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="team" value="Team view&#10;/team shows appointed roles" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#047857;fillColor=#ECFDF5;fontSize=13;fontColor=#064E3B;" vertex="1" parent="1">
+          <mxGeometry x="750" y="120" width="230" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="role" value="RoleProfile&#10;PM · implementer · tester · reviewer&#10;summary · prompt · default permissions" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=13;fontColor=#78350F;" vertex="1" parent="1">
+          <mxGeometry x="70" y="330" width="270" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="agent" value="CompanyAgentProfile&#10;Claude Code · Codex · Gemini · Cursor&#10;provider · capabilities · concurrency" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#6D28D9;fillColor=#EDE9FE;fontSize=13;fontColor=#4C1D95;" vertex="1" parent="1">
+          <mxGeometry x="820" y="330" width="300" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="appointment" value="Appointment / AssignmentProfile&#10;agent + project + role + seat&#10;workspace · session policy · risk policy" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#DC2626;fillColor=#FEE2E2;fontSize=14;fontStyle=1;fontColor=#7F1D1D;" vertex="1" parent="1">
+          <mxGeometry x="440" y="310" width="320" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="lead" value="Lead is default appointment&#10;not a special provider" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#DC2626;fillColor=#FFF1F2;fontSize=13;fontColor=#7F1D1D;" vertex="1" parent="1">
+          <mxGeometry x="470" y="520" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="memory" value="Memory / Experience&#10;fact retrieval + role-scoped lessons&#10;scope: boss/project/team/role/agent" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=13;fontColor=#134E4A;" vertex="1" parent="1">
+          <mxGeometry x="110" y="650" width="330" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="task" value="Task / Trace / Audit&#10;payload · requester · target · metadata&#10;risk · approval · snapshots" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#374151;fillColor=#F3F4F6;fontSize=13;fontColor=#111827;" vertex="1" parent="1">
+          <mxGeometry x="510" y="650" width="300" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="view" value="/view snapshot&#10;read-only HTML delivered by IM" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#0E7490;fillColor=#CFFAFE;fontSize=13;fontColor=#164E63;" vertex="1" parent="1">
+          <mxGeometry x="880" y="650" width="260" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="e_boss_project" value="/project selects context" style="endArrow=classic;html=1;rounded=0;strokeColor=#1D4ED8;fontSize=11;" edge="1" parent="1" source="boss" target="project">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_project_team" value="contains appointed roles" style="endArrow=classic;html=1;rounded=0;strokeColor=#047857;fontSize=11;" edge="1" parent="1" source="project" target="team">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_role_appt" value="role side" style="endArrow=classic;html=1;rounded=0;strokeColor=#B45309;fontSize=11;" edge="1" parent="1" source="role" target="appointment">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_agent_appt" value="agent side" style="endArrow=classic;html=1;rounded=0;strokeColor=#6D28D9;fontSize=11;" edge="1" parent="1" source="agent" target="appointment">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_project_appt" value="project scoped" style="endArrow=classic;html=1;rounded=0;strokeColor=#047857;fontSize=11;" edge="1" parent="1" source="project" target="appointment">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_appt_lead" value="/lead sets default role" style="endArrow=classic;html=1;rounded=0;strokeColor=#DC2626;fontSize=11;" edge="1" parent="1" source="appointment" target="lead">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_appt_memory" value="prompt uses scoped context" style="endArrow=classic;html=1;rounded=0;strokeColor=#0F766E;fontSize=11;" edge="1" parent="1" source="appointment" target="memory">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_appt_task" value="task metadata binds seat/role/project" style="endArrow=classic;html=1;rounded=0;strokeColor=#374151;fontSize=11;" edge="1" parent="1" source="appointment" target="task">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_task_view" value="summarized for boss" style="endArrow=classic;html=1;rounded=0;strokeColor=#0E7490;fontSize=11;" edge="1" parent="1" source="task" target="view">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+

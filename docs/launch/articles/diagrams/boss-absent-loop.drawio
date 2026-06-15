@@ -1,0 +1,56 @@
+<mxfile host="app.diagrams.net" modified="2026-06-14T00:00:00.000Z" agent="Codex" version="26.0.0" type="device">
+  <diagram id="boss-absent-loop" name="Boss Absent Loop">
+    <mxGraphModel dx="900" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1080" pageHeight="1350" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1080" height="1350" as="geometry" />
+        </mxCell>
+        <mxCell id="title" value="老板不在场时,AICO 怎么接住项目?" style="text;html=1;strokeColor=none;fillColor=none;fontSize=48;fontStyle=1;align=left;fontColor=#111827;" vertex="1" parent="1">
+          <mxGeometry x="80" y="70" width="920" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="不是让 agent 放飞,而是让项目能推进、审批、追溯、接手。" style="text;html=1;strokeColor=none;fillColor=none;fontSize=24;align=left;fontColor=#475569;" vertex="1" parent="1">
+          <mxGeometry x="80" y="155" width="920" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" value="1. 睡前托管&#10;/overnight" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#1D4ED8;fillColor=#DBEAFE;fontSize=30;fontStyle=1;fontColor=#1E3A8A;" vertex="1" parent="1">
+          <mxGeometry x="90" y="280" width="360" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" value="2. 当前注意力&#10;/inbox" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#047857;fillColor=#D1FAE5;fontSize=30;fontStyle=1;fontColor=#064E3B;" vertex="1" parent="1">
+          <mxGeometry x="630" y="280" width="360" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="3. 早上接手&#10;/morning" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=30;fontStyle=1;fontColor=#78350F;" vertex="1" parent="1">
+          <mxGeometry x="630" y="540" width="360" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="4. 查原始 trace&#10;/task" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#6D28D9;fillColor=#EDE9FE;fontSize=30;fontStyle=1;fontColor=#4C1D95;" vertex="1" parent="1">
+          <mxGeometry x="90" y="540" width="360" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" value="5. 看责任链&#10;/audit" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#374151;fillColor=#F3F4F6;fontSize=30;fontStyle=1;fontColor=#111827;" vertex="1" parent="1">
+          <mxGeometry x="90" y="800" width="360" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" value="6. 看全局快照&#10;/view" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#0E7490;fillColor=#CFFAFE;fontSize=30;fontStyle=1;fontColor=#164E63;" vertex="1" parent="1">
+          <mxGeometry x="630" y="800" width="360" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="footer" value="核心边界:风险动作仍走 /approve,不是默认 YOLO。" style="rounded=1;whiteSpace=wrap;html=1;arcSize=8;strokeColor=#DC2626;fillColor=#FEE2E2;fontSize=28;fontStyle=1;fontColor=#7F1D1D;" vertex="1" parent="1">
+          <mxGeometry x="90" y="1080" width="900" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=3;strokeColor=#64748B;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=3;strokeColor=#64748B;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=3;strokeColor=#64748B;" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=3;strokeColor=#64748B;" edge="1" parent="1" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="" style="endArrow=classic;html=1;rounded=0;strokeWidth=3;strokeColor=#64748B;" edge="1" parent="1" source="s5" target="s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+
