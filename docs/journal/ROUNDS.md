@@ -8198,3 +8198,124 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 162。
 - 不新增 ADR / PITFALL:本轮是 CI 发布门禁预检,不改变产品架构。
+
+## Round 163 — 2026-06-15 — Codex
+
+### 输入
+- 人类准备发布四篇中文文章,指出共鸣版博客园仍有两个发布前问题:
+  - P1 的“人离开电脑后链路断”代入感不够,需要更日常、更直接的生活痛感。
+  - P1-P6 的叙事优先级要调整为 P3/P6 最重要,其次 P2/P5,最后 P1/P4。
+- 人类要求以 MCN 助理视角审查四篇文章,发现问题就优化;本轮后准备发布。
+
+### 思考与讨论
+- 候选 A:只改用户点名的 P1 段落 → ❌ 否决。P1 改成生活化痛点后,后文解法表和 release room 场景也必须同步对齐,
+  否则文章会出现“前面讲接不上,后面仍说链路断”的术语断裂。
+- 候选 B:大幅重写四篇文章 → ❌ 否决。Round 153/160 已完成硬核结构和发布前总审稿;临发前大改会引入新事实风险,
+  也会削弱已经建立好的技术论证。
+- 候选 C:做发布前终稿提纯 → ✅ 选定。重点改共鸣版长文痛点区和闭环表,并对技术长文、小红书短文做小幅传播钩子增强,
+  同时复核字数、AI 味表达和公开口径。
+
+### 产出
+- 更新 `docs/launch/articles/2026-06-10-worker-resonance-cnblogs.md`:
+  - 明确痛点排序:P3/P6、P2/P5、P1/P4。
+  - 将 P5 改成“人离开电脑后,项目经常停在半路”的饭点/睡前场景。
+  - 将 P1 改成“早上回来,最怕接不上昨晚的活”,强调一整屏混杂输出带来的接手成本。
+  - 同步修正痛点-解法总览和 release room 场景闭环表。
+- 更新 `docs/launch/articles/2026-06-10-tech-lead-cnblogs.md`:
+  - 补强 lead 不是聊天入口,而是压缩局面、分派角色、守住边界的组织角色。
+  - 对业界 agent operations 背景做官方文档口径复核后收紧措辞。
+- 更新两篇小红书稿:
+  - 共鸣版增加“像项目助理一样补背景、盯风险、追进度”的直观表达。
+  - 技术 Lead 版增加 lead 不乱拍板、低风险推进、高风险拦审批的边界表达。
+- 更新 `docs/launch/articles/README.md` 的当前验证状态,记录本轮 MCN 复审和小红书字数。
+- 更新 `STATUS.md` Round 163。
+
+### 验证结果
+- `wc -m docs/launch/articles/2026-06-10-worker-resonance-xiaohongshu.md docs/launch/articles/2026-06-10-tech-lead-xiaohongshu.md`:
+  - 共鸣版 897 字。
+  - 技术 Lead 版 901 字。
+  - 均低于 1000 字。
+- `rg` 检查未发现 `这个产品`、`一个具体场景`、`综上`、`本文将` 等明显 AI 味模板表达。
+- `rg` 检查 Feishu、`/overnight`、`/view`、安全沙箱、全自动等公开口径,未发现新增过度承诺。
+- 使用官方文档复核业界背景:
+  - LangSmith Deployment:agent workload runtime、streaming、human review、MCP/A2A、auth、memory、tracing 等。
+  - CrewAI:crews、flows、guardrails、memory、knowledge、observability、human-in-the-loop、RBAC 等。
+  - AutoGen:AgentChat、Core、Extensions、Docker executor、distributed agents 等。
+
+### 关键决策
+- 🔒 **决策 1**:共鸣版长文的发布排序按真实痛感走,不是按 P 编号走:P3/P6 最先讲,P2/P5 次之,P1/P4 收尾。
+- 🔒 **决策 2**:临发布前不再新增新文章或新图,只做终稿提纯和事实边界复核。
+
+### 留给下一轮
+- 四篇中文文章已经可作为发布稿使用。发布前仍需确认 GitHub public、social preview owner 上传、tag 和 Release 状态,
+  不要因为中文文章就绪而跳过 release ops。
+- 当前工作区存在未提交的 `src/aico/core/orchestrator.py` 和 `src/aico/core/orchestrator_command_registry.py`
+  工程重构改动;它们不是本轮文章修改产物,发布文案提交或整理时不要误混。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 163。
+- 不新增 ADR / PITFALL / BLOCKER:本轮只做发布文案终稿复审,没有新增架构决策或运行时坑。
+
+## Round 164 — 2026-06-15 — Codex
+
+### 输入
+- 人类要求:
+  - 解释 GitHub UI 上传 `docs/assets/social-preview.png` 的操作。
+  - 清理当前工作区。
+  - 完成 Phase 8 两个未完成项:多 step / 多 agent 夜间自动编排、早报自动生成或定时推送。
+  - 给出 Feishu 在 Mac App 已登录后的验收步骤。
+  - 执行 B-005 工程债:把 command handler 实例化和分发表拆到 `OrchestratorCommandRegistry`。
+
+### 思考与讨论
+- 候选 A:把 `/overnight` 做成完整无人值守调度器 → ❌ 否决。Phase 8 的北极星是老板缺席时可推进、可审批、可接手,不是让 agent 夜里无限自主操作;扩大到 durable scheduler 会引入审批、恢复和 UX 新风险。
+- 候选 B:只改文档,把 Phase 8 未完成项解释为 Future → ❌ 否决。STATUS 中已有明确未勾项,且可以做出安全最小切片。
+- 候选 C:做安全最小切片 → ✅ 选定。`/overnight` lead 完成后自动排 checkpoint review,早报推送器默认关闭且只发送 `/morning` 同口径只读早报,所有风险任务仍走现有 approval / audit / interrupt。
+- 候选 D:重写 Orchestrator 命令体系 → ❌ 否决。工作区已有 `OrchestratorCommandRegistry` 半成品,正确路径是补齐迁移和测试,不引入新模式。
+
+### 产出
+- 收口 `OrchestratorCommandRegistry`:
+  - 新增/补齐 registry builder helper,把 role proposal、project summary、directory/project/memory/audit/offline/goal/lead handlers 的实例化迁出 `Orchestrator`。
+  - Slash command 分发表、`/inbox`、`/morning`、审批、拒绝、中断和 broadcast 处理迁入 registry。
+  - `Orchestrator` 保留 incoming、task run、stream output、collaboration 和 runtime 协调职责。
+- Phase 8 多 step / 多 agent 安全切片:
+  - `/overnight` prompt 要求 plan / check / verify / handoff,并指导 lead 用 `@role: request` 创建可追踪 child task。
+  - lead handoff 合格后,自动按已任命角色排 `challenger` / `reviewer` checkpoint review task。
+  - checkpoint review task 复用 TaskBus、risk assessor、approval policy、audit 和 provider session,不绕过现有安全边界。
+  - `OfflineDelegationRecord` 持久化 `review_task_ids`,`/overnight` 列表展示 review task short id。
+- Phase 8 自动早报安全切片:
+  - 新增 `src/aico/app/morning_scheduler.py`。
+  - `Phase1Settings` 新增 `AICO_MORNING_PUSH_ENABLED`、`AICO_MORNING_PUSH_TARGET_ID`、`AICO_MORNING_PUSH_PROJECT`、`AICO_MORNING_PUSH_TIME`、`AICO_MORNING_PUSH_ON_START`、`AICO_MORNING_PUSH_SCOPE_ID` 等配置。
+  - `Orchestrator.send_morning_handoff()` 支持无 incoming message 时把 `/morning` 同口径早报发送到指定 `ChannelTarget`。
+- 风险边界修复:
+  - `/overnight` wrapper 使用最后一个 `Current task:` 标记真实老板目标,避免系统提示词里的 `execution`、`shell`、`write` 等词触发错误 approval。
+  - 更新 P-034,提醒所有 wrapper 规则必须放在 `Current task:` 之前。
+- 文档:
+  - `docs/human/daily-ops.md` 增加 Feishu Mac App + 开放平台验收步骤和 morning push 配置。
+  - `docs/playbooks/feishu-channel.md` 补充 Mac App 登录、ngrok callback、`/project aico` 和 `chat_id` 验收提示。
+  - `STATUS.md` Phase 8 两个未完成项改为完成,当前阶段改为 Phase 8 功能收口完成。
+  - `docs/journal/BLOCKERS.md` 将 B-005 标为 RESOLVED。
+
+### 验证结果
+- `uv run pytest tests/unit/test_orchestrator.py tests/unit/test_phase1_app.py tests/unit/test_morning_scheduler.py tests/unit/test_commands.py tests/unit/test_offline_delegation.py -q`:129 passed。
+- `env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED uv run pytest ...phase-8 gate... -q`:41 passed。
+- `uv run pytest -q`:440 passed,1 skipped。
+- `uv run ruff check .`:通过。
+- `uv run ruff format --check .`:通过。
+- `uv run mypy src tests`:通过。
+- 结构扫描:`Orchestrator` 447 行,`OrchestratorCommandRegistry` 414 行;未发现单方法 >=100 行。
+
+### 关键决策
+- 🔒 **决策 1**:Phase 8 “多 step / 多 agent 夜间编排”先定义为 lead handoff 后自动 checkpoint review,不是完整 autonomous scheduler。
+- 🔒 **决策 2**:早报自动推送只发送只读 `/morning` 同口径消息,不做自动审批、自动重试危险任务或自动修改项目状态。
+- 🔒 **决策 3**:系统 wrapper 必须用 `Current task:` 隔离真实用户意图;不要通过放宽 risk assessor 或 adapter capability 来绕过误判。
+- 🔒 **决策 4**:命令增长继续进 `OrchestratorCommandRegistry` 或专用 handler,不得再把分发表塞回 `Orchestrator`。
+
+### 留给下一轮
+- owner 在 GitHub UI 上传 `docs/assets/social-preview.png`,然后跑 `uv run aico-github-social-preview` 确认不再是默认 repository card。
+- 按 Feishu playbook 做真实开放平台 URL verification 和端到端文本收发 smoke;Mac App 已登录只是最后用户侧确认。
+- 如果启用 morning push dogfood,先用 `AICO_MORNING_PUSH_ON_START=true` 做一次即时样本,再观察 `AICO_MORNING_PUSH_TIME` 定时样本。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 164。
+- B-005 从 DEFERRED 改为 RESOLVED。
+- P-034 最后更新到 Round 164,覆盖 `/overnight` wrapper 的 `Current task:` 风险边界。

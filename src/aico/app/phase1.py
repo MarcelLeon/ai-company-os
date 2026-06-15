@@ -27,6 +27,11 @@ from aico.adapter.codex import CodexAdapter
 from aico.adapter.cursor import CursorAdapter
 from aico.adapter.gemini import GeminiAdapter
 from aico.adapter.trae import TraeAdapter
+from aico.app.morning_scheduler import (
+    MorningPushConfig,
+    MorningPushScheduler,
+    parse_push_time,
+)
 from aico.channel import IMChannel
 from aico.channel.feishu import FeishuChannel
 from aico.channel.telegram import TelegramChannel
@@ -137,6 +142,13 @@ class Phase1Settings(BaseSettings):
     state_db_path: Path | None = None
     view_enabled: bool = False
     view_output_dir: Path = Path(".aico/view-snapshots")
+    morning_push_enabled: bool = False
+    morning_push_target_id: str | None = Field(default=None, min_length=1)
+    morning_push_thread_id: str | None = Field(default=None, min_length=1)
+    morning_push_project: str | None = Field(default=None, min_length=1)
+    morning_push_scope_id: str | None = Field(default=None, min_length=1)
+    morning_push_time: str = Field(default="09:00", min_length=1)
+    morning_push_on_start: bool = False
     log_level: str = "INFO"
     log_path: Path | None = Path("logs/aico.log")
 
@@ -206,12 +218,21 @@ class Phase1Runtime:
     session_store: InMemoryAgentSessionStore
     project_directory: ProjectAssignmentDirectory
     orchestrator: Orchestrator
+    morning_scheduler: MorningPushScheduler | None = None
 
     async def start(self) -> None:
         self.orchestrator.bind()
-        await self.channel.start()
+        if self.morning_scheduler is not None:
+            self.morning_scheduler.start()
+        try:
+            await self.channel.start()
+        finally:
+            if self.morning_scheduler is not None:
+                await self.morning_scheduler.stop()
 
     async def stop(self) -> None:
+        if self.morning_scheduler is not None:
+            await self.morning_scheduler.stop()
         await self.channel.stop()
 
 
@@ -312,6 +333,7 @@ def build_phase1_runtime(
         view_snapshot_handler=_view_snapshot_handler(settings, channel, project_directory),
         prefer_native_channel_format=settings.prefer_native_channel_format,
     )
+    morning_scheduler = _morning_push_scheduler(settings, orchestrator)
     return Phase1Runtime(
         channel=channel,
         adapter=adapter,
@@ -320,6 +342,31 @@ def build_phase1_runtime(
         session_store=session_store,
         project_directory=project_directory,
         orchestrator=orchestrator,
+        morning_scheduler=morning_scheduler,
+    )
+
+
+def _morning_push_scheduler(
+    settings: Phase1Settings,
+    orchestrator: Orchestrator,
+) -> MorningPushScheduler | None:
+    if not settings.morning_push_enabled:
+        return None
+    if settings.morning_push_target_id is None:
+        raise ValueError("AICO_MORNING_PUSH_TARGET_ID is required when morning push is enabled")
+    if settings.morning_push_project is None:
+        raise ValueError("AICO_MORNING_PUSH_PROJECT is required when morning push is enabled")
+    return MorningPushScheduler(
+        orchestrator=orchestrator,
+        config=MorningPushConfig(
+            channel_name=settings.channel,
+            target_id=settings.morning_push_target_id,
+            thread_id=settings.morning_push_thread_id,
+            project_id=settings.morning_push_project,
+            scope_id=settings.morning_push_scope_id or settings.morning_push_target_id,
+            push_time=parse_push_time(settings.morning_push_time),
+            push_on_start=settings.morning_push_on_start,
+        ),
     )
 
 

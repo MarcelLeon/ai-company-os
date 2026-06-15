@@ -11,6 +11,7 @@
 - 已在事件订阅中配置接收消息事件 `im.message.receive_v1`。
 - 已配置 Verification Token。
 - 有一个公网 HTTPS callback URL 能转发到 `aico-feishu-webhook`。
+- Mac 飞书 App 已登录,且机器人已添加到测试聊天。注意:App 登录不是 webhook 验收,只用于最后确认用户侧能看到回复。
 
 ## 步骤
 
@@ -50,6 +51,8 @@
    - 在飞书开放平台事件订阅中填写该 URL。
    - 飞书发送 `type=url_verification` 时,webhook 应返回 `{"challenge":"<原 challenge>"}`。
    - 如果 Verification Token 不匹配,webhook 应返回错误而不是静默接受。
+   - 如果使用 ngrok,示例是 `ngrok http 8080`,然后把 `https://<ngrok-domain>/feishu/events`
+     填入飞书开放平台 Request URL。
 
 5. 验证文本入站解析和 AICO 回复。
 
@@ -58,6 +61,8 @@
    - `event.message.content` 中的 JSON `text` 会映射到 `IncomingMessage.content.text`。
    - `event.message.chat_id` 会映射到 `ChannelTarget.target_id`。
    - 向机器人所在聊天发送 `/help` 或 `/status`,应收到 AICO 文本回复。
+   - 在 Mac 飞书 App 里继续发送 `/project aico`;如果项目配置已加载,应收到项目 office 文本。
+   - 保存该聊天的 `chat_id`;后续如果启用 morning push,可作为 `AICO_MORNING_PUSH_TARGET_ID`。
 
 6. 验证事件幂等。
 

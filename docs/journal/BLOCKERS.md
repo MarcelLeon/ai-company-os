@@ -53,10 +53,10 @@ Round 138-142 连续修复了协作风险误判、`/overnight` handoff 完整性
 
 ### [B-005] Orchestrator class size regression
 
-**状态**:🟡 DEFERRED
+**状态**:🟢 RESOLVED
 **提出于**:Round 132
-**最后更新**:2026-05-31
-**影响**:Boss-first roadmap 后续 sprint(V1/V2/A3/V3)再往 Orchestrator 加 handler 必须遵守"主体不变"边界,否则会再次撞 500 行硬限。不阻塞 A2 落地,但建议在 V3 完成后做一轮独立拆分。
+**最后更新**:2026-06-15(Round 164)
+**影响**:已通过 `OrchestratorCommandRegistry` 拆分解决;后续新增命令 handler 应继续放在 registry 或独立 handler 模块,不要回填到 `Orchestrator` 主体。
 
 **问题描述**
 B-004 在 Round 107 把 `Orchestrator` 拆到 480 行。M2/A2 各加了 1-2 个 command handler 实例化,加上模块级 `_build_orchestrator_event_index` helper 和 `_setup_*` 子方法,类总规模重新涨到约 585 行。每个方法已经被拆到 <100 行(`__init__` 37 / `_setup_command_handlers` 8 / `_setup_coordinators` 26 / `_setup_boss_and_lead_handlers` 36 / `_setup_workflow_handlers` 28),但类整体仍超 500 行硬限。
@@ -66,16 +66,18 @@ B-004 在 Round 107 把 `Orchestrator` 拆到 480 行。M2/A2 各加了 1-2 个 
 - 不在 A2 本 sprint 做大规模重构,以避免扩范围。
 
 **需要什么才能解开**
-- 独立重构 sprint:把 command handlers 的实例化 + 命令分发表拆到一个新的 `OrchestratorCommandRegistry` 类(或类似形态),Orchestrator 主体只剩 task 提交 / 流式输出 / 状态查询。
-- 不要再依赖"挤一挤就能再加一个 handler"——下一个 handler 会再次撞限。
+已解开:
+- Round 164 新增 `src/aico/core/orchestrator_command_registry.py`。
+- command handler 实例化、slash command 分发表、`/inbox`、`/morning`、审批/中断/broadcast 等命令处理迁出 `Orchestrator`。
+- `Orchestrator` 主体保留 IM 入站、任务提交、流式输出、协作派发和少量 runtime 协调职责。
 
 **当前 workaround**
-- 新 sprint(V1/V2/V3/A3)如果需要加新 command handler,**必须放在自己的模块文件**,Orchestrator 内只加 1 行命令分发 + 1 行 handler 实例化。
-- 超出"挤一挤"额度时,优先把已有 `_setup_*` 之一进一步拆分,但**主体仍然超限**——记入本卡点。
+- 无。后续如新增命令,优先扩展 `OrchestratorCommandRegistry` 或新增专用 handler,保持 `Orchestrator` 主体不重新膨胀。
 
 **相关链接**
 - ROUNDS Round 107(B-004 RESOLVED 时的状态)
 - ROUNDS Round 132(本卡点提出)
+- ROUNDS Round 164(本卡点关闭)
 - ADR-0032(A2 完成时识别问题)
 - CLAUDE.md "Hard rules" 单类 <500 行限制
 

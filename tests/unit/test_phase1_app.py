@@ -221,6 +221,37 @@ def test_build_phase1_runtime_configures_sqlite_task_state_store(tmp_path: Path)
     assert state_db_path.exists()
 
 
+def test_build_phase1_runtime_configures_morning_push_scheduler() -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        claude_command="claude -p",
+        morning_push_enabled=True,
+        morning_push_target_id="chat-1",
+        morning_push_project="aico",
+        morning_push_time="08:30",
+    )
+
+    runtime = build_phase1_runtime(settings)
+
+    assert runtime.morning_scheduler is not None
+
+
+def test_build_phase1_runtime_requires_morning_push_target() -> None:
+    settings = Phase1Settings(
+        telegram_bot_token="token",
+        claude_command="claude -p",
+        morning_push_enabled=True,
+        morning_push_project="aico",
+    )
+
+    try:
+        build_phase1_runtime(settings)
+    except ValueError as exc:
+        assert "AICO_MORNING_PUSH_TARGET_ID" in str(exc)
+    else:
+        raise AssertionError("expected missing morning push target to fail")
+
+
 def test_phase1_settings_maps_bool_like_state_db_path_to_local_data_dir() -> None:
     enabled = Phase1Settings.model_validate(
         {"telegram_bot_token": "token", "state_db_path": "true"}

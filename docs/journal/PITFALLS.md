@@ -1230,8 +1230,8 @@ Sprint A1 给 `MemoryAtom` / `AuditEvent` / `Task` 都加了 `trace_id: str | No
 
 **状态**:🟢 RESOLVED
 **首次踩中**:Round 138
-**最后更新**:2026-06-03
-**影响范围**:`src/aico/core/collaboration.py`, `src/aico/core/risk.py`, `src/aico/core/orchestrator.py`
+**最后更新**:2026-06-15(Round 164)
+**影响范围**:`src/aico/core/collaboration.py`, `src/aico/core/risk.py`, `src/aico/core/orchestrator.py`, `src/aico/core/offline_delegation.py`
 
 **症状**
 真实 IM 验收 `/overnight 为我准备好上线github的全部工作...` 时,lead/implementer 输出触发协作:
@@ -1257,9 +1257,11 @@ Round 113 为解决协作短指令上下文丢失,把 parent output context 注�
 - `collaboration_payload()` 在带 source context 时改用 `Current task:` 标记真实委托内容。
 - 保持 Codex read-only capability 不变;如果 `Current task:` 本身要求执行命令或写文件,仍会被拒绝或进入审批。
 - 新增 TaskBus + Orchestrator 回归测试,覆盖 parent context 含 `run pytest` / `git push` 但 reviewer 只做风险审阅的场景。
+- Round 164 将 `/overnight` wrapper 同样改为把规则放在上文、真实老板目标放在最后的 `Current task:` 下;否则系统提示词里的 `execution` / `shell` / `write` 等词也会让托管任务误入 approval。
 
 **如何避免再次踩中**
 - 给 agent 子任务注入上下文时,必须用风险识别已识别的任务边界标记,不要发明新的 `Request:` / `Delta:` 标签。
+- 给 `/overnight`、goal、review 等系统 wrapper 增加操作规则时,不要把规则放在 `Current task:` 之后;真实用户目标必须是最后一个 `Current task:` 后的内容。
 - 排查 `adapter codex cannot handle shell_exec tasks` 时,先看 child payload 的 `Current task:` 边界是否存在;不要直接把 reviewer 改任命给可执行 shell 的 adapter。
 - 不要为修这种误判放宽 Codex capability;正确边界是“只扫描真实委托内容”,不是让只读 reviewer 能执行命令。
 

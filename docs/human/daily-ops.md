@@ -118,7 +118,42 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 
 Feishu 不是 long polling,需要把公网 HTTPS callback 转到本机或部署实例的 `http://<host>:8080/feishu/events`,然后在飞书开放平台事件订阅里配置这个 URL。URL verification 通过后,订阅 `im.message.receive_v1`,向机器人所在聊天发送文本,应能收到 AICO 的文本回复。Telegram 仍可继续用 `aico-phase1` 作为默认主控入口;飞书是独立 webhook 进程。
 
+Mac App 登录只代表你能在飞书客户端里看到机器人消息;真正 smoke test 还需要开放平台侧配置:
+
+1. 打开飞书开放平台,创建或进入企业自建应用。
+2. 开启机器人能力,把机器人添加到一个测试群或单聊。
+3. 记录 App ID、App Secret、Verification Token。
+4. 本机启动 `aico-feishu-webhook`,并用 ngrok / Cloudflare Tunnel / 其它 HTTPS 入口把
+   `https://<public-host>/feishu/events` 转到 `http://127.0.0.1:8080/feishu/events`。
+5. 在事件订阅 Request URL 填入公网 HTTPS URL,等待 URL verification 通过。
+6. 订阅 `im.message.receive_v1`,保存并发布应用配置。
+7. 在飞书 Mac App 的机器人聊天里发 `/help`、`/status`、`/project aico`;
+   预期收到 AICO 文本回复,本地日志不出现 verification token 错误或重复事件重复任务。
+
 如果飞书事件日志显示重试,同一个 `header.event_id` 或 `uuid` 不应在 AICO 侧触发两次任务。该幂等缓存是进程内缓存,覆盖飞书常见重试窗口;进程重启后的极端重复投递仍可能重新进入 Orchestrator,后续如需要可升级为 audit / JSONL backed 去重。
+
+### Morning Push
+
+Round 164 起,`/morning` 可以保持手动命令,也可以配置为定时推送到指定 IM chat。该能力默认关闭,只发送同一份只读早报,不自动批准风险任务。
+
+```bash
+export AICO_MORNING_PUSH_ENABLED=true
+export AICO_MORNING_PUSH_TARGET_ID="<Telegram chat_id 或 Feishu chat_id>"
+export AICO_MORNING_PUSH_PROJECT="aico"
+export AICO_MORNING_PUSH_TIME="09:00"
+# 可选:启动后立即推一次,便于 smoke test
+export AICO_MORNING_PUSH_ON_START=true
+# 可选:如果要复用某个 IM scope 的 /overnight 记录
+export AICO_MORNING_PUSH_SCOPE_ID="<scope id, 默认等于 target id>"
+```
+
+验收方式:
+
+1. 先手动在同一个项目里发 `/project aico`、`/overnight <小目标>`。
+2. 确认 `/overnight` lead 完成后会自动排 challenger / reviewer checkpoint review。
+3. 发 `/morning`,确认手动早报可读。
+4. 开启 `AICO_MORNING_PUSH_ON_START=true` 重启 runtime,确认目标 chat 收到同口径早报。
+5. 关闭 `AICO_MORNING_PUSH_ON_START`,保留 `AICO_MORNING_PUSH_TIME`,观察指定时间是否推送。
 
 本地排查同一份审计指标时可直接跑:
 

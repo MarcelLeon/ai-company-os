@@ -260,7 +260,7 @@ The first public, dogfooded release of AICO.
   Grader, /goal Goal Brief
 - aico-view: read-only mobile web + IM-delivered HTML snapshot
 - Restart-aware state: SQLite task store + JSONL audit + JSONL memory
-- 433 unit tests, mypy strict, ruff, MIT license
+- 440 unit tests, mypy strict, ruff, MIT license
 
 ## What this release explicitly does NOT do
 

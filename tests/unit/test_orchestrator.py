@@ -1600,26 +1600,28 @@ async def test_orchestrator_reports_daily_and_weekly_project_state() -> None:
 
 
 async def test_orchestrator_queues_overnight_delegation_to_project_lead() -> None:
+    handoff = (
+        "done:\n"
+        "• reviewed GitHub readiness and community file scope.\n"
+        "blocked:\n"
+        "• no blockers found in local handoff state.\n"
+        "risks:\n"
+        "• release positioning still needs boss review before public launch.\n"
+        "next actions:\n"
+        "• finalize README polish\n"
+        "• add community files\n"
+        "• run final tests\n"
+    )
     adapter = ScriptedAdapter(
         name="claude-code",
-        output_texts=(
-            "done:\n"
-            "• reviewed GitHub readiness and community file scope.\n"
-            "blocked:\n"
-            "• no blockers found in local handoff state.\n"
-            "risks:\n"
-            "• release positioning still needs boss review before public launch.\n"
-            "next actions:\n"
-            "• finalize README polish\n"
-            "• add community files\n"
-            "• run final tests\n",
-        ),
+        output_texts=(handoff,),
     )
     channel = RecordingChannel()
     store = InMemoryAgentSessionStore(session_id_factory=lambda: "overnight-session-1")
+    task_ids = iter(("task-night-1", "task-review-1"))
     orchestrator = Orchestrator(
         channel=channel,
-        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-night-1"),
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
         task_bus=TaskBus(adapter),
         session_store=store,
         agent_directory=_agent_directory(),
@@ -1638,6 +1640,7 @@ async def test_orchestrator_queues_overnight_delegation_to_project_lead() -> Non
 
     queued = channel.sent_messages[1].text
     task = adapter.received_tasks[0]
+    review_task = adapter.received_tasks[1]
     provider = provider_session_from_task(task)
 
     assert queued.startswith("Overnight delegation queued: night-task-nig\n")
@@ -1654,12 +1657,27 @@ async def test_orchestrator_queues_overnight_delegation_to_project_lead() -> Non
     assert "Offline delegation request for the project lead." in task.payload
     assert "Boss goal: finish the phase 8 plan" in task.payload
     assert "Leave a morning handoff with: done, blocked, risks, and next 3 actions." in task.payload
+    assert "Work in small auditable steps: plan, check, verify" in task.payload
+    assert "`@role: request`" in task.payload
     assert _metadata_value(task, "aico.intent") == "offline_delegation"
     assert _metadata_value(task, "aico.offline_delegation_id") == "night-task-nig"
+    assert _metadata_value(task, "aico.offline_stage") == "lead"
+    assert "Offline delegation checkpoint review." in review_task.payload
+    assert "Review role: challenger" in review_task.payload
+    assert "Lead handoff to review:" in review_task.payload
+    assert _metadata_value(review_task, "aico.offline_delegation_id") == "night-task-nig"
+    assert _metadata_value(review_task, "aico.offline_stage") == "challenger_checkpoint"
     assert provider is not None
     assert provider.mode is ProviderSessionMode.NEW
+    assert any(
+        message.text.startswith("Overnight checkpoint review queued\n")
+        for message in channel.sent_messages
+    )
     assert channel.sent_messages[-1].text.startswith("Overnight delegations for aico:\n")
-    assert "• night-task-nig: implementer -> claude (task-nig)" in channel.sent_messages[-1].text
+    assert (
+        "• night-task-nig: implementer -> claude (task-nig); reviews: task-rev"
+        in channel.sent_messages[-1].text
+    )
     assert "Boss route:\n• now: /inbox\n• morning: /morning" in channel.sent_messages[-1].text
 
 
@@ -1758,26 +1776,28 @@ async def test_orchestrator_inbox_summarizes_project_attention_and_handoffs() ->
 
 
 async def test_orchestrator_morning_handoff_summarizes_absence_recovery() -> None:
+    handoff = (
+        "done:\n"
+        "• produced morning evidence for the offline delegation.\n"
+        "blocked:\n"
+        "• waiting approval still needs boss action.\n"
+        "risks:\n"
+        "• running tester work may still change the handoff.\n"
+        "next actions:\n"
+        "• approve pending docs update\n"
+        "• inspect running tester task\n"
+        "• open inbox\n"
+    )
     adapter = ScriptedAdapter(
         name="claude-code",
-        output_texts=(
-            "done:\n"
-            "• produced morning evidence for the offline delegation.\n"
-            "blocked:\n"
-            "• waiting approval still needs boss action.\n"
-            "risks:\n"
-            "• running tester work may still change the handoff.\n"
-            "next actions:\n"
-            "• approve pending docs update\n"
-            "• inspect running tester task\n"
-            "• open inbox\n",
-        ),
+        output_texts=(handoff,),
     )
     channel = RecordingChannel()
     bus = TaskBus(adapter)
+    task_ids = iter(("task-night-2", "task-review-2"))
     orchestrator = Orchestrator(
         channel=channel,
-        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-night-2"),
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
         task_bus=bus,
         agent_directory=_agent_directory(),
         project_directory=_project_directory(),
@@ -1813,6 +1833,28 @@ async def test_orchestrator_morning_handoff_summarizes_absence_recovery() -> Non
     assert "Next actions:\n• /approve task-app or /reject task-app" in handoff
     assert "• /task task-run or /interrupt task-run" in handoff
     assert "• /dream" in handoff
+
+
+async def test_orchestrator_can_push_morning_handoff_without_incoming_message() -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory(),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+        scope_id="chat-1",
+    )
+
+    handoff = channel.sent_messages[-1].text
+    assert handoff.startswith("Morning handoff: aico\n")
+    assert "Next actions:\n• /inbox\n• /dream" in handoff
 
 
 async def test_orchestrator_goal_runs_outcome_grader_when_tester_is_appointed() -> None:

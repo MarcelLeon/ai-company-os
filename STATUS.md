@@ -4,8 +4,8 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-06-15
-**当前轮次**:Round 162(ci-node24-preflight)
-**当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
+**当前轮次**:Round 164(phase-8-final-slices-and-registry-cleanup)
+**当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
 
@@ -39,7 +39,7 @@ AICO 的产品边界是 absence-first:
 | Phase 5 | AI 间协作 | 🟢 完成 | AI 之间可以互相 @ 协作,任务编排成型 |
 | Phase 6 | 可观测看板 | 🟢 完成 | 工时/KPI/token 消耗可视化 |
 | Phase 7 | 共享记忆层 | 🟢 完成 | 所有 AI 共享上下文记忆 |
-| Phase 8 | 离线托管模式 | 🟡 进行中 | 睡前下任务,早上看结果 |
+| Phase 8 | 离线托管模式 | 🟢 完成 | 睡前下任务,早上看结果 |
 
 图例:🟢 完成 / 🟡 进行中 / ⚪ 未开始 / 🔴 阻塞
 
@@ -296,8 +296,8 @@ AICO 的产品边界是 absence-first:
 - [x] Hybrid Memory Retrieval 第一切片:默认本地 scorer 从纯 semantic 升级为 exact phrase + phrase overlap + semantic alias fallback,保留 MemoryGovernor 边界。
 - [x] Telegram native output pilot:`AICO_PREFER_NATIVE_CHANNEL_FORMAT=true` 时 agent 优先输出 Telegram HTML,验证失败自动回退 rich text。
 - [x] Phase 8 Absence Loop 真实 IM dogfood 已由人类执行;效果不佳且暂不继续投入 native output 方向,当前 dogfood 使用 `AICO_PREFER_NATIVE_CHANNEL_FORMAT=false`。
-- [ ] 多 step / 多 agent 夜间自动编排
-- [ ] 早报自动生成或定时推送
+- [x] 多 step / 多 agent 夜间自动编排安全切片:`/overnight` lead handoff 合格后自动派 challenger / reviewer checkpoint review,并保留审批、审计和 `Current task:` 风险边界(Round 164)。
+- [x] 早报自动生成或定时推送安全切片:新增默认关闭的 morning push scheduler,按 `AICO_MORNING_PUSH_*` 配置把 `/morning` 同口径早报推送到指定 IM chat(Round 164)。
 - [x] Sprint M1 — MemoryAtom 加 `kind=fact|experience` + `ExperienceMeta`;Dream 输出改为 candidate experience(Round 128)。
 - [x] Sprint A1 — AuditEvent/Task/MemoryAtom 增加 `trace_id`;新增 `UnifiedEventIndex` 派生只读层;ADR-0030(Round 129)。
 - [x] Sprint M2 — `/experience review|list|promote|archive` lead 内务命令;`prompt_stack` 加 ExperienceLayer;task metadata 写出 `aico.injected_experience_ids`;ADR-0031(Round 130)。
@@ -359,11 +359,31 @@ AICO 的产品边界是 absence-first:
 - [x] GitHub Actions Node 24 预检:CI job 设置 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`,
   提前验证 `actions/checkout@v4`、`actions/setup-python@v5`、`astral-sh/setup-uv@v5`
   在 GitHub 即将默认切换 Node 24 后仍能跑 release gate(Round 162)。
+- [x] 中文文章发布前二次 MCN 复审:按人类最新反馈把共鸣版博客园 P1 改成早上接不上昨晚工作的生活化痛点,
+  并明确 P3/P6、P2/P5、P1/P4 的叙事优先级;同步复审四篇文章的 AI 味、痛点-解法对齐、
+  小红书字数和 Feishu / `/overnight` / `/view` 等公开口径(Round 163)。
 - [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 164**(2026-06-15,Codex — Phase 8 final slices + Orchestrator registry cleanup):
+- 收口 B-005 工程债:
+  - 新增并接通 `OrchestratorCommandRegistry`,把 command handler 实例化、slash command 分发表、`/inbox`、`/morning`、审批/中断/broadcast 等命令处理从 `Orchestrator` 主体迁出。
+  - `Orchestrator` 保留 IM 入站、任务提交、流式输出、协作派发和少量 runtime 协调职责。
+- 完成 Phase 8 两个剩余安全切片:
+  - `/overnight` lead handoff 合格后自动排 challenger / reviewer checkpoint review,形成多 step / 多 agent 夜间编排,但不绕过审批或审计。
+  - 新增默认关闭的 morning push scheduler,可通过 `AICO_MORNING_PUSH_ENABLED=true`、`AICO_MORNING_PUSH_TARGET_ID`、`AICO_MORNING_PUSH_PROJECT`、`AICO_MORNING_PUSH_TIME` 定时推送 `/morning` 同口径早报。
+- 修复本轮发现的 prompt 风险边界问题:
+  - `/overnight` wrapper 使用 `Current task:` 标记真实老板目标,避免系统提示词里的工作流描述被误判成 `shell_exec` / `write_files`。
+- 文档:
+  - 更新 Feishu smoke playbook 和 daily ops,给出 Mac 飞书 App 已登录后的开放平台、callback、URL verification 和文本收发验收步骤。
+- 验证:
+  - `uv run pytest -q`:440 passed,1 skipped。
+  - Phase 8 contract gate:41 passed。
+  - `uv run ruff check .`,`uv run ruff format --check .`,`uv run mypy src tests`:通过。
+  - 结构扫描:`Orchestrator` 447 行,`OrchestratorCommandRegistry` 414 行,未发现单方法 >=100 行。
 
 **Round 162**(2026-06-15,Codex — CI Node 24 preflight):
 - 继续推进长期目标,当前远端 CI 对 `21c6d5a` 已成功,但 GitHub Actions 给出 Node.js 20 actions deprecation
@@ -1894,35 +1914,24 @@ AICO 的产品边界是 absence-first:
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【最高】GitHub UI 最终复核并改 public**:
-   - README 文案、no-token demo、README GIF 和 social preview asset 已对齐当前 RC。
-   - `docs/assets/release-room-demo.gif` 已是 36 秒、`960 x 540`,首屏明确 boss-absent,
-     包含 `/morning` + `/view`。
-   - `docs/assets/social-preview.png` 已生成,仓库 owner 需要在 GitHub UI 的 Social preview 上传 / 确认。
-   - GitHub About description 可通过 `gh repo view` 看到;topics / visibility / social preview 仍需 public 前 live 复核。
-   - public / tag / Release 按 [`docs/agent/09-github-release-ops.md`](docs/agent/09-github-release-ops.md)
-     执行,不要在仓库仍 private 时抢先打 tag。
-2. **【最高】按 Dogfooding 验收分层收口当前待测项**:
-   - 先跑机器 Gate:见 [`docs/playbooks/phase-8-absence-loop.md`](docs/playbooks/phase-8-absence-loop.md)
-     的 "AI 前置 Contract Gate"。Round 157 实测 **41 passed in 0.46s**。
-   - Gate 覆盖父子 agent 委派、`/overnight` handoff、delegate 输出分段、`/aico-view` alias、老板动线、
-     `/view` HTML snapshot 和 Telegram `sendDocument` 上传;后续修同类问题要先补/跑对应快速测试。
-   - Agent 必须先跑本机真实样本:当前 Mac 有 Telegram App 时,先在 `ai_co` bot 中发短样本,
-     用日志和截图确认真实 provider / Channel 行为。
-   - Round 145 已验证真实 `implementer/claude-code -> reviewer/codex` 协作链路完成;后续只需在代码或 provider
-     变更后重跑同类短样本,不把它默认交给 human。Telegram polling timeout 修复需要重启当前 AICO 进程后生效。
-   - 代表性样本预期效果:reviewer 长审阅按移动端阅读上限拆成多条消息,`• High` / `• Medium`
-     前有空行;排活后看 `/inbox`,早上接手看 `/morning`,深挖看 `/task <id>`,HTML 看 `/view` 或
-     `/aico-view`;`/brief` 只用于项目背景。
-   - 请求 human 时必须附上 Agent 已验证结果、推荐重点验证点、验证问题、预期效果、后续步骤。
-   - 如果样本失败,必须留下 `/task <id>`、截图/原始输出、预期效果和实际偏差;不要只写“体验不好”。
-3. **【最高】v0.1.0 公开打 tag + GitHub Release**(操作必须由老板亲自点确认):
-   - `main` 已包含当前 RC;如果后续只改发布文档或资产,先提交并 push `main` 或通过 PR 合入。
+1. **【最高】GitHub social preview owner 上传 + 机器复核**:
+   - 仓库已是 `PUBLIC`,description / homepage / topics 已可由 `gh repo view` 看到。
+   - `docs/assets/social-preview.png` 已生成,但 `uv run aico-github-social-preview` 仍返回
+     `status: needs-owner-upload`;owner 需要在 GitHub UI 的 Social preview 上传 / 确认。
+   - 上传后重新跑 `uv run aico-github-social-preview`,必须不再返回 `needs-owner-upload`;
+     然后 owner 肉眼确认分享卡片正确。
+2. **【最高】v0.1.0 tag + GitHub Release**(操作必须由老板亲自点确认):
+   - 确认当前工作区 clean、最新 `main` CI 绿、`git tag --list v0.1.0` 为空且 `gh release list`
+     没有 `v0.1.0`。
    - `git tag v0.1.0 && git push --tags`。
    - 用 [`docs/launch/v0.1.0-release-notes.md`](docs/launch/v0.1.0-release-notes.md)
      创建 GitHub Release。
-   - 检查 GitHub UI 的 description / topics / social preview(见
-     [`docs/human/github-publication.md`](docs/human/github-publication.md))。
+   - 全流程按 [`docs/agent/09-github-release-ops.md`](docs/agent/09-github-release-ops.md) 执行。
+3. **【高】Feishu 真实 URL verification / 端到端 smoke**:
+   - 按 [`docs/playbooks/feishu-channel.md`](docs/playbooks/feishu-channel.md) 执行。
+   - Mac App 登录只证明用户侧可收消息;仍需要开放平台自建应用、机器人能力、App ID / Secret、
+     Verification Token、公网 HTTPS callback 和 `im.message.receive_v1` 事件订阅。
+   - 验收通过后,再把 Feishu 从 “first slice / pending production smoke” 提升为更稳定公开入口。
 4. **【高】按 [`docs/launch/playbook.md`](docs/launch/playbook.md) 执行 D0 上线**:
    - HN Show HN 单次上线只有一次机会,失败不能复发同主题。
    - HN 帖子贴出后 1 分钟内贴作者首条评论,30 分钟内开始值守评论区。
@@ -1930,35 +1939,34 @@ AICO 的产品边界是 absence-first:
      各发 1 帖,内容互不重复(模板见 playbook §3)。
    - 中文平台可从 `docs/launch/articles/` 选择博客园 / 小红书稿先发;小红书稿已控制在
      1000 字以内,博客园稿更适合做知乎 / 博客园长文底稿。
-5. **【高】Phase 8 dogfood 复盘 + `/view` 真实 IM human 体感 Sample**:
+5. **【中】Phase 8 新切片真实 IM sample**:
    - 直接可问的问题:
      - `/project aico`
+     - `/overnight <小目标>`
      - `/view`
      - `/morning`
      - `/inbox`
      - `/why <short_id>`
-   - 预期效果:老板不需要访问 Mac 本机端口,能在 Telegram 收到 `aico-view-aico.html`;HTML 能看懂 Boss Brief / Timeline / Trace / Memory,且敏感内容只出现在可信聊天里。
-   - 验收口径:Agent 先验证真实 `sendDocument`、附件文件名、无 localhost 链接和可打开性;human 只判断手机第一屏是否方便接手、是否发到可信聊天、是否看得顺。
-6. **【高】Orchestrator 类拆分(B-005)**:
-   - 把 command handler 实例化 + 分发表迁到 `OrchestratorCommandRegistry` 或类似模块。
-   - Orchestrator 主体回到 task 提交 / 流式输出 / 状态协调,恢复单类 <500 行硬约束。
-7. **【中】aico-view Boss Brief 产品化**:
+   - 预期效果:`/overnight` lead 完成后自动排 challenger / reviewer checkpoint review;`/morning`
+     能看到 lead 和 review 的可接手状态。若启用 `AICO_MORNING_PUSH_*`,指定 chat 到点收到同口径早报。
+   - 验收口径:机器 Gate 先行;human 只判断手机第一屏是否方便接手、是否发到可信聊天、是否看得顺。
+6. **【中】aico-view Boss Brief 产品化**:
    - 根据 `/view` dogfood 调整 HTML 第一屏:审批、阻塞、昨夜产出、第一行动优先于原始 Timeline。
    - 暂不自动 `/project` 后发送;如真实体验需要,再加 `AICO_VIEW_AUTO_SEND_ON_PROJECT=true`。
-8. **【中】Feishu 文件附件能力评估**:
+7. **【中】Feishu 文件附件能力评估**:
    - 若 Feishu dogfood 需要 `/view`,新增 Feishu 文件上传 Channel capability。
    - 不要在 core 中写平台分支;复用 `DocumentChannel`。
-9. **【低】Future F-1 / F-2**:
+8. **【低】Future F-1 / F-2**:
    - Lead 主动机制和 Team Karpathy Loop 只在 Phase 8 dogfood 确认三块基础体验跑顺后再启动。
 
 ---
 
 ## 当前卡点
 
-参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。当前最高优工程债是 B-005
-`Orchestrator class size regression`(🟡 DEFERRED)。B-006 已把"人工 dogfood 待测队列缺少机器验收分层"
-关闭为 RESOLVED;当前长链路待测默认按机器 Gate → Agent 本机真实样本 → 1 条 human 体感 Sample 执行,
-不再把本机可验证事项或完整人工回归当成阻塞。
+参见 [`docs/journal/BLOCKERS.md`](docs/journal/BLOCKERS.md)。B-005 已在 Round 164 通过
+`OrchestratorCommandRegistry` 拆分关闭为 RESOLVED。B-006 已把"人工 dogfood 待测队列缺少机器验收分层"
+关闭为 RESOLVED;当前没有 🔴 BLOCKING 卡点。长链路待测默认按机器 Gate → Agent 本机真实样本 →
+1 条 human 体感 Sample 执行,不再把本机可验证事项或完整人工回归当成阻塞。
 
 ---
 

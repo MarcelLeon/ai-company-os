@@ -18,7 +18,7 @@
 | Area | Evidence | Result | Public wording allowed |
 |---|---|---:|---|
 | No-token demo | `uv run aico-release-room-demo` | Pass | “30-second no-token Release Room demo” |
-| Full local tests | `uv run pytest -q` | `433 passed, 1 skipped` | “433 unit tests passing locally” |
+| Full local tests | `uv run pytest -q` | `440 passed, 1 skipped` | “440 unit tests passing locally” |
 | Phase 8 contract gate | `docs/playbooks/phase-8-absence-loop.md` gate | `41 passed` | “machine gate covers absence-loop contracts” |
 | Lint | `uv run ruff check .` | Pass | “ruff release gate passes locally” |
 | Formatting | `uv run ruff format --check .` | Pass | “format gate passes locally” |

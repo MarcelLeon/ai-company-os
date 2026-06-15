@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
@@ -26,13 +26,14 @@ OFFLINE_DELEGATION_INTENT = "offline_delegation"
 OFFLINE_DELEGATION_INTENT_KEY = "aico.intent"
 OFFLINE_DELEGATION_ID_KEY = "aico.offline_delegation_id"
 OFFLINE_DELEGATION_GOAL_KEY = "aico.offline_goal"
+OFFLINE_DELEGATION_STAGE_KEY = "aico.offline_stage"
 _MIN_HANDOFF_CHARS = 160
 
 ProjectTaskFactory = Callable[
     [IncomingMessage, str, AssignmentProfile, str],
     tuple[Task, AgentSession | None],
 ]
-DelegatedTaskRunner = Callable[[IncomingMessage, Task, AgentSession | None], Awaitable[object]]
+DelegatedTaskRunner = Callable[[IncomingMessage, Task, AgentSession | None], Awaitable[str]]
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class OfflineDelegationRecord:
     agent: str
     task_id: str
     goal: str
+    review_task_ids: tuple[str, ...] = ()
     created_at: datetime = field(default_factory=utc_now)
 
 
@@ -190,7 +192,42 @@ class OfflineDelegationCommandHandler:
             message.source,
             offline_delegation_started_message(record),
         )
-        await self._run_delegated_task(message, task, session)
+        lead_output = await self._run_delegated_task(message, task, session)
+        if offline_delegation_completion_issue(lead_output) is None:
+            record = await self._run_checkpoint_reviews(message, project, record, lead_output)
+            self._remember_record(session_scope(message), record)
+
+    async def _run_checkpoint_reviews(
+        self,
+        message: IncomingMessage,
+        project: ProjectProfile,
+        record: OfflineDelegationRecord,
+        lead_output: str,
+    ) -> OfflineDelegationRecord:
+        review_task_ids: list[str] = [*record.review_task_ids]
+        for role in ("challenger", "reviewer"):
+            assignment = self._project_directory.appointment_for_role(project.id, role)
+            if assignment is None or assignment.role == record.role:
+                continue
+            task, session = self._task_for_assignment(
+                message,
+                project.id,
+                assignment,
+                offline_delegation_review_prompt(project, record, assignment, lead_output),
+            )
+            task = _task_with_offline_metadata(
+                task,
+                record.delegation_id,
+                record.goal,
+                stage=f"{assignment.role}_checkpoint",
+            )
+            review_task_ids.append(task.task_id)
+            await self._channel.send_message(
+                message.source,
+                offline_delegation_review_started_message(record, assignment, task.task_id),
+            )
+            await self._run_delegated_task(message, task, session)
+        return replace(record, review_task_ids=tuple(review_task_ids))
 
     async def _send_current_delegations(self, message: IncomingMessage) -> None:
         project = self._project_directory.active_project(session_scope(message))
@@ -217,7 +254,7 @@ class OfflineDelegationCommandHandler:
         lines = [f"Overnight delegations for {project.id}:"]
         lines.extend(
             f"• {record.delegation_id}: {record.role} -> {record.agent} "
-            f"({short_id_text(record.task_id)})"
+            f"({short_id_text(record.task_id)}){_review_suffix(record)}"
             for record in records
         )
         lines.append("")
@@ -263,11 +300,38 @@ def offline_delegation_prompt(
         f"Lead role: {assignment.role}\n"
         f"Boss goal: {goal}\n\n"
         "Operating rules:\n"
-        "- Work in small auditable steps and keep the project north star in mind.\n"
+        "- Work in small auditable steps: plan, check, verify, then hand off.\n"
+        "- If you need another role while working, use the exact collaboration form "
+        "`@role: request` so AICO can create a tracked child task.\n"
         "- Stay within AICO approval policy. If blocked by approval, missing credentials, "
         "or unclear scope, stop and report the blocker.\n"
         "- Leave a morning handoff with: done, blocked, risks, and next 3 actions.\n"
-        "- Prefer project/team context and shared memory already provided above."
+        "- Prefer project/team context and shared memory already provided above.\n\n"
+        "Current task:\n"
+        f"{goal}"
+    )
+
+
+def offline_delegation_review_prompt(
+    project: ProjectProfile,
+    record: OfflineDelegationRecord,
+    assignment: AssignmentProfile,
+    lead_output: str,
+) -> str:
+    return (
+        "Offline delegation checkpoint review.\n"
+        f"Project: {project.id} [{project.name}]\n"
+        f"Delegation: {record.delegation_id}\n"
+        f"Review role: {assignment.role}\n"
+        f"Boss goal: {record.goal}\n\n"
+        "Lead handoff to review:\n"
+        f"{lead_output.strip()}\n\n"
+        "Review contract:\n"
+        "- Verify whether the lead handoff is enough for the boss to resume from /morning.\n"
+        "- Do not perform higher-risk actions yourself; call out approval needs instead.\n"
+        "- Leave a checkpoint handoff with: done, blocked, risks, and next 3 actions.\n\n"
+        "Current task:\n"
+        "Review the lead handoff and produce the checkpoint handoff."
     )
 
 
@@ -306,6 +370,22 @@ def offline_delegation_started_message(record: OfflineDelegationRecord) -> Messa
     return rich_text_message(text)
 
 
+def offline_delegation_review_started_message(
+    record: OfflineDelegationRecord,
+    assignment: AssignmentProfile,
+    task_id: str,
+) -> MessageContent:
+    return rich_text_message(
+        "Overnight checkpoint review queued\n"
+        f"delegation: {record.delegation_id}\n"
+        f"review: {assignment.role} -> {assignment.agent}\n"
+        f"tracking: /task {short_id_text(task_id)}\n\n"
+        "Purpose:\n"
+        "- catch gaps before the morning handoff\n"
+        "- keep the review read-only unless approval is requested"
+    )
+
+
 def offline_delegation_incomplete_message(task_id: str, issue: str) -> MessageContent:
     short_id = short_id_text(task_id)
     return rich_text_message(
@@ -320,7 +400,13 @@ def offline_delegation_incomplete_message(task_id: str, issue: str) -> MessageCo
     )
 
 
-def _task_with_offline_metadata(task: Task, delegation_id: str, goal: str) -> Task:
+def _task_with_offline_metadata(
+    task: Task,
+    delegation_id: str,
+    goal: str,
+    *,
+    stage: str = "lead",
+) -> Task:
     return task.model_copy(
         update={
             "metadata": (
@@ -328,6 +414,7 @@ def _task_with_offline_metadata(task: Task, delegation_id: str, goal: str) -> Ta
                 MetadataEntry(key=OFFLINE_DELEGATION_INTENT_KEY, value=OFFLINE_DELEGATION_INTENT),
                 MetadataEntry(key=OFFLINE_DELEGATION_ID_KEY, value=delegation_id),
                 MetadataEntry(key=OFFLINE_DELEGATION_GOAL_KEY, value=goal[:200]),
+                MetadataEntry(key=OFFLINE_DELEGATION_STAGE_KEY, value=stage),
             )
         }
     )
@@ -343,6 +430,7 @@ def _record_to_json(record: OfflineDelegationRecord) -> str:
             "agent": record.agent,
             "task_id": record.task_id,
             "goal": record.goal,
+            "review_task_ids": list(record.review_task_ids),
             "created_at": record.created_at.isoformat(),
         },
         ensure_ascii=False,
@@ -360,6 +448,7 @@ def _record_from_json(payload: str) -> OfflineDelegationRecord:
         agent=str(data["agent"]),
         task_id=str(data["task_id"]),
         goal=str(data["goal"]),
+        review_task_ids=tuple(str(task_id) for task_id in data.get("review_task_ids", ())),
         created_at=datetime.fromisoformat(created_at) if created_at else utc_now(),
     )
 
@@ -370,3 +459,10 @@ _HANDOFF_MARKERS = (
     ("risks", ("risks", "risk", "风险")),
     ("next actions", ("next", "下一步", "后续动作", "后续行动")),
 )
+
+
+def _review_suffix(record: OfflineDelegationRecord) -> str:
+    if not record.review_task_ids:
+        return ""
+    reviews = ", ".join(short_id_text(task_id) for task_id in record.review_task_ids)
+    return f"; reviews: {reviews}"
