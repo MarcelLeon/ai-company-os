@@ -8088,3 +8088,70 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 160。
 - 不新增 ADR / PITFALL:本轮是发布前文案审稿和口径收敛,不改变产品架构。
+
+---
+
+## Round 161 — 2026-06-15 — Codex
+
+### 输入
+- 继续推进长期目标:“围绕本项目北极星目标,实事求是的 AI 闭环迭代实现北极星项目承诺,
+  并做到业界有特色的大模型应用项目”。
+- Round 160 已把中文文章终稿提交并让当前 HEAD CI 通过。当前发布前最明显的剩余缺口是:
+  GitHub 仓库已 public,metadata 已配置,但 social preview live audit 仍显示默认 repository card。
+
+### 思考与讨论
+- 候选 A:直接创建 `v0.1.0` tag / GitHub Release → ❌ 否决。release ops 明确要求 social preview
+  复核完成后再 tag;当前 live state 仍是默认卡片,直接发布会浪费首批分享链路的第一印象。
+- 候选 B:只在文档里继续提醒 owner 上传 → ❌ 不够。文档已经写了上传路径,但上传后仍缺少一个可重复的
+  机器检查来判断 GitHub 是否还在返回默认 OG 图。
+- 候选 C:新增一个只读 social preview verifier → ✅ 选定。它不触碰运行核心,但把 owner-only 发布动作
+  的验收从“人眼猜测”推进为“机器先判断 + 人眼 spot check”。
+
+### 产出
+- 新增 `src/aico/app/social_preview_cli.py`:
+  - `aico-github-social-preview` console script。
+  - 通过 `gh repo view --json nameWithOwner,visibility,openGraphImageUrl` 获取 GitHub OG URL。
+  - 下载当前 OG 图,用标准库解析 PNG / GIF / JPEG 尺寸。
+  - 对 `opengraph.githubassets.com` + `1200 x 600` 判断为疑似 GitHub 默认 repository card。
+  - 默认命中时返回 exit code 2 和 `status: needs-owner-upload`;`--allow-default` 可用于只读观察。
+- 新增 `tests/unit/test_social_preview_cli.py`:
+  - 覆盖 PNG size parser。
+  - 覆盖当前默认卡片启发式的 needs-owner-upload 分支。
+  - 覆盖非默认 social preview URL 的 ok 分支。
+- 更新 `pyproject.toml`:
+  - 新增 `aico-github-social-preview = "aico.app.social_preview_cli:main"`。
+- 更新发布文档:
+  - `docs/human/github-publication.md`:owner 上传后运行 `uv run aico-github-social-preview`。
+  - `docs/agent/09-github-release-ops.md`:把该命令列入 social preview / tag 前门禁。
+  - `docs/launch/readiness-audit.md`:GitHub social preview evidence 改为该 CLI。
+  - `docs/launch/v0.1.0-release-notes.md`、`docs/launch/playbook.md`:测试数更新为 433 passed,1 skipped。
+- 更新 `STATUS.md` Round 161。
+
+### 验证结果
+- `uv run pytest tests/unit/test_social_preview_cli.py -q`:5 passed。
+- `uv run ruff check src/aico/app/social_preview_cli.py tests/unit/test_social_preview_cli.py`:通过。
+- `uv run ruff format --check src/aico/app/social_preview_cli.py tests/unit/test_social_preview_cli.py`:通过。
+- `uv run mypy src/aico/app/social_preview_cli.py tests/unit/test_social_preview_cli.py`:通过。
+- `uv run pytest -q`:433 passed,1 skipped。
+- `uv run ruff check .`:通过。
+- `uv run ruff format --check .`:通过。
+- `uv run mypy src tests`:通过。
+- `uv run aico-github-social-preview`:exit code 2,输出 `status: needs-owner-upload`,
+  与当前 GitHub live state 一致。
+
+### 关键决策
+- 🔒 **决策 1**:social preview 上传仍是 owner-only 动作,但上传后的验收必须可重复;AICO 提供只读 CLI,
+  不伪装成能自动写 GitHub UI。
+- 🔒 **决策 2**:`aico-github-social-preview` 是发布运维工具,不进入核心 Orchestrator / Channel / Adapter。
+- 🔒 **决策 3**:CLI 的 `status: ok` 只代表不再命中默认卡片启发式;发布前仍保留人眼 spot check,
+  避免把启发式误当成完整视觉验证。
+
+### 留给下一轮
+- 仓库 owner 上传 `docs/assets/social-preview.png` 到 GitHub Settings -> Social preview 后,
+  重新运行 `uv run aico-github-social-preview`。
+- 如果返回 `status: ok` 且 owner 视觉确认正确,再按 `docs/agent/09-github-release-ops.md`
+  检查 tag / release 空状态并创建 `v0.1.0`。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 161。
+- 不新增 ADR / PITFALL:本轮是发布运维验收工具,不改变 AICO runtime 架构。

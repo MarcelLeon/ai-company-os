@@ -121,6 +121,16 @@ docs/assets/social-preview.png
 4. 点击 `Edit` -> `Upload an image...`。
 5. 上传 `1280 x 640` 且小于 1 MB 的 PNG / JPG / GIF。
 
+上传后,回到本地仓库运行一次只读复核:
+
+```bash
+uv run aico-github-social-preview
+```
+
+如果输出 `status: needs-owner-upload`,GitHub 仍然看起来在使用默认 repository card。
+如果输出 `status: ok`,再肉眼打开 GitHub 仓库或分享预览做一次 spot check,确认画面确实是
+`AI Company OS` 的自定义首图。
+
 当前 `docs/assets/release-room-demo.gif` 已在 Round 149 更新:约 278 KB、`960 x 540`、
 36 秒,首帧明确 boss-absent 假设,并展示 `/morning` 和 `/view`。README 可继续引用该 GIF。
 GitHub social preview 仍建议上传上面的静态 PNG,不要直接上传 README 动图。

@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 aico-feishu-webhook = "aico.app.feishu_webhook:main"
+aico-github-social-preview = "aico.app.social_preview_cli:main"
 aico-glance = "aico.app.glance_cli:main"
 aico-metrics = "aico.app.metrics_cli:main"
 aico-phase1 = "aico.app.phase1:main"

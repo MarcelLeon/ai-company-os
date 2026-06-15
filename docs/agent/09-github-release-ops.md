@@ -77,6 +77,15 @@ gh release list --repo MarcelLeon/ai-company-os --limit 5
   动图当 social preview。
 - release notes 是否能独立解释 Added / Fixed / Changed / Verification。
 
+social preview 上传后,用只读检查命令辅助确认 GitHub 不再返回默认仓库卡片:
+
+```bash
+uv run aico-github-social-preview
+```
+
+`status: needs-owner-upload` 表示仍疑似默认卡片,不能继续 tag / Release。`status: ok`
+只说明不再命中默认卡片启发式,发布前仍要肉眼 spot check 一次图像内容。
+
 2026-06-10 的 public 前复核结论:
 
 - `docs/assets/release-room-demo.gif` 已重新生成:约 36 秒、`960 x 540`,首帧明确
@@ -149,6 +158,7 @@ push 后记录:
 - `origin/main` 指向刚验收的 RC commit。
 - `git tag --list v0.1.0` 为空,且 `gh release list` 没有 `v0.1.0`。
 - README / no-token demo / release notes / GitHub metadata / social preview 已复核。
+- `uv run aico-github-social-preview` 不再返回 `status: needs-owner-upload`,且 owner 已肉眼确认 preview 图。
 
 推荐命令:
 

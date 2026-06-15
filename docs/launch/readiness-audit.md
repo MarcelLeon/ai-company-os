@@ -18,7 +18,7 @@
 | Area | Evidence | Result | Public wording allowed |
 |---|---|---:|---|
 | No-token demo | `uv run aico-release-room-demo` | Pass | “30-second no-token Release Room demo” |
-| Full local tests | `uv run pytest -q` | `428 passed, 1 skipped` | “428 unit tests passing locally” |
+| Full local tests | `uv run pytest -q` | `433 passed, 1 skipped` | “433 unit tests passing locally” |
 | Phase 8 contract gate | `docs/playbooks/phase-8-absence-loop.md` gate | `41 passed` | “machine gate covers absence-loop contracts” |
 | Lint | `uv run ruff check .` | Pass | “ruff release gate passes locally” |
 | Formatting | `uv run ruff format --check .` | Pass | “format gate passes locally” |
@@ -28,7 +28,7 @@
 | Chinese article pack | Markdown link check + draw.io XML parser | Pass | “Chinese launch materials are prepared” |
 | GitHub visibility | `gh repo view ... --json visibility` | `PUBLIC` | “repository is public” |
 | GitHub About metadata | `gh repo view ... --json description,homepageUrl,repositoryTopics` | description, homepage, and 19 recommended topics are configured | “GitHub About metadata is configured” |
-| GitHub social preview | `gh repo view ... --json openGraphImageUrl` + downloaded OG image | still GitHub default repository card, not `docs/assets/social-preview.png` | do not claim custom social preview is live yet |
+| GitHub social preview | `uv run aico-github-social-preview` | still suspected default repository card, not `docs/assets/social-preview.png` | do not claim custom social preview is live yet |
 
 ## Claim Boundaries
 
@@ -62,7 +62,8 @@
    - visibility is public (live audit already confirmed `PUBLIC`),
    - description and topics match `docs/human/github-publication.md` (live audit confirmed configured metadata),
    - `docs/assets/social-preview.png` is uploaded as Social preview (live audit still shows GitHub default OG card).
-7. Only then create and push `v0.1.0`, using `docs/launch/v0.1.0-release-notes.md`.
+7. Run `uv run aico-github-social-preview`; it must not return `status: needs-owner-upload`.
+8. Only then create and push `v0.1.0`, using `docs/launch/v0.1.0-release-notes.md`.
 
 ## Current Go / No-Go
 

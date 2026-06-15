@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-06-15
-**当前轮次**:Round 160(launch-article-final-edit)
+**当前轮次**:Round 161(social-preview-verifier)
 **当前阶段**:🟡 Phase 8 进行中 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。Lead 主动机制和 Team Karpathy Loop 已记入 Future,暂不实现。
@@ -352,11 +352,37 @@ AICO 的产品边界是 absence-first:
 - [x] 中文文章发布前总审稿:按人类反馈把共鸣版博客园痛点叙事重排为“多 agent 调度成本 / 风险动作”
   优先,再到局面压缩、离开电脑、长任务接手和经验复用;同步优化技术 Lead 长文痛点-解法表、
   两篇小红书稿和文章索引,保持小红书 1000 字以内且不扩大 Feishu / `/view` 等公开承诺(Round 160)。
+- [x] GitHub social preview 发布门禁机器化:新增 `aico-github-social-preview` 只读 CLI,
+  用 GitHub `openGraphImageUrl` 下载当前 OG 图并识别疑似默认 repository card;当前 live check 返回
+  `status: needs-owner-upload`,明确 tag / Release 前仍需 owner 上传 `docs/assets/social-preview.png`。
+  同步更新 release notes / readiness / playbook 测试数为 `433 passed, 1 skipped`(Round 161)。
 - [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
 
 ## 上一轮做了什么
+
+**Round 161**(2026-06-15,Codex — social preview verifier):
+- 继续推进长期目标,当前公开发布前最大的 owner-only 卡点是 GitHub social preview 仍显示默认 repository card。
+- 新增 `aico-github-social-preview` console script:
+  - 读取 `gh repo view --json openGraphImageUrl`。
+  - 下载当前 GitHub OG 图并解析 PNG / GIF / JPEG 尺寸。
+  - 对 `opengraph.githubassets.com` + `1200 x 600` 做“疑似默认 repository card”启发式判断。
+  - 命中默认卡片时返回 `status: needs-owner-upload` 和 exit code 2,避免 tag / Release 前只靠人工猜测。
+- 新增 `tests/unit/test_social_preview_cli.py`:
+  - 覆盖 PNG 尺寸解析、默认卡片启发式、needs-owner-upload exit code、非默认 preview 的 ok 分支。
+- 更新 `docs/human/github-publication.md`、`docs/agent/09-github-release-ops.md` 和
+  `docs/launch/readiness-audit.md`,把上传后复核命令接入 owner / Agent 发布流程。
+- 更新当前发布测试数:
+  - `docs/launch/v0.1.0-release-notes.md`:433 unit tests passing,1 skipped。
+  - `docs/launch/readiness-audit.md`:full local tests 433 passed,1 skipped。
+  - `docs/launch/playbook.md`:433 unit tests。
+- 验证:
+  - `uv run pytest -q`:433 passed,1 skipped。
+  - `uv run ruff check .`:通过。
+  - `uv run ruff format --check .`:通过。
+  - `uv run mypy src tests`:通过。
+  - `uv run aico-github-social-preview`:返回 `status: needs-owner-upload`,符合当前 GitHub live state。
 
 **Round 160**(2026-06-15,Codex — launch article final edit):
 - 人类要求从 MCN 助理角度审查四篇中文发布稿,重点修正共鸣版博客园:
