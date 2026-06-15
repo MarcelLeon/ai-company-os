@@ -8057,8 +8057,12 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
   - 重新只读核验 GitHub live state:visibility 为 `PUBLIC`,description、homepage 和 19 个 topics 已配置。
   - `openGraphImageUrl` 仍为 GitHub 默认 repository card,下载的 OG 图是 `1200 x 600`;本地
     `docs/assets/social-preview.png` 是 `1280 x 640`,所以仍不能宣称 custom social preview 已生效。
-  - 将 latest pushed CI 从旧的 2026-06-10 口径更新为 `c3e7e72` 在 2026-06-15 的 pushed `main`
-    GitHub Actions success;当前文章终稿仍需 push 后新 CI 覆盖。
+  - 将 latest pushed CI 口径改成 tag 前按当前 release-candidate HEAD 重新 live check,
+    避免 hardcode 某个会随着文档提交立刻过期的 CI commit。
+- 提交并 push 中文文章终稿:
+  - commit:`5e88ff2` (`docs: finalize chinese launch articles`)
+  - GitHub Actions run:`27544306617`
+  - conclusion:`success`
 
 ### 验证结果
 - 小红书两篇重新做字数检查,均低于 1000 字。
@@ -8068,6 +8072,8 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - `/usr/bin/python3` 检查 launch articles 本地 Markdown 链接:20 个链接,无缺失。
 - `/usr/bin/python3` 解析 `docs/launch/articles/diagrams/*.drawio`:5 张通过。
 - `git diff --check` 通过。
+- `git push origin main`:成功推送 `c3e7e72..5e88ff2`。
+- `gh run watch 27544306617 --exit-status`:成功;GitHub Actions `python` job 通过 tests、ruff、format、mypy。
 - 本轮只改 Markdown 发布素材和项目状态记录,未改运行代码,未跑 Python 单测。
 
 ### 关键决策

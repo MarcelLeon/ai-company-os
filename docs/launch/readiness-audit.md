@@ -24,7 +24,7 @@
 | Formatting | `uv run ruff format --check .` | Pass | “format gate passes locally” |
 | Types | `uv run mypy src tests` | Pass | “mypy gate passes locally” |
 | Diff hygiene | `git diff --check` | Pass | “no whitespace errors in current diff” |
-| Latest pushed CI | `gh run list` / `gh run view` | pushed `main` CI success for `c3e7e72` on 2026-06-15, before the current local final article edits | “CI is configured”; require a fresh pushed-commit CI success before release |
+| Latest pushed CI | `gh run list` / `gh run view` | live status must be checked against the current release-candidate HEAD before tagging | “CI is configured”; require a fresh current-HEAD CI success before release |
 | Chinese article pack | Markdown link check + draw.io XML parser | Pass | “Chinese launch materials are prepared” |
 | GitHub visibility | `gh repo view ... --json visibility` | `PUBLIC` | “repository is public” |
 | GitHub About metadata | `gh repo view ... --json description,homepageUrl,repositoryTopics` | description, homepage, and 19 recommended topics are configured | “GitHub About metadata is configured” |

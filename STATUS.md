@@ -379,7 +379,12 @@ AICO 的产品边界是 absence-first:
   - GitHub live audit 仍显示仓库 `PUBLIC`,description / homepage / 19 个 topics 已配置。
   - `openGraphImageUrl` 仍指向 GitHub 默认 repository card;下载的 OG 图为 `1200 x 600`,
     本地 `docs/assets/social-preview.png` 为 `1280 x 640`,说明自定义 social preview 仍需 owner 上传。
-  - 将 latest pushed CI 口径更新为 `c3e7e72` 在 2026-06-15 的 GitHub Actions success;当前本地文章终稿仍需 push 后新 CI 覆盖。
+  - 将 latest pushed CI 口径改成“tag 前必须按当前 release-candidate HEAD 重新 live check”,
+    避免 hardcode 某个会过期的 CI commit。
+- 已提交并 push 中文文章终稿:
+  - commit:`5e88ff2` (`docs: finalize chinese launch articles`)
+  - GitHub Actions run:`27544306617`
+  - conclusion:`success`
 - 本轮只改发布 Markdown,未改运行代码;未进入 GitHub tag / Release。
 
 **Round 159**(2026-06-15,Codex — pushed CI coverage):
