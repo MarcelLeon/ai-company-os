@@ -24,6 +24,8 @@
 
 不要让所有 agents 都直接找老板。让 lead 先理解项目背景、仓库环境、历史风险、测试方式,再去指挥 implementer、tester、reviewer。
 
+这个 lead 不应该替我乱拍板。它真正有价值的地方,是先把低风险工作往前推,把高风险动作拦在审批前,再给我一份能接手的局面。
+
 AICO 当前把本机 Claude Code、Codex、Cursor、CodeFlicker、Trae、Gemini 等 CLI 通过 Adapter 接进来,用 Telegram 做远程入口,并提供:
 
 ```text

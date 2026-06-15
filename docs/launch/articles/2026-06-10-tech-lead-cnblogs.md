@@ -9,7 +9,7 @@
 - 能不能调用工具?
 - 能不能多 agent 协作?
 
-这些当然重要。但我在自己同时处理多个项目时,越来越觉得另一个问题更核心:
+这些当然重要。但我自己同时处理多个项目时,越用越确定另一个问题更核心:
 
 > agent 应用真正难的不是"单次任务能不能做",而是"多个项目、多个 agent、多个风险动作能不能被长期运营"。
 
@@ -30,11 +30,11 @@
 Boss -> Project Lead -> Implementer / Tester / Reviewer / Specialist
 ```
 
-这篇文章从技术角度讲:为什么我认为"给每个项目任命一个 AI Lead"是 agent 应用下一阶段很重要的视角,以及 AICO 当前是怎么建模的。
+这篇文章从技术角度讲一件事:为什么我认为"给每个项目任命一个 AI Lead"是 agent 应用下一阶段很重要的视角,以及 AICO 当前是怎么建模的。
 
 ## 业界痛点:从 agent demo 到 agent operations
 
-多 agent 并不是新概念。AutoGen 很早就把 multi-agent conversation 作为核心模式;CrewAI 把 agents、crews、flows、tasks/processes 作为基本概念;LangGraph / LangSmith 开始强调 durable execution、human review、streaming、tracing、auth、memory、MCP/A2A。
+多 agent 并不是新概念。AutoGen 把 AgentChat / Core / Extensions 分开,分别处理对话式单/多 agent、事件驱动多 agent 系统和外部能力扩展;CrewAI 把 agents、crews、flows、tasks/processes、guardrails、memory、knowledge、observability、human-in-the-loop 和 RBAC 放进生产叙事;LangSmith / LangGraph 则把 agent deployment、streaming、human review、MCP/A2A、auth、memory、tracing 等放进运行时能力里。
 
 这说明行业共识在变化:
 
@@ -71,6 +71,14 @@ AICO 不是要替代 LangGraph、CrewAI 或 AutoGen。AICO 的切入点更窄:�
 中间两项决定我离开电脑后能不能接手:IM 必须先给局面,长任务必须留下 trace。后四项是长期运营的地基,否则项目一多、时间一长,上下文和经验都会散掉。
 
 这张表是文章后面所有技术决策的索引。
+
+所以 AICO 里的 lead 不是"更聪明的聊天入口",而是一个组织角色。它至少要替我做三件事:
+
+1. 压缩局面:把任务、风险、审计、记忆合成老板能读的 brief。
+2. 分派角色:把实现、测试、review、反方意见交给合适的 role。
+3. 守住边界:低风险可以先推进,高风险必须走 approval 和 audit。
+
+做不到这三件事,lead 只是换了个名字的 agent;做到了,它才像项目负责人。
 
 ## 领域模型:Role、Agent、Team 到底是什么关系
 
