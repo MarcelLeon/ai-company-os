@@ -7990,7 +7990,10 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
   - 明确 local gates 只证明当前 workspace;发布候选必须在相同改动 commit + push 后等 GitHub Actions 成功。
   - tag 前清单新增记录 pushed commit SHA 和 CI result 到 `STATUS.md` / `ROUNDS.md`。
 - 更新 `STATUS.md` Round 159。
-- 本轮后续目标:重跑 local gates、commit、push、等待 GitHub Actions。
+- 已提交并 push release-readiness 改动:
+  - commit:`958aa61` (`docs: add launch readiness audit`)
+  - GitHub Actions run:`27521858307`
+  - conclusion:`success`
 
 ### 验证结果
 - `uv run pytest -q`:428 passed,1 skipped。
@@ -8002,7 +8005,9 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - `/usr/bin/python3` 解析 `docs/launch/articles/diagrams/*.drawio`:5 张通过。
 - `/usr/bin/python3` 检查 launch Markdown 本地链接:17 个链接,无缺失。
 - `git diff --check`:通过。
-- 待执行:commit、push、CI watch。
+- `git commit -m "docs: add launch readiness audit"`:生成 commit `958aa61`。
+- `git push origin main`:成功推送 `564e598..958aa61`。
+- `gh run watch 27521858307 --exit-status`:成功;GitHub Actions `python` job 通过 tests、ruff、format、mypy。
 
 ### 关键决策
 - 🔒 **决策 1**:readiness audit 不 hardcode 会在 commit 后立刻过期的 HEAD 值;精确 pushed commit 和 CI 结果记录在执行轮次中。
@@ -8010,7 +8015,7 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 
 ### 留给下一轮
 - 如果 push 后 CI 失败,优先按失败 job 修复,不要绕过 release gate。
-- 如果 CI 成功,下一步仍需 owner 确认 GitHub UI public / description / topics / social preview,再按 release ops 文档 tag。
+- CI 已成功。下一步仍需 owner 确认 GitHub UI public / description / topics / social preview,再按 release ops 文档 tag。
 
 ### 状态变化
 - `STATUS.md` 当前轮次更新为 Round 159。

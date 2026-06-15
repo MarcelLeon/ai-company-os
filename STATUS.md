@@ -347,8 +347,8 @@ AICO 的产品边界是 absence-first:
 - [x] Release readiness audit:新增 `docs/launch/readiness-audit.md`,把 no-token demo、完整本地测试、
   Phase 8 gate、ruff/format/mypy、GitHub Actions 最新 pushed main 状态、中文文章图源和公开 claim 边界汇总成
   发布前 Go / No-Go 台账;同步收紧 launch playbook 的 CI 口径和 release notes 的易漂移 rounds 数字(Round 158)。
-- [ ] Pushed CI coverage:当前 release-readiness / 中文文章 / 测试隔离改动已通过本地 release gates,正在提交并 push,
-  等待 GitHub Actions 覆盖该 pushed commit;未等到新 CI 绿前不能进入 `v0.1.0` tag / Release(Round 159 进行中)。
+- [x] Pushed CI coverage:release-readiness / 中文文章 / 测试隔离改动已提交并 push 到 `main`;
+  pushed commit `958aa61` 的 GitHub Actions CI 已成功(Round 159)。
 - [x] Release Room no-token demo 发布前对齐 `/morning` 接手入口,避免公开 demo 继续教旧 `/daily` 路线(Round 146)。
 
 ---
@@ -371,7 +371,11 @@ AICO 的产品边界是 absence-first:
   - Phase 8 absence-loop gate:41 passed。
   - `uv run aico-release-room-demo`:通过。
   - draw.io XML 5 张解析通过;launch Markdown 本地链接 17 个检查通过;`git diff --check` 通过。
-- 本轮接下来执行:`git add -A`、commit、push `main`,再使用 `gh run` 查看新 pushed commit 的 CI 状态。
+- 已提交并 push:
+  - commit:`958aa61` (`docs: add launch readiness audit`)
+  - GitHub Actions run:`27521858307`
+  - conclusion:`success`
+- 本轮仍不进入 `v0.1.0` tag / Release:GitHub UI public / description / topics / social preview 仍需 owner 最终确认。
 
 **Round 158**(2026-06-15,Codex — release readiness audit):
 - 持续推进长期目标,本轮不新增功能和宣传稿,而是把公开发布前最容易漂移的事实证据整理成可复用审计台账。
