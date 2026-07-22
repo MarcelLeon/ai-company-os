@@ -67,8 +67,9 @@ lsof -i :8080
 3. `recovery backup`或`recovery drill`：使用预先存在的owner-only外部目标，启用scheduled capture和disposable drill；不要让
    AICO创建缺失mount，也不要为了过门禁开启未审阅的retention删除授权。
 4. `standing autonomy`：配置morning push、Codex read-only charter和external owner-only grant，并让真实binding preflight通过。
-5. `runtime commissioning`：先完成strict dead-man export，在最终`.env`写入两个checkout-external绝对路径，再运行
-   `aico-commission create`。必须是clean owner-reviewed revision，evidence/receipt均为owner-only。
+5. `runtime commissioning`：先从receiver导出signed evidence，在最终`.env`写入evidence、owner-pinned receiver公钥、receipt
+   三个checkout-external绝对路径，再运行`aico-commission create`并传`--trusted-receiver-public-key`。必须是clean
+   owner-reviewed revision，evidence/receipt为owner-only，公钥不可被group/world写入。
 6. 若当前只是本地开发，可由owner明确改回`optional`；这会恢复WARN安装，不代表上述能力存在。
 7. strict OK后仍必须保存真实receiver ACK、provider/IM、存储和手机样本；不要把machine admission当成commercial认证。
 8. install曾经OK但LaunchAgent反复重启时，重新运行doctor；runtime会持续执行strict，不会因supervisor restart降级到optional。
@@ -89,6 +90,8 @@ lsof -i :8080
 4. `notification route health requirement is not met`：至少一个slot仍unknown/degraded；恢复真实route并等待持久状态转healthy后重新导出。
 5. 不带`--maximum-evidence-age-seconds --require-fresh-notification-probe --require-all-routes-healthy`的成功只表示历史artifact结构可验，
    不能作为commission/recommission当前健康结论。
+6. `signed evidence verification failed`：拒绝把unsigned历史bundle用于strict commissioning；核对owner固定的SPKI Ed25519公钥、
+   receiver私钥路径/`0600`权限和rotation记录。不要信任envelope自带key、不要把公钥替换成新key来消音。
 
 ### 启动报 runtime owner already active
 
@@ -347,7 +350,7 @@ startup 会失败而不会错误确认 delivered;LaunchAgent 可能按异常退�
    处理持续三次内部失败或三个 sweep interval无成功进展的进程。
 9. evidence verifier报 `pending delivery` 时,先等待 receiver outbox退避到期并确认owner sink恢复,再重新导出；
    不要手改JSON把 `delivered` 改成true。报 runtime/completed/schema错误时核对导出的monitor、完整outage数量和
-   artifact是否被改动；SHA-256只用于与先前记录值比较,不是来源认证。
+   artifact是否被改动；strict路径还必须用owner-pinned公钥验证signed envelope，unsigned历史bundle不能commission。
 10. 配置fallback后，primary失败但1-of-2仍delivered是预期failover；两route都会被尝试，但不会单独持久化route-level receipt。
     若策略为2-of-2，任一路失败都会保持pending并按stable event id重投。检查两URL确属不同HTTPS origin且token不复用；
     不要把不同域名直接写成不同云/账号/网络已证明，也不要通过降低quorum掩盖owner原本要求的双ACK策略。

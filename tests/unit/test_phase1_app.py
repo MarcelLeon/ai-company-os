@@ -233,6 +233,7 @@ def test_phase1_strict_absence_admission_rejects_runtime_config_drift() -> None:
         "standing_autonomy_grant_path": Path("/private/standing.json"),
         "commissioning_receipt_path": Path("/private/commissioning.json"),
         "commissioning_dead_man_evidence_path": Path("/private/dead-man.json"),
+        "commissioning_receiver_public_key_path": Path("/private/receiver-public.pem"),
     }
     settings = Phase1Settings.model_validate(base)
 
@@ -243,6 +244,7 @@ def test_phase1_strict_absence_admission_rejects_runtime_config_drift() -> None:
         ("recovery_backup_enabled", "recovery backup"),
         ("standing_autonomy_grant_path", "standing autonomy"),
         ("commissioning_receipt_path", "runtime commissioning"),
+        ("commissioning_receiver_public_key_path", "runtime commissioning"),
         ("recovery_drill_enabled", "recovery drill"),
     ):
         disabled: object = None if "path" in field_name or "url" in field_name else False
@@ -312,6 +314,7 @@ def test_phase1_strict_absence_preflight_runs_before_runtime_construction(
             "standing_autonomy_grant_path": tmp_path / "missing-standing.json",
             "commissioning_receipt_path": tmp_path / "commissioning.json",
             "commissioning_dead_man_evidence_path": tmp_path / "dead-man.json",
+            "commissioning_receiver_public_key_path": tmp_path / "receiver-public.pem",
             "morning_push_enabled": True,
             "morning_push_target_id": "chat",
             "morning_push_project": "aico",
@@ -340,6 +343,7 @@ def test_phase1_commissioning_preflight_binds_loaded_dotenv_generation(
             "runtime_monitor_id": "owner-runtime",
             "commissioning_receipt_path": tmp_path / "commissioning.json",
             "commissioning_dead_man_evidence_path": tmp_path / "dead-man.json",
+            "commissioning_receiver_public_key_path": tmp_path / "receiver-public.pem",
             "recovery_backup_checkout_path": tmp_path,
         }
     )
@@ -355,6 +359,7 @@ def test_phase1_commissioning_preflight_binds_loaded_dotenv_generation(
 
     assert health.dotenv_path == dotenv
     assert health.expected_runtime_id == "owner-runtime"
+    assert health.trusted_receiver_public_key_path == tmp_path / "receiver-public.pem"
     assert captured["receipt_path"] == tmp_path / "commissioning.json"
 
 

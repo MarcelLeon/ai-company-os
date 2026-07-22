@@ -224,6 +224,7 @@ class Phase1Settings(BaseSettings):
     reviewed_config_revision: str | None = None
     commissioning_receipt_path: Path | None = None
     commissioning_dead_man_evidence_path: Path | None = None
+    commissioning_receiver_public_key_path: Path | None = None
     recovery_backup_enabled: bool = False
     recovery_backup_checkout_path: Path = Field(default_factory=Path.cwd)
     recovery_backup_output_dir: Path | None = None
@@ -413,6 +414,7 @@ class Phase1Settings(BaseSettings):
                 "runtime commissioning": (
                     self.commissioning_receipt_path is not None
                     and self.commissioning_dead_man_evidence_path is not None
+                    and self.commissioning_receiver_public_key_path is not None
                 ),
                 "recovery backup": self.recovery_backup_enabled,
                 "standing autonomy": self.standing_autonomy_grant_path is not None,
@@ -617,6 +619,7 @@ def preflight_runtime_commissioning(
         settings.runtime_monitor_id,
         settings.commissioning_receipt_path,
         settings.commissioning_dead_man_evidence_path,
+        settings.commissioning_receiver_public_key_path,
         source,
     )
     if any(value is None for value in required):
@@ -626,6 +629,7 @@ def preflight_runtime_commissioning(
     assert settings.runtime_monitor_id is not None
     assert settings.commissioning_receipt_path is not None
     assert settings.commissioning_dead_man_evidence_path is not None
+    assert settings.commissioning_receiver_public_key_path is not None
     assert source is not None
     health = RuntimeCommissioningHealth(
         checkout_path=settings.recovery_backup_checkout_path,
@@ -635,6 +639,7 @@ def preflight_runtime_commissioning(
         expected_runtime_id=settings.runtime_monitor_id.get_secret_value(),
         dotenv_path=source.path,
         dead_man_evidence_path=settings.commissioning_dead_man_evidence_path,
+        trusted_receiver_public_key_path=settings.commissioning_receiver_public_key_path,
         receipt_path=settings.commissioning_receipt_path,
     )
     verify_runtime_commissioning_receipt(
@@ -645,6 +650,7 @@ def preflight_runtime_commissioning(
         expected_runtime_id=health.expected_runtime_id,
         dotenv_path=health.dotenv_path,
         dead_man_evidence_path=health.dead_man_evidence_path,
+        trusted_receiver_public_key_path=health.trusted_receiver_public_key_path,
         receipt_path=health.receipt_path,
     )
     return health

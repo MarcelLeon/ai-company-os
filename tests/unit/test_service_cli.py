@@ -826,6 +826,7 @@ def test_service_readiness_strict_absence_admission_accepts_machine_contracts(
     output.chmod(0o700)
     commissioning = tmp_path / "commissioning.json"
     evidence = tmp_path / "dead-man.json"
+    public_key = tmp_path / "receiver-public.pem"
     monkeypatch.setattr(
         "aico.app.service_cli.verify_runtime_commissioning_receipt",
         lambda **_: None,
@@ -847,6 +848,7 @@ def test_service_readiness_strict_absence_admission_accepts_machine_contracts(
                 "AICO_RECOVERY_DRILL_ENABLED=true",
                 f"AICO_COMMISSIONING_RECEIPT_PATH={commissioning}",
                 f"AICO_COMMISSIONING_DEAD_MAN_EVIDENCE_PATH={evidence}",
+                f"AICO_COMMISSIONING_RECEIVER_PUBLIC_KEY_PATH={public_key}",
             )
         ),
     )
@@ -857,8 +859,8 @@ def test_service_readiness_strict_absence_admission_accepts_machine_contracts(
     assert not any(check.status == "fail" for check in checks)
     assert admission.status == "ok"
     assert admission.detail == (
-        "strict machine contracts configured; current external evidence bound; "
-        "source and human read not attested"
+        "strict machine contracts configured; receiver-signed evidence bound; "
+        "receiver host and human read not attested"
     )
     rendered = str(checks)
     assert "alerts.example.test" not in rendered

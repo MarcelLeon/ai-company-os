@@ -827,7 +827,8 @@ def _runtime_commissioning_readiness(
 ) -> DoctorCheck:
     receipt_value = env.get("AICO_COMMISSIONING_RECEIPT_PATH", "").strip()
     evidence_value = env.get("AICO_COMMISSIONING_DEAD_MAN_EVIDENCE_PATH", "").strip()
-    if not receipt_value and not evidence_value:
+    public_key_value = env.get("AICO_COMMISSIONING_RECEIVER_PUBLIC_KEY_PATH", "").strip()
+    if not receipt_value and not evidence_value and not public_key_value:
         return DoctorCheck(
             name="runtime commissioning",
             status="warn",
@@ -836,6 +837,7 @@ def _runtime_commissioning_readiness(
     required = {
         "receipt": receipt_value,
         "evidence": evidence_value,
+        "public_key": public_key_value,
         "project": env.get("AICO_PROJECT_CONFIG_PATH", "").strip(),
         "revision": env.get("AICO_REVIEWED_CONFIG_REVISION", "").strip(),
         "runtime": env.get("AICO_RUNTIME_MONITOR_ID", "").strip(),
@@ -848,9 +850,11 @@ def _runtime_commissioning_readiness(
         )
     project_path = _path_from_repo(Path(required["project"]), repo)
     evidence_path = _path_from_repo(Path(evidence_value), repo)
+    public_key_path = _path_from_repo(Path(public_key_value), repo)
     receipt_path = _path_from_repo(Path(receipt_value), repo)
     assert project_path is not None
     assert evidence_path is not None
+    assert public_key_path is not None
     assert receipt_path is not None
     try:
         verify_runtime_commissioning_receipt(
@@ -866,6 +870,7 @@ def _runtime_commissioning_readiness(
             expected_runtime_id=required["runtime"],
             dotenv_path=dotenv_path,
             dead_man_evidence_path=evidence_path,
+            trusted_receiver_public_key_path=public_key_path,
             receipt_path=receipt_path,
             clock=lambda: now,
         )
@@ -878,7 +883,10 @@ def _runtime_commissioning_readiness(
     return DoctorCheck(
         name="runtime commissioning",
         status="ok",
-        detail="current config and external evidence bound; source and human read not attested",
+        detail=(
+            "current config and receiver-signed evidence bound; "
+            "receiver host and human read not attested"
+        ),
     )
 
 
@@ -915,8 +923,8 @@ def _absence_admission_readiness(
         name="absence admission",
         status="ok",
         detail=(
-            "strict machine contracts configured; current external evidence bound; "
-            "source and human read not attested"
+            "strict machine contracts configured; receiver-signed evidence bound; "
+            "receiver host and human read not attested"
         ),
     )
 

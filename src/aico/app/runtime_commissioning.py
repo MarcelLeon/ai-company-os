@@ -26,11 +26,16 @@ from aico.app.dead_man_evidence_cli import (
     DeadManEvidenceVerificationError,
     verify_evidence_bytes,
 )
+from aico.app.dead_man_evidence_signing import (
+    MAX_SIGNED_ENVELOPE_BYTES,
+    DeadManEvidenceSigningError,
+    VerifiedSignedDeadManEvidence,
+    verify_signed_evidence_bytes,
+)
 from aico.app.dead_man_receiver import DeadManEvidenceBundle
 from aico.app.runtime_config_source import capture_file_generation
 from aico.core.models import HealthStatus
 
-_MAX_ARTIFACT_BYTES = 4 * 1024 * 1024
 _MAX_RECEIPT_BYTES = 64 * 1024
 _MAX_EVIDENCE_AGE_SECONDS = 3600
 _COPY_CHUNK_BYTES = 1024 * 1024
@@ -43,7 +48,7 @@ class RuntimeCommissioningError(RuntimeError):
 class RuntimeCommissioningReceipt(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     runtime_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,127}$")
     checked_at: AwareDatetime
     expires_at: AwareDatetime
@@ -52,6 +57,8 @@ class RuntimeCommissioningReceipt(BaseModel):
     config_evidence_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     dotenv_generation_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     dead_man_evidence_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    dead_man_evidence_payload_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    receiver_public_key_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     dead_man_evidence_generated_at: AwareDatetime
     dead_man_evidence_expires_at: AwareDatetime
     notification_probe_completed_at: AwareDatetime
@@ -61,12 +68,13 @@ class RuntimeCommissioningReceipt(BaseModel):
     all_events_delivered: Literal[True] = True
     fresh_notification_probe: Literal[True] = True
     all_routes_healthy: Literal[True] = True
+    receiver_evidence_signature_verified: Literal[True] = True
     dotenv_path_recorded: Literal[False] = False
     dotenv_generation_metadata_recorded: Literal[False] = False
     dotenv_content_recorded: Literal[False] = False
     dotenv_content_hash_recorded: Literal[False] = False
     external_provider_ack_attested: Literal[False] = False
-    receiver_origin_attested: Literal[False] = False
+    receiver_host_attested: Literal[False] = False
     human_read_attested: Literal[False] = False
     verification_authority: Literal["operator_invoked_local_commissioning"] = (
         "operator_invoked_local_commissioning"
@@ -105,6 +113,7 @@ class RuntimeCommissioningSummary(BaseModel):
     expires_at: AwareDatetime
     current_bindings_verified: Literal[True] = True
     strict_external_evidence_verified: Literal[True] = True
+    receiver_evidence_signature_verified: Literal[True] = True
     business_absence_ready: Literal[False] = False
 
 
@@ -115,6 +124,7 @@ def create_runtime_commissioning_receipt(
     expected_config_revision: str,
     dotenv_path: Path,
     dead_man_evidence_path: Path,
+    trusted_receiver_public_key_path: Path,
     runtime_id: str,
     maximum_evidence_age_seconds: int,
     output_path: Path,
@@ -145,8 +155,13 @@ def create_runtime_commissioning_receipt(
             checkout,
             "dead-man evidence",
         )
-        verify_evidence_bytes(
+        signed = _verify_signed_evidence(
             evidence_raw,
+            trusted_receiver_public_key_path,
+            checkout,
+        )
+        verify_evidence_bytes(
+            signed.payload,
             expected_runtime_id=runtime_id,
             minimum_complete_outages=1,
             require_all_delivered=True,
@@ -155,13 +170,14 @@ def create_runtime_commissioning_receipt(
             require_all_routes_healthy=True,
             now=checked_at,
         )
-        bundle = DeadManEvidenceBundle.model_validate_json(evidence_raw)
+        bundle = DeadManEvidenceBundle.model_validate_json(signed.payload)
         receipt = _build_receipt(
             runtime_id=runtime_id,
             checked_at=checked_at,
             config=config,
             dotenv_generation_sha256=dotenv_generation_sha,
             evidence_raw=evidence_raw,
+            signed=signed,
             evidence=bundle,
             maximum_evidence_age_seconds=maximum_evidence_age_seconds,
         )
@@ -169,7 +185,13 @@ def create_runtime_commissioning_receipt(
         return _summary("create", output, _sha256(output), receipt)
     except RuntimeCommissioningError:
         raise
-    except (ConfigRevisionError, DeadManEvidenceVerificationError, ValidationError, ValueError):
+    except (
+        ConfigRevisionError,
+        DeadManEvidenceSigningError,
+        DeadManEvidenceVerificationError,
+        ValidationError,
+        ValueError,
+    ):
         raise RuntimeCommissioningError("runtime commissioning receipt creation failed") from None
     except Exception:
         raise RuntimeCommissioningError("runtime commissioning receipt creation failed") from None
@@ -183,6 +205,7 @@ def verify_runtime_commissioning_receipt(
     expected_runtime_id: str,
     dotenv_path: Path,
     dead_man_evidence_path: Path,
+    trusted_receiver_public_key_path: Path,
     receipt_path: Path,
     persona_config_path: Path | None = None,
     expected_receipt_sha256: str | None = None,
@@ -217,8 +240,13 @@ def verify_runtime_commissioning_receipt(
             checkout,
             "dead-man evidence",
         )
-        verify_evidence_bytes(
+        signed = _verify_signed_evidence(
             evidence_raw,
+            trusted_receiver_public_key_path,
+            checkout,
+        )
+        verify_evidence_bytes(
+            signed.payload,
             expected_runtime_id=receipt.runtime_id,
             minimum_complete_outages=receipt.minimum_complete_outages,
             require_all_delivered=receipt.all_events_delivered,
@@ -227,12 +255,13 @@ def verify_runtime_commissioning_receipt(
             require_all_routes_healthy=receipt.all_routes_healthy,
             now=current,
         )
-        evidence = DeadManEvidenceBundle.model_validate_json(evidence_raw)
+        evidence = DeadManEvidenceBundle.model_validate_json(signed.payload)
         if not _current_bindings_match(
             receipt,
             config=config,
             dotenv_generation_sha256=_dotenv_generation_sha256(dotenv_path),
             evidence_raw=evidence_raw,
+            signed=signed,
             evidence=evidence,
             current=current,
         ):
@@ -240,7 +269,13 @@ def verify_runtime_commissioning_receipt(
         return _summary("verify", receipt_file, receipt_sha, receipt)
     except RuntimeCommissioningError:
         raise
-    except (ConfigRevisionError, DeadManEvidenceVerificationError, ValidationError, ValueError):
+    except (
+        ConfigRevisionError,
+        DeadManEvidenceSigningError,
+        DeadManEvidenceVerificationError,
+        ValidationError,
+        ValueError,
+    ):
         raise RuntimeCommissioningError("runtime commissioning receipt is invalid") from None
 
 
@@ -252,6 +287,7 @@ class RuntimeCommissioningHealth:
     expected_runtime_id: str
     dotenv_path: Path
     dead_man_evidence_path: Path
+    trusted_receiver_public_key_path: Path
     receipt_path: Path
     persona_config_path: Path | None = None
     clock: Callable[[], datetime] | None = None
@@ -266,6 +302,7 @@ class RuntimeCommissioningHealth:
                 expected_runtime_id=self.expected_runtime_id,
                 dotenv_path=self.dotenv_path,
                 dead_man_evidence_path=self.dead_man_evidence_path,
+                trusted_receiver_public_key_path=self.trusted_receiver_public_key_path,
                 receipt_path=self.receipt_path,
                 persona_config_path=self.persona_config_path,
                 clock=self.clock,
@@ -282,6 +319,7 @@ def _build_receipt(
     config: ConfigRevisionEvidence,
     dotenv_generation_sha256: str,
     evidence_raw: bytes,
+    signed: VerifiedSignedDeadManEvidence,
     evidence: DeadManEvidenceBundle,
     maximum_evidence_age_seconds: int,
 ) -> RuntimeCommissioningReceipt:
@@ -299,6 +337,8 @@ def _build_receipt(
         config_evidence_sha256=_config_evidence_sha256(config),
         dotenv_generation_sha256=dotenv_generation_sha256,
         dead_man_evidence_sha256=hashlib.sha256(evidence_raw).hexdigest(),
+        dead_man_evidence_payload_sha256=signed.payload_sha256,
+        receiver_public_key_sha256=signed.public_key_sha256,
         dead_man_evidence_generated_at=evidence.generated_at,
         dead_man_evidence_expires_at=evidence_expires,
         notification_probe_completed_at=probe_completed,
@@ -313,6 +353,7 @@ def _current_bindings_match(
     config: ConfigRevisionEvidence,
     dotenv_generation_sha256: str,
     evidence_raw: bytes,
+    signed: VerifiedSignedDeadManEvidence,
     evidence: DeadManEvidenceBundle,
     current: datetime,
 ) -> bool:
@@ -338,6 +379,14 @@ def _current_bindings_match(
         and hmac.compare_digest(
             receipt.dead_man_evidence_sha256,
             hashlib.sha256(evidence_raw).hexdigest(),
+        )
+        and hmac.compare_digest(
+            receipt.dead_man_evidence_payload_sha256,
+            signed.payload_sha256,
+        )
+        and hmac.compare_digest(
+            receipt.receiver_public_key_sha256,
+            signed.public_key_sha256,
         )
         and receipt.dead_man_evidence_generated_at == evidence.generated_at
         and receipt.dead_man_evidence_expires_at == evidence_expires
@@ -373,10 +422,22 @@ def _dotenv_generation_sha256(path: Path) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _verify_signed_evidence(
+    raw: bytes,
+    public_key_path: Path,
+    checkout: Path,
+) -> VerifiedSignedDeadManEvidence:
+    return verify_signed_evidence_bytes(
+        raw,
+        trusted_public_key_path=public_key_path,
+        forbidden_roots=(checkout,),
+    )
+
+
 def _read_private_external_file(path: Path, checkout: Path, label: str) -> bytes:
     candidate = _absolute(path)
     _require_outside_checkout(candidate, checkout, label)
-    return _read_private_file(candidate, label, maximum_bytes=_MAX_ARTIFACT_BYTES)
+    return _read_private_file(candidate, label, maximum_bytes=MAX_SIGNED_ENVELOPE_BYTES)
 
 
 def _read_private_file(path: Path, label: str, *, maximum_bytes: int) -> bytes:

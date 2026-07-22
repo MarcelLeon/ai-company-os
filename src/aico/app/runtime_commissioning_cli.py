@@ -22,6 +22,7 @@ def main() -> None:
         "expected_config_revision": args.expected_config_revision,
         "dotenv_path": args.dotenv,
         "dead_man_evidence_path": args.dead_man_evidence,
+        "trusted_receiver_public_key_path": args.trusted_receiver_public_key,
     }
     try:
         if args.command == "create":
@@ -60,6 +61,7 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--runtime-id", required=True)
         command.add_argument("--dotenv", type=Path, required=True)
         command.add_argument("--dead-man-evidence", type=Path, required=True)
+        command.add_argument("--trusted-receiver-public-key", type=Path, required=True)
     create.add_argument(
         "--maximum-evidence-age-seconds",
         type=int,

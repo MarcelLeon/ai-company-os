@@ -251,10 +251,12 @@ Round 242的schema v4再保存逐event ACK和slot健康：partial quorum会通�
 `AICO_DEAD_MAN_NOTIFICATION_PROBE_CONTRACT=silent-route-probe-v1`。probe复用真实URL/token/POST，首次失败只标suspect，连续达到阈值
 才主动发degraded；默认disabled。任何probe出现在老板终端或触发事故自动化，都应立即关闭，不能用HEAD/旁路token替代该验收。
 
-真实演练导出bundle后，commission/recommission必须在owner选择的短窗口内组合运行：
+真实演练必须从receiver的`/signed-evidence`导出envelope；owner从receiver私钥导出的SPKI公钥应单独复制并固定在
+AICO checkout之外。commission/recommission在owner选择的短窗口内组合运行：
 
 ```bash
-uv run aico-dead-man-evidence dead-man-evidence-owner-runtime.json \
+uv run aico-dead-man-evidence signed-dead-man-evidence-owner-runtime.json \
+  --trusted-public-key /absolute/private/receiver-evidence-public.pem \
   --runtime-id owner-runtime \
   --minimum-complete-outages 1 \
   --require-all-delivered \
@@ -263,13 +265,14 @@ uv run aico-dead-man-evidence dead-man-evidence-owner-runtime.json \
   --require-all-routes-healthy
 ```
 
-省略最后三项只适合历史审计；生成时fresh不代表验收时仍fresh。通过也不等于receiver artifact有签名、provider ACK或老板已读。
+省略最后三项只适合历史审计；生成时fresh不代表验收时仍fresh。签名通过只证明owner-pinned私钥签过exact payload，
+不证明私钥确实位于独立host、provider ACK或老板已读。
 
 strict runtime不能只保留上面的命令输出。先在最终`.env`写入两个新的绝对、checkout-external路径，确保evidence为owner-only，
 checkout为owner审阅的clean revision，然后生成不可覆盖的commission receipt：
 
 ```bash
-chmod 600 /absolute/private/dead-man-evidence-owner-runtime.json
+chmod 600 /absolute/private/signed-dead-man-evidence-owner-runtime.json
 uv run aico-commission create \
   --checkout . \
   --project-config config/projects.example.json \
@@ -277,7 +280,8 @@ uv run aico-commission create \
   --expected-config-revision <full-owner-reviewed-commit> \
   --runtime-id owner-runtime \
   --dotenv .env \
-  --dead-man-evidence /absolute/private/dead-man-evidence-owner-runtime.json \
+  --dead-man-evidence /absolute/private/signed-dead-man-evidence-owner-runtime.json \
+  --trusted-receiver-public-key /absolute/private/receiver-evidence-public.pem \
   --maximum-evidence-age-seconds 300 \
   --output /absolute/private/runtime-commissioning-<generation>.json
 ```
@@ -292,12 +296,14 @@ uv run aico-commission verify \
   --expected-config-revision <full-owner-reviewed-commit> \
   --runtime-id owner-runtime \
   --dotenv .env \
-  --dead-man-evidence /absolute/private/dead-man-evidence-owner-runtime.json \
+  --dead-man-evidence /absolute/private/signed-dead-man-evidence-owner-runtime.json \
+  --trusted-receiver-public-key /absolute/private/receiver-evidence-public.pem \
   --receipt /absolute/private/runtime-commissioning-<generation>.json \
   --expected-receipt-sha256 <sha-from-create>
 ```
 
-`AICO_COMMISSIONING_DEAD_MAN_EVIDENCE_PATH`与`AICO_COMMISSIONING_RECEIPT_PATH`必须已在receipt创建前写入最终`.env`；否则后写会改变
+`AICO_COMMISSIONING_DEAD_MAN_EVIDENCE_PATH`、`AICO_COMMISSIONING_RECEIVER_PUBLIC_KEY_PATH`与
+`AICO_COMMISSIONING_RECEIPT_PATH`必须已在receipt创建前写入最终`.env`；否则后写会改变
 代际并使receipt立即失效。每次config/evidence更新使用新文件名并重新commission，不覆盖旧artifact。之后再运行doctor/install。
 receipt会在dead-man age或silent-probe TTL较早者到期；运行中到期显示required
 `configuration:commissioning-receipt` FAILED并告警，不自动重启或联网刷新。

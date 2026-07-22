@@ -604,7 +604,7 @@ def test_dead_man_receiver_docker_contract_is_non_root_and_persistent() -> None:
     compose = (deploy_dir / "compose.yaml").read_text(encoding="utf-8")
 
     assert "USER aico" in dockerfile
-    assert 'VOLUME ["/data"]' in dockerfile
+    assert 'VOLUME ["/data", "/signing"]' in dockerfile
     assert "aico-dead-man-receiver" in dockerfile
     assert "TOKEN=" not in dockerfile
     assert "SECRET=" not in dockerfile
@@ -612,6 +612,7 @@ def test_dead_man_receiver_docker_contract_is_non_root_and_persistent() -> None:
     assert "read_only: true" in compose
     assert "no-new-privileges:true" in compose
     assert "dead-man-data:/data" in compose
+    assert "dead-man-signing-key:/signing" in compose
     assert "restart: unless-stopped" in compose
     assert "/readyz" in compose
 

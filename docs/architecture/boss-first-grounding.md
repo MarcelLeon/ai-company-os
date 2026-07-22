@@ -338,6 +338,11 @@ strict dead-man exact bytes冻结到checkout-external owner-only receipt；expir
 service/runtime把它加入准入图，heartbeat持续报告required `configuration:commissioning-receipt`。这把三份独立绿灯变成同一代绑定，
 同时保持startup离线、secret-free和no auto-replay；local receipt仍不是签名、provider ACK、fault action或human read。
 
+**Round 254 signed receiver evidence**:receiver用checkout-external、owner-only Ed25519私钥对domain-separated exact bundle bytes签名；
+AICO只持owner-pinned SPKI公钥。signed envelope固定payload、digest、signature和key id；offline verifier与commissioning schema v2
+同时绑定exact envelope/payload/key并在运行中持续fail closed。unsigned endpoint仅供历史审计；签名证明key possession，不证明
+key所在物理host、TLS、真实fault action、provider ACK或human read。
+
 **Round 211 主状态恢复原语**:AICO SQLite business state 使用 online backup API生成transaction-consistent、
 standalone、`0600` artifact，并以只读 integrity/schema/SHA校验作为选择证据。restore/reset与runtime复用同一
 kernel owner fence；restore在原子替换前为现有target创建verified safety backup。该切片解决同机可恢复性，不覆盖

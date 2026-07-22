@@ -35,8 +35,9 @@ Dead-Man Receiver不是常驻AICO的必需组件。只有需要在整台Mac失�
 默认`.env`使用`AICO_ABSENCE_ADMISSION_MODE=optional`，用于开发时保留可选能力。老板准备离开前改成`strict`并重新运行
 doctor/install；`absence admission`必须为OK，否则launchctl不会执行。strict要求runtime alerts、external liveness、current runtime
 commissioning、scheduled recovery、disposable recovery drill和standing autonomy均通过真实preflight。commission receipt必须在最终
-`.env`写好两个checkout-external绝对路径后用`aico-commission create`生成，绑定reviewed revision、dotenv generation与严格dead-man
-artifact；具体命令见Quickstart。该OK仍不证明receiver来源、off-device存储、平台送达或老板已读。
+`.env`写好signed evidence、owner-pinned receiver公钥和receipt三个checkout-external绝对路径后用`aico-commission create`生成，
+绑定reviewed revision、dotenv generation、exact envelope/payload与key identity；具体命令见Quickstart。该OK只证明可信key签名，
+仍不证明receiver物理host、off-device存储、平台送达或老板已读。
 LaunchAgent后续异常重启也会执行strict：dotenv enable项缺失在settings加载时失败，standing/recovery外部binding漂移在
 Channel/state构造前preflight失败。长期stderr不会打印Pydantic raw input；先运行secret-safe doctor，不要把strict改回optional消音。
 strict进程运行中若`.env`被编辑、替换或删除，required `configuration:dotenv-generation`会FAILED并进入既有confirmed alert；
@@ -155,14 +156,14 @@ ACK才转healthy并发送recovered。每日可用admin-only`/v1/notification-rou
 schema v5可选silent probe会把exact intent先落盘，再用真实route的POST/credential低频探测。一个失败窗口显示suspect/PENDING，
 达到持久阈值才degraded并发边沿；ACK后recovered。该合同默认disabled，只有两个bridge都保证ACK且不展示probe时才能启用。
 每日核对admin `probe.last_completed_at`、ACK vector和手机无噪声；local ACK仍不是老板已读或物理HA证明。
-真实 outage演练后用 admin-only `/v1/monitors/<runtime_id>/evidence` 导出 bounded JSON,再在可信环境运行
-`aico-dead-man-evidence <file> --runtime-id <id> --minimum-complete-outages 1 --require-all-delivered
+真实 outage演练后用 admin-only `/v1/monitors/<runtime_id>/signed-evidence` 导出 bounded envelope,再在可信环境运行
+`aico-dead-man-evidence <file> --trusted-public-key <receiver-public.pem> --runtime-id <id> --minimum-complete-outages 1 --require-all-delivered
 --maximum-evidence-age-seconds 300 --require-fresh-notification-probe --require-all-routes-healthy`。最后三项是当前商用验收条件；
 只做历史审计时才可省略。bundle只含
 monitor/outage/event/delivery与notification policy事实；schema v5还包含slot health、逐event ACK、route-health edge与silent probe
 checkpoint，event reason
 区分`pulse_expired`和`alert_delivery_unhealthy`，并绑定创建时route/quorum，open/resolved reason必须一致。
-SHA-256用于归档后字节比对,不能冒充receiver签名或第二故障域证明。
+SHA-256用于归档后字节比对；Ed25519证明owner-pinned key possession，但不能冒充第二故障域、TLS或fault-action证明。
 
 `AICO_PREFER_NATIVE_CHANNEL_FORMAT` 默认关闭。设为 `true` 后,Telegram task 会要求 agent 优先输出 Telegram Bot API HTML 子集;AICO 会先白名单验证 HTML,验证失败自动回退到 rich text renderer。该开关用于 dogfood 模型是否能稳定输出 Channel-native 格式,不要把未经验证的模型 HTML 原样发送给 IM。
 

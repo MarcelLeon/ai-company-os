@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 import subprocess
 import sys
@@ -10,7 +11,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from aico.app.dead_man_evidence_signing import (
+    load_evidence_signer,
+    serialize_signed_evidence_envelope,
+)
 from aico.app.runtime_commissioning import (
     RuntimeCommissioningError,
     RuntimeCommissioningHealth,
@@ -28,6 +35,7 @@ class Materials:
     project_config: Path
     dotenv: Path
     evidence: Path
+    public_key: Path
     receipt: Path
     revision: str
 
@@ -66,6 +74,9 @@ def test_commissioning_receipt_binds_current_config_dotenv_and_external_evidence
     assert "owner-private-token" not in rendered
     assert receipt.dotenv_path_recorded is False
     assert receipt.dotenv_content_hash_recorded is False
+    assert receipt.schema_version == 2
+    assert receipt.receiver_evidence_signature_verified is True
+    assert receipt.receiver_host_attested is False
     assert receipt.business_absence_ready is False
     with pytest.raises(RuntimeCommissioningError, match="already exists"):
         create_runtime_commissioning_receipt(
@@ -215,6 +226,92 @@ def test_commissioning_requires_owner_only_artifacts_outside_checkout(
         )
 
 
+def test_commissioning_rejects_unsigned_wrong_key_and_checkout_pinned_key(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 7, 22, 12, 5, tzinfo=UTC)
+
+    unsigned = _materials(tmp_path / "unsigned", now)
+    unsigned.evidence.write_bytes(
+        json.dumps(_evidence_payload(now), separators=(",", ":")).encode()
+    )
+    with pytest.raises(RuntimeCommissioningError, match="creation failed"):
+        create_runtime_commissioning_receipt(
+            **_arguments(unsigned),
+            runtime_id="owner-runtime",
+            maximum_evidence_age_seconds=300,
+            output_path=unsigned.receipt,
+            clock=lambda: now,
+        )
+
+    wrong_key = _materials(tmp_path / "wrong-key", now)
+    _, replacement_public_key = _receiver_key_pair(wrong_key.public_key.parent / "replacement")
+    with pytest.raises(RuntimeCommissioningError, match="creation failed"):
+        create_runtime_commissioning_receipt(
+            **{
+                **_arguments(wrong_key),
+                "trusted_receiver_public_key_path": replacement_public_key,
+            },
+            runtime_id="owner-runtime",
+            maximum_evidence_age_seconds=300,
+            output_path=wrong_key.receipt,
+            clock=lambda: now,
+        )
+
+    checkout_key = _materials(tmp_path / "checkout-key", now)
+    in_checkout = checkout_key.checkout / "receiver-public.pem"
+    in_checkout.write_bytes(checkout_key.public_key.read_bytes())
+    with pytest.raises(RuntimeCommissioningError, match="creation failed"):
+        create_runtime_commissioning_receipt(
+            **{
+                **_arguments(checkout_key),
+                "trusted_receiver_public_key_path": in_checkout,
+            },
+            runtime_id="owner-runtime",
+            maximum_evidence_age_seconds=300,
+            output_path=checkout_key.receipt,
+            clock=lambda: now,
+        )
+
+
+def test_commissioning_rejects_public_key_replacement_and_legacy_receipt(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 7, 22, 12, 5, tzinfo=UTC)
+    materials = _materials(tmp_path, now)
+    create_runtime_commissioning_receipt(
+        **_arguments(materials),
+        runtime_id="owner-runtime",
+        maximum_evidence_age_seconds=300,
+        output_path=materials.receipt,
+        clock=lambda: now,
+    )
+
+    _, replacement_public_key = _receiver_key_pair(materials.public_key.parent / "rotated")
+    with pytest.raises(RuntimeCommissioningError, match="invalid"):
+        verify_runtime_commissioning_receipt(
+            **{
+                **_arguments(materials),
+                "trusted_receiver_public_key_path": replacement_public_key,
+            },
+            expected_runtime_id="owner-runtime",
+            receipt_path=materials.receipt,
+            clock=lambda: now,
+        )
+
+    legacy = json.loads(materials.receipt.read_text())
+    legacy["schema_version"] = 1
+    materials.receipt.write_text(json.dumps(legacy))
+    materials.receipt.chmod(0o600)
+    with pytest.raises(RuntimeCommissioningError, match="invalid"):
+        verify_runtime_commissioning_receipt(
+            **_arguments(materials),
+            expected_runtime_id="owner-runtime",
+            receipt_path=materials.receipt,
+            clock=lambda: now,
+        )
+
+
 def test_commissioning_cli_creates_and_verifies_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -235,6 +332,8 @@ def test_commissioning_cli_creates_and_verifies_receipt(
         str(materials.dotenv),
         "--dead-man-evidence",
         str(materials.evidence),
+        "--trusted-receiver-public-key",
+        str(materials.public_key),
     ]
     monkeypatch.setattr(
         sys,
@@ -302,6 +401,7 @@ def _arguments(materials: Materials) -> dict[str, Any]:
         "expected_config_revision": materials.revision,
         "dotenv_path": materials.dotenv,
         "dead_man_evidence_path": materials.evidence,
+        "trusted_receiver_public_key_path": materials.public_key,
     }
 
 
@@ -322,16 +422,43 @@ def _materials(tmp_path: Path, now: datetime) -> Materials:
     private.mkdir()
     private.chmod(0o700)
     evidence = private / "dead-man-evidence.json"
-    evidence.write_text(json.dumps(_evidence_payload(now)))
+    private_key, public_key = _receiver_key_pair(private)
+    payload = json.dumps(_evidence_payload(now), separators=(",", ":")).encode()
+    envelope = load_evidence_signer(private_key).sign(payload)
+    evidence.write_bytes(serialize_signed_evidence_envelope(envelope))
     evidence.chmod(0o600)
     return Materials(
         checkout=checkout,
         project_config=project_config,
         dotenv=dotenv,
         evidence=evidence,
+        public_key=public_key,
         receipt=private / "commissioning.json",
         revision=_git(checkout, "rev-parse", "HEAD").stdout.strip(),
     )
+
+
+def _receiver_key_pair(directory: Path) -> tuple[Path, Path]:
+    directory.mkdir(parents=True, exist_ok=True)
+    key = Ed25519PrivateKey.generate()
+    private_key = directory / "receiver-private.pem"
+    public_key = directory / "receiver-public.pem"
+    private_key.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    public_key.write_bytes(
+        key.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+    os.chmod(private_key, 0o600)
+    os.chmod(public_key, 0o644)
+    return private_key, public_key
 
 
 def _evidence_payload(now: datetime) -> dict[str, Any]:

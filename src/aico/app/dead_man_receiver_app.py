@@ -18,10 +18,17 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from aico.app.dead_man_evidence_signing import (
+    DeadManEvidenceSigner,
+    DeadManEvidenceSigningError,
+    load_evidence_signer,
+    serialize_evidence_payload,
+    serialize_signed_evidence_envelope,
+)
 from aico.app.dead_man_receiver import (
     DeadManMonitorConflictError,
     DeadManMonitorNotArmedError,
@@ -50,6 +57,7 @@ class DeadManReceiverSettings(BaseSettings):
     )
 
     state_db_path: Path = Path("/data/dead-man.db")
+    evidence_signing_private_key_path: Path | None = None
     pulse_bearer_token: SecretStr
     admin_bearer_token: SecretStr
     notification_webhook_url: SecretStr
@@ -199,6 +207,7 @@ def build_dead_man_receiver_app(
 
     current_time = clock or (lambda: datetime.now(UTC))
     current_monotonic = monotonic_clock or monotonic
+    evidence_signer = _evidence_signer(settings)
     store = SQLiteDeadManReceiverStore(settings.state_db_path)
     sink = notification_sink or _notification_sink(settings)
     coordinator = DeadManNotificationCoordinator(store=store, sink=sink)
@@ -284,9 +293,21 @@ def build_dead_man_receiver_app(
     app.state.receiver_store = store
     app.state.receiver_worker_health = worker_health
     _register_common_routes(app, store, worker_health, current_monotonic)
-    _register_monitor_routes(app, settings, store, wake, current_time)
-    _register_pulse_route(app, settings, store, wake, current_time)
+    _register_receiver_routes(app, settings, store, wake, current_time, evidence_signer)
     return app
+
+
+def _register_receiver_routes(
+    app: FastAPI,
+    settings: DeadManReceiverSettings,
+    store: SQLiteDeadManReceiverStore,
+    wake: asyncio.Event,
+    clock: Callable[[], datetime],
+    evidence_signer: DeadManEvidenceSigner | None,
+) -> None:
+    _register_monitor_routes(app, settings, store, wake, clock)
+    _register_evidence_routes(app, settings, store, wake, clock, evidence_signer)
+    _register_pulse_route(app, settings, store, wake, clock)
 
 
 def _register_common_routes(
@@ -383,6 +404,15 @@ def _register_monitor_routes(
         wake.set()
         return snapshot.model_dump(mode="json")
 
+
+def _register_evidence_routes(
+    app: FastAPI,
+    settings: DeadManReceiverSettings,
+    store: SQLiteDeadManReceiverStore,
+    wake: asyncio.Event,
+    clock: Callable[[], datetime],
+    evidence_signer: DeadManEvidenceSigner | None,
+) -> None:
     @app.get("/v1/monitors/{runtime_id}/evidence")
     async def monitor_evidence(
         runtime_id: str,
@@ -402,6 +432,32 @@ def _register_monitor_routes(
             raise HTTPException(status_code=404, detail="evidence not found") from exc
         wake.set()
         return bundle.model_dump(mode="json")
+
+    @app.get("/v1/monitors/{runtime_id}/signed-evidence")
+    async def signed_monitor_evidence(
+        runtime_id: str,
+        authorization: Annotated[str | None, Header()] = None,
+        max_outages: Annotated[int, Query(ge=1, le=100)] = 20,
+    ) -> Response:
+        _require_bearer(authorization, settings.admin_bearer_token)
+        if evidence_signer is None:
+            raise HTTPException(status_code=503, detail="evidence signing is unavailable")
+        generated_at = clock()
+        store.evaluate(now=generated_at)
+        try:
+            bundle = store.export_evidence(
+                runtime_id,
+                generated_at=generated_at,
+                max_outages=max_outages,
+            )
+        except DeadManMonitorNotArmedError as exc:
+            raise HTTPException(status_code=404, detail="evidence not found") from exc
+        envelope = evidence_signer.sign(serialize_evidence_payload(bundle))
+        wake.set()
+        return Response(
+            content=serialize_signed_evidence_envelope(envelope),
+            media_type="application/json",
+        )
 
 
 def _register_pulse_route(
@@ -479,6 +535,27 @@ def _notification_sink(settings: DeadManReceiverSettings) -> DeadManNotification
         sinks=(primary, fallback),
         minimum_acknowledgements=settings.notification_minimum_acknowledgements,
     )
+
+
+def _evidence_signer(settings: DeadManReceiverSettings) -> DeadManEvidenceSigner | None:
+    path = settings.evidence_signing_private_key_path
+    if path is None:
+        return None
+    checkout = _source_checkout_root()
+    try:
+        return load_evidence_signer(
+            path,
+            forbidden_roots=(() if checkout is None else (checkout,)),
+        )
+    except DeadManEvidenceSigningError:
+        raise RuntimeError("dead-man evidence signing key is invalid") from None
+
+
+def _source_checkout_root() -> Path | None:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / ".git").exists() and (parent / "pyproject.toml").is_file():
+            return parent
+    return None
 
 
 def _require_bearer(value: str | None, expected: SecretStr) -> None:

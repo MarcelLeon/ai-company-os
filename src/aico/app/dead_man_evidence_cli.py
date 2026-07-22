@@ -12,6 +12,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from aico.app.dead_man_evidence_signing import (
+    DeadManEvidenceSigningError,
+    verify_signed_evidence_bytes,
+)
 from aico.app.dead_man_receiver import DeadManEvidenceBundle, DeadManEvidenceEvent
 
 
@@ -35,6 +39,9 @@ class DeadManEvidenceVerificationSummary(BaseModel):
     notification_probe_pending: bool
     notification_probe_fresh: bool
     sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    payload_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    receiver_signature_verified: bool = False
+    receiver_public_key_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
 def verify_evidence_bytes(
@@ -46,12 +53,27 @@ def verify_evidence_bytes(
     maximum_evidence_age_seconds: float | None = None,
     require_fresh_notification_probe: bool = False,
     require_all_routes_healthy: bool = False,
+    trusted_public_key_path: Path | None = None,
+    public_key_forbidden_roots: tuple[Path, ...] = (),
     now: datetime | None = None,
 ) -> DeadManEvidenceVerificationSummary:
     if minimum_complete_outages < 0:
         raise DeadManEvidenceVerificationError("minimum completed outages cannot be negative")
+    payload = raw
+    receiver_public_key_sha256: str | None = None
+    if trusted_public_key_path is not None:
+        try:
+            signed = verify_signed_evidence_bytes(
+                raw,
+                trusted_public_key_path=trusted_public_key_path,
+                forbidden_roots=public_key_forbidden_roots,
+            )
+        except DeadManEvidenceSigningError as exc:
+            raise DeadManEvidenceVerificationError(str(exc)) from None
+        payload = signed.payload
+        receiver_public_key_sha256 = signed.public_key_sha256
     try:
-        bundle = DeadManEvidenceBundle.model_validate_json(raw)
+        bundle = DeadManEvidenceBundle.model_validate_json(payload)
     except ValidationError as exc:
         raise DeadManEvidenceVerificationError("evidence schema or invariants are invalid") from exc
     if expected_runtime_id is not None and bundle.runtime_id != expected_runtime_id:
@@ -91,6 +113,9 @@ def verify_evidence_bytes(
         notification_probe_pending=bundle.notification_probe.pending_probe is not None,
         notification_probe_fresh=bundle.notification_probe_fresh,
         sha256=hashlib.sha256(raw).hexdigest(),
+        payload_sha256=hashlib.sha256(payload).hexdigest(),
+        receiver_signature_verified=trusted_public_key_path is not None,
+        receiver_public_key_sha256=receiver_public_key_sha256,
     )
 
 
@@ -174,6 +199,11 @@ def main() -> None:
         action="store_true",
         help="Fail unless every configured notification route is currently healthy",
     )
+    parser.add_argument(
+        "--trusted-public-key",
+        type=Path,
+        help="Verify a signed envelope against this owner-pinned Ed25519 public key",
+    )
     args = parser.parse_args()
     try:
         raw = args.bundle.read_bytes()
@@ -185,6 +215,7 @@ def main() -> None:
             maximum_evidence_age_seconds=args.maximum_evidence_age_seconds,
             require_fresh_notification_probe=args.require_fresh_notification_probe,
             require_all_routes_healthy=args.require_all_routes_healthy,
+            trusted_public_key_path=args.trusted_public_key,
         )
     except (OSError, DeadManEvidenceVerificationError) as exc:
         message = (

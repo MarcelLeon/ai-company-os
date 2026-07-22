@@ -1,9 +1,9 @@
 # ADR-0088: Signed Dead-Man Evidence Envelope
 
-**状态**:Proposed
+**状态**:Accepted
 **日期**:2026-07-22
-**决策者**:Wang / Codex(待确认)
-**相关 Round**:Round 250 proposal
+**决策者**:Wang / Codex
+**相关 Round**:Round 250 proposal, Round 254 implementation
 
 ## 背景与问题
 
@@ -26,9 +26,9 @@ ADR-0087把reviewed config、dotenv generation和exact dead-man evidence绑定�
 - 优点：AICO只持有公钥，能验证exact payload且没有签发能力；artifact可离线携带来源证明。
 - 缺点：新增密码学依赖、密钥部署/轮换和schema v2迁移；receiver私钥被攻破后签名不再可信。
 
-## 提议决策
+## 决策
 
-采用方案C，待owner确认后实现。receiver使用owner预生成、owner-only、checkout-external PKCS#8 PEM Ed25519私钥，对domain-separated exact bundle bytes签名；signed envelope携带payload、signature、payload SHA和公钥key id，但不携带trust anchor。AICO从最终配置固定的SubjectPublicKeyInfo PEM公钥验证。
+采用方案C。receiver使用owner预生成、owner-only、checkout-external PKCS#8 PEM Ed25519私钥，对domain-separated exact bundle bytes签名；signed envelope携带payload、signature、payload SHA和公钥key id，但不携带trust anchor。AICO从最终配置固定的SubjectPublicKeyInfo PEM公钥验证。
 
 unsigned evidence endpoint和offline历史审计保持兼容；strict commissioning只接受signed envelope。receipt绑定envelope/payload/key identity并持续验证，但继续固定`receiver_host_attested=false`和`business_absence_ready=false`。
 

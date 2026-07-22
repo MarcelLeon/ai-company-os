@@ -354,6 +354,9 @@ def test_evidence_cli_reads_local_bundle_and_prints_compact_summary(
         "notification_probe_pending": False,
         "notification_probe_fresh": False,
         "sha256": hashlib.sha256(raw).hexdigest(),
+        "payload_sha256": hashlib.sha256(raw).hexdigest(),
+        "receiver_signature_verified": False,
+        "receiver_public_key_sha256": None,
     }
 
 

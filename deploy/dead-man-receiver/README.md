@@ -14,6 +14,10 @@ not create an independent failure domain.
   `openssl rand -hex 32`. Pulse authority cannot arm, disarm, or read monitors.
 - Keep `/data/dead-man.db` on a persistent volume and back it up. Receiver restart must retain armed
   monitors, active outages, and notification outbox rows.
+- Generate one unencrypted PKCS#8 Ed25519 evidence-signing key on the receiver host. Keep the private
+  key owner-only (`0600`) and outside the AICO checkout; copy only its SPKI public key to the AICO
+  operator. Back up and rotate the private key independently. Rotation requires a new evidence
+  export, updated owner-pinned public key, and recommissioning.
 - Receiver schema v2 accepts pulse schema v2. `disabled`/`healthy` alert-delivery signals renew the
   monitor; `pending`/`failed` signals are ordered but do not renew it. Upgrade and migrate the
   receiver before pointing a v2 publisher at an older deployment.
@@ -57,6 +61,14 @@ cd deploy/dead-man-receiver
 cp .env.example .env
 # Replace every placeholder and keep the file owner-only. The app rejects placeholder tokens.
 chmod 600 .env
+docker compose build
+# One-time owner-invoked generation inside the isolated signing volume; refuses overwrite.
+docker compose run --rm --no-deps --entrypoint python dead-man-receiver -c \
+  'from pathlib import Path; import os; from cryptography.hazmat.primitives import serialization; from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey; p=Path("/signing/evidence-signing-private.pem"); fd=os.open(p, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o600); os.write(fd, Ed25519PrivateKey.generate().private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())); os.close(fd)'
+# Export only the public key to an owner-controlled operator path.
+docker compose run --rm --no-deps --entrypoint python dead-man-receiver -c \
+  'from pathlib import Path; from cryptography.hazmat.primitives import serialization; k=serialization.load_pem_private_key(Path("/signing/evidence-signing-private.pem").read_bytes(), password=None); print(k.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode(), end="")' \
+  > /absolute/operator/receiver-evidence-public.pem
 docker compose up --build -d
 curl --fail http://127.0.0.1:8080/readyz
 ```
@@ -146,15 +158,16 @@ whole outage groups, so a resolved edge is never separated from its opened edge:
 ```bash
 curl --fail \
   --header "Authorization: Bearer $AICO_DEAD_MAN_ADMIN_BEARER_TOKEN" \
-  "https://receiver.example/v1/monitors/owner-runtime/evidence?max_outages=20" \
-  --output /absolute/private/dead-man-evidence-owner-runtime.json
+  "https://receiver.example/v1/monitors/owner-runtime/signed-evidence?max_outages=20" \
+  --output /absolute/private/signed-dead-man-evidence-owner-runtime.json
 ```
 
 Copy the artifact to a trusted offline environment and verify it without any receiver credential:
 
 ```bash
-chmod 600 /absolute/private/dead-man-evidence-owner-runtime.json
-uv run aico-dead-man-evidence /absolute/private/dead-man-evidence-owner-runtime.json \
+chmod 600 /absolute/private/signed-dead-man-evidence-owner-runtime.json
+uv run aico-dead-man-evidence /absolute/private/signed-dead-man-evidence-owner-runtime.json \
+  --trusted-public-key /absolute/private/receiver-evidence-public.pem \
   --runtime-id owner-runtime \
   --minimum-complete-outages 1 \
   --require-all-delivered \
@@ -168,15 +181,18 @@ The three final flags form the current-health acceptance layer: verification mus
 owner-selected export window, the enabled silent probe must have completed and still be fresh at
 verification time, and every route snapshot must be healthy. Omit those flags only for historical
 audit, not for commissioning or recommissioning.
-For strict AICO runtime admission, set the final `.env` evidence and receipt paths first, then use
-`aico-commission create` from the AICO checkout. That receipt additionally binds the clean reviewed
-Git configuration and dotenv metadata generation, and expires at the earlier evidence/probe boundary.
+For strict AICO runtime admission, set the final `.env` evidence, receiver public-key, and receipt
+paths first, then use `aico-commission create` from the AICO checkout with
+`--trusted-receiver-public-key /absolute/private/receiver-evidence-public.pem`. The receipt
+additionally binds the clean reviewed Git configuration, dotenv metadata generation, exact signed
+envelope, embedded payload, and receiver key identity, and expires at the earlier evidence/probe boundary.
 Use a new evidence and receipt filename for every recommission; never overwrite prior evidence.
 It prints event counts and the SHA-256 of the exact artifact bytes. `delivered=true` means
 the event's frozen local acknowledgement quorum was met; it does not prove every route succeeded or a
 human read the notification. Record that digest with
-the exercise log so later byte changes are detectable. The hash is not a server signature, and a valid
-bundle does not prove the receiver host, TLS route, physical kill/network action, or downstream
+the exercise log so later byte changes are detectable. The Ed25519 signature proves possession of
+the owner-pinned receiver key for the exact payload; it does not prove the key's physical host, the
+TLS route, physical kill/network action, or downstream
 exactly-once behavior. Keep the artifact as owner-only operational evidence.
 
 Until these are captured from a genuinely separate host, B-012 remains external-evidence pending.

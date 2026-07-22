@@ -145,6 +145,11 @@ evidence/receipt路径，再由create绑定clean reviewed Git config、dotenv st
 doctor/startup离线复核，heartbeat持续投影为required health；任何漂移/expiry都告警但不自动restart/replay。receipt不含dotenv
 path/content/content hash，且固定`business_absence_ready=false`；它不是receiver签名或老板已读证明。
 
+Round 254 起,strict evidence必须是receiver Ed25519私钥签发的domain-separated envelope，AICO只从checkout-external配置读取
+owner-pinned SPKI公钥。commission receipt schema v2同时绑定envelope、embedded payload和key identity；unsigned endpoint只保留
+历史审计。签名成功证明trusted key possession，不证明私钥物理host、TLS、fault action、provider ACK或老板已读，
+`business_absence_ready`继续为false。
+
 Round 211 起,AICO 主 SQLite 状态必须用 `aico-state backup` 的 online backup artifact保护，不能复制 live DB。
 verify 必须只读校验 integrity/schema/SHA；restore/reset 必须先停止 runtime并取得同一 owner lock。restore要先
 创建 pre-restore safety backup，再同目录原子替换。机器 Gate 只证明本机恢复原语；没有 off-device artifact与

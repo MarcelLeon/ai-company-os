@@ -15,6 +15,7 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - dead-man-data:/data
+      - dead-man-signing-key:/signing
     tmpfs:
       - /tmp:size=16m,mode=1777
     healthcheck:
@@ -32,3 +33,4 @@ services:
 
 volumes:
   dead-man-data:
+  dead-man-signing-key:
