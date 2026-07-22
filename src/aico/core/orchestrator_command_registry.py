@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from pathlib import Path
+from uuid import uuid4
 
 from aico.channel import IMChannel
 from aico.core.agent_directory import AgentDirectory
@@ -31,7 +33,7 @@ from aico.core.language import (
     parse_response_language,
 )
 from aico.core.lead_decision import LeadDecisionWorkflow
-from aico.core.memory import MemoryStore
+from aico.core.memory import MemoryAtom, MemoryScope, MemoryStatus, MemoryStore
 from aico.core.memory_commands import MemoryCommandHandler
 from aico.core.models import (
     AckStatus,
@@ -40,8 +42,14 @@ from aico.core.models import (
     MessageContent,
     SentMessage,
     Task,
+    TaskSnapshot,
+    TaskStatus,
 )
-from aico.core.morning import morning_message
+from aico.core.morning import (
+    MorningHandoffEnvelope,
+    morning_handoff_envelope,
+    morning_message,
+)
 from aico.core.offline_delegation import OfflineDelegationCommandHandler, OfflineDelegationStore
 from aico.core.orchestrator_commands import DirectoryCommandHandler
 from aico.core.orchestrator_task_factory import OrchestratorTaskFactory
@@ -51,7 +59,23 @@ from aico.core.project_summary import ProjectSummaryCoordinator
 from aico.core.role_proposal import RoleProposalCoordinator
 from aico.core.router import MessageRouter
 from aico.core.session_commands import session_scope
-from aico.core.task_bus import TaskBus
+from aico.core.standing_autonomy import (
+    PreauthorizedTaskRunner,
+    StandingAutonomyCoordinator,
+    StandingAutonomyGrantSet,
+    StandingAutonomyOutcomeEnvelope,
+    StandingAutonomyReceipt,
+    StandingAutonomyReceiptStatus,
+    StandingAutonomyRunDisposition,
+    StandingAutonomyRunReceipt,
+    standing_autonomy_outcome_envelope,
+    standing_autonomy_receipts,
+)
+from aico.core.standing_proposal import (
+    StandingProposalCoordinator,
+    StandingProposalStore,
+)
+from aico.core.task_bus import TaskBus, task_usage_for_task
 from aico.core.timeline_rollback_commands import RollbackCommandHandler, TimelineCommandHandler
 from aico.core.undo_why_commands import UndoCommandHandler, WhyCommandHandler
 from aico.core.unified_event import UnifiedEventIndex
@@ -60,14 +84,162 @@ from aico.view.commands import ViewSnapshotCommandHandler
 ProviderSessionRefFactory = Callable[[AgentSession], ProviderSessionRef | None]
 TargetTaskRunner = Callable[[IncomingMessage, Task], Awaitable[None]]
 TaskRunner = Callable[..., Awaitable[str]]
-ProjectRoleTaskRunner = Callable[[IncomingMessage, str, str], Awaitable[None]]
+ProjectRoleTaskRunner = Callable[[IncomingMessage, str, str, bool], Awaitable[None]]
 DelegatedTaskRunner = Callable[[IncomingMessage, Task, AgentSession | None], Awaitable[str]]
 EventIndexFactory = Callable[[], UnifiedEventIndex]
 StreamTaskOutput = Callable[[IncomingMessage, SentMessage, Task], Awaitable[str]]
 StreamTaskIdOutput = Callable[[IncomingMessage, SentMessage, str], Awaitable[None]]
 
 
-class OrchestratorCommandRegistry:
+class _MorningDeliveryRegistryMixin:
+    _channel: IMChannel
+    _event_index_factory: EventIndexFactory
+    _memory_store: MemoryStore | None
+    _offline_delegations: OfflineDelegationCommandHandler
+    _project_directory: ProjectAssignmentDirectory
+    _standing_autonomy: StandingAutonomyCoordinator
+    _standing_proposals: StandingProposalCoordinator
+    _task_bus: TaskBus
+
+    async def deliver_morning_handoff(
+        self,
+        target: ChannelTarget,
+        envelope: MorningHandoffEnvelope,
+    ) -> SentMessage:
+        return await self._channel.send_message(target, envelope.content)
+
+    async def send_morning_handoff(
+        self,
+        target: ChannelTarget,
+        *,
+        project_id: str,
+        scope_id: str | None = None,
+        delivery_id: str | None = None,
+    ) -> SentMessage:
+        if delivery_id is None:
+            delivery_id = f"morning-{uuid4().hex}"
+        envelope = self.prepare_morning_handoff(
+            project_id=project_id,
+            scope_id=scope_id or target.target_id,
+            delivery_id=delivery_id,
+        )
+        sent = await self.deliver_morning_handoff(target, envelope)
+        receipt = await self.run_scheduled_autonomy(
+            target,
+            project_id=envelope.project_id,
+            intent_id=f"autonomy-{uuid4().hex}",
+        )
+        outcome = self.prepare_scheduled_autonomy_outcome(receipt)
+        if outcome is not None:
+            await self.deliver_scheduled_autonomy_outcome(target, outcome)
+        return sent
+
+    def prepare_morning_handoff(
+        self,
+        *,
+        project_id: str,
+        scope_id: str,
+        delivery_id: str,
+    ) -> MorningHandoffEnvelope:
+        project = self._project_directory.project(project_id)
+        if project is None:
+            raise ValueError(f"unknown morning push project: {project_id}")
+        task_snapshots = self._task_bus.task_snapshots(limit=None)
+        proposals = self._standing_proposals.refresh(project.id, task_snapshots)
+        index = self._event_index_factory()
+        return morning_handoff_envelope(
+            delivery_id=delivery_id,
+            project_id=project.id,
+            task_snapshots=task_snapshots,
+            overnight_records=self._offline_delegations.records_for_scope(
+                scope_id,
+                project_id=project.id,
+            ),
+            audit_events=self._task_bus.audit_events(limit=None),
+            recent_events=index.recent(limit=5),
+            experience_candidates=self._candidate_experiences(project.id),
+            standing_proposals=proposals,
+            standing_autonomy_receipts=self._autonomy_receipts(project.id, task_snapshots),
+        )
+
+    async def run_scheduled_autonomy(
+        self,
+        target: ChannelTarget,
+        *,
+        project_id: str,
+        intent_id: str,
+    ) -> StandingAutonomyRunReceipt:
+        task_snapshots = self._task_bus.task_snapshots(limit=None)
+        return await self._standing_autonomy.run_once(
+            target,
+            project_id=project_id,
+            task_snapshots=task_snapshots,
+            intent_id=intent_id,
+        )
+
+    def scheduled_autonomy_evidence(
+        self,
+        *,
+        project_id: str,
+        intent_id: str,
+    ) -> StandingAutonomyRunReceipt | None:
+        return self._standing_autonomy.evidence_for_intent(
+            project_id=project_id,
+            intent_id=intent_id,
+        )
+
+    def prepare_scheduled_autonomy_outcome(
+        self,
+        receipt: StandingAutonomyRunReceipt,
+    ) -> StandingAutonomyOutcomeEnvelope | None:
+        if receipt.disposition is not StandingAutonomyRunDisposition.DISPATCH_RECORDED:
+            return None
+        task_snapshots = self._task_bus.task_snapshots(limit=None)
+        outcome = next(
+            (
+                item
+                for item in self._autonomy_receipts(receipt.project_id, task_snapshots)
+                if item.proposal_id == receipt.proposal_id and item.task_id == receipt.task_id
+            ),
+            None,
+        )
+        if outcome is None:
+            raise ValueError("scheduled autonomy outcome evidence is missing")
+        if outcome.status in {
+            StandingAutonomyReceiptStatus.RUNNING,
+            StandingAutonomyReceiptStatus.WAITING_APPROVAL,
+        }:
+            return None
+        return standing_autonomy_outcome_envelope(receipt, outcome)
+
+    async def deliver_scheduled_autonomy_outcome(
+        self,
+        target: ChannelTarget,
+        envelope: StandingAutonomyOutcomeEnvelope,
+    ) -> SentMessage:
+        return await self._channel.send_message(target, envelope.content)
+
+    def _candidate_experiences(self, project_id: str) -> tuple[MemoryAtom, ...]:
+        if self._memory_store is None:
+            return ()
+        return self._memory_store.list_experiences(
+            MemoryScope.project(project_id),
+            statuses=(MemoryStatus.CANDIDATE,),
+        )
+
+    def _autonomy_receipts(
+        self,
+        project_id: str,
+        task_snapshots: tuple[TaskSnapshot, ...],
+    ) -> tuple[StandingAutonomyReceipt, ...]:
+        return standing_autonomy_receipts(
+            self._standing_proposals.history(project_id),
+            task_snapshots,
+            evidence_root=_project_evidence_root(self._project_directory, project_id),
+        )
+
+
+class OrchestratorCommandRegistry(_MorningDeliveryRegistryMixin):
     """Own slash-command handlers and keep Orchestrator focused on task execution."""
 
     def __init__(
@@ -85,11 +257,14 @@ class OrchestratorCommandRegistry:
         response_languages: ResponseLanguageStore,
         provider_session_factory: ProviderSessionRefFactory | None,
         offline_delegation_store: OfflineDelegationStore | None,
+        standing_proposal_store: StandingProposalStore | None,
+        standing_autonomy_grants: StandingAutonomyGrantSet | None,
         view_snapshot_handler: ViewSnapshotCommandHandler | None,
         run_task: TaskRunner,
         run_target_task: TargetTaskRunner,
         run_project_role_task: ProjectRoleTaskRunner,
         run_delegated_task: DelegatedTaskRunner,
+        run_preauthorized_task: PreauthorizedTaskRunner,
         run_goal_task: DelegatedTaskRunner,
         run_decision_task: TaskRunner,
         stream_outputs_for_task: StreamTaskOutput,
@@ -101,6 +276,7 @@ class OrchestratorCommandRegistry:
         self._task_bus = task_bus
         self._session_store = session_store
         self._project_directory = project_directory
+        self._memory_store = memory_store
         self._view_snapshots = view_snapshot_handler
         self._task_factory = task_factory
         self._task_sessions = task_sessions
@@ -123,6 +299,8 @@ class OrchestratorCommandRegistry:
         self._offline_delegations: OfflineDelegationCommandHandler
         self._goal_briefs: GoalBriefCommandHandler
         self._lead_decisions: LeadDecisionWorkflow
+        self._standing_proposals: StandingProposalCoordinator
+        self._standing_autonomy: StandingAutonomyCoordinator
         _install_command_handlers(
             self,
             channel=channel,
@@ -136,9 +314,12 @@ class OrchestratorCommandRegistry:
             task_sessions=task_sessions,
             provider_session_factory=provider_session_factory,
             offline_delegation_store=offline_delegation_store,
+            standing_proposal_store=standing_proposal_store,
+            standing_autonomy_grants=standing_autonomy_grants,
             run_target_task=run_target_task,
             run_project_role_task=run_project_role_task,
             run_delegated_task=run_delegated_task,
+            run_preauthorized_task=run_preauthorized_task,
             run_goal_task=run_goal_task,
             run_decision_task=run_decision_task,
             event_index_factory=event_index_factory,
@@ -172,6 +353,10 @@ class OrchestratorCommandRegistry:
             await self._handle_inbox(message)
         elif command.name is CommandName.MORNING:
             await self._handle_morning(message)
+        elif command.name is CommandName.PROPOSALS:
+            await self._handle_proposals(message)
+        elif command.name is CommandName.PROPOSAL:
+            await self._standing_proposals.handle_proposal(message, command.payload)
         elif command.name is CommandName.LANGUAGE:
             await self._handle_language(message, command.payload)
         elif command.name is CommandName.TASKS:
@@ -227,18 +412,23 @@ class OrchestratorCommandRegistry:
                 MessageContent(text="No active project. Use /project <project> first."),
             )
             return
+        task_snapshots = self._task_bus.task_snapshots(limit=None)
+        proposals = self._standing_proposals.refresh(project.id, task_snapshots)
         index = self._event_index_factory()
         await self._channel.send_message(
             message.source,
             inbox_message(
                 project_id=project.id,
-                task_snapshots=self._task_bus.task_snapshots(limit=None),
+                task_snapshots=task_snapshots,
                 overnight_records=self._offline_delegations.records_for_scope(
                     session_scope(message),
                     project_id=project.id,
                 ),
                 audit_events=self._task_bus.audit_events(limit=None),
                 recent_events=index.recent(limit=5),
+                experience_candidates=self._candidate_experiences(project.id),
+                standing_proposals=proposals,
+                standing_autonomy_receipts=self._autonomy_receipts(project.id, task_snapshots),
             ),
         )
 
@@ -250,50 +440,34 @@ class OrchestratorCommandRegistry:
                 MessageContent(text="No active project. Use /project <project> first."),
             )
             return
+        task_snapshots = self._task_bus.task_snapshots(limit=None)
+        proposals = self._standing_proposals.refresh(project.id, task_snapshots)
         index = self._event_index_factory()
         await self._channel.send_message(
             message.source,
             morning_message(
                 project_id=project.id,
-                task_snapshots=self._task_bus.task_snapshots(limit=None),
+                task_snapshots=task_snapshots,
                 overnight_records=self._offline_delegations.records_for_scope(
                     session_scope(message),
                     project_id=project.id,
                 ),
                 audit_events=self._task_bus.audit_events(limit=None),
                 recent_events=index.recent(limit=5),
+                experience_candidates=self._candidate_experiences(project.id),
+                standing_proposals=proposals,
+                standing_autonomy_receipts=self._autonomy_receipts(project.id, task_snapshots),
             ),
         )
 
-    async def send_morning_handoff(
-        self,
-        target: ChannelTarget,
-        *,
-        project_id: str,
-        scope_id: str | None = None,
-    ) -> None:
-        project = self._project_directory.project(project_id)
-        if project is None:
-            await self._channel.send_message(
-                target,
-                MessageContent(text=f"Unknown project for morning push: {project_id}"),
+    async def _handle_proposals(self, message: IncomingMessage) -> None:
+        project = self._project_directory.active_project(session_scope(message))
+        if project is not None:
+            self._standing_proposals.refresh(
+                project.id,
+                self._task_bus.task_snapshots(limit=None),
             )
-            return
-        effective_scope = scope_id or target.target_id
-        index = self._event_index_factory()
-        await self._channel.send_message(
-            target,
-            morning_message(
-                project_id=project.id,
-                task_snapshots=self._task_bus.task_snapshots(limit=None),
-                overnight_records=self._offline_delegations.records_for_scope(
-                    effective_scope,
-                    project_id=project.id,
-                ),
-                audit_events=self._task_bus.audit_events(limit=None),
-                recent_events=index.recent(limit=5),
-            ),
-        )
+        await self._standing_proposals.handle_list(message)
 
     async def _handle_view(self, message: IncomingMessage, payload: str) -> None:
         if self._view_snapshots is None:
@@ -536,9 +710,12 @@ def _install_command_handlers(
     task_sessions: dict[str, str],
     provider_session_factory: ProviderSessionRefFactory | None,
     offline_delegation_store: OfflineDelegationStore | None,
+    standing_proposal_store: StandingProposalStore | None,
+    standing_autonomy_grants: StandingAutonomyGrantSet | None,
     run_target_task: TargetTaskRunner,
     run_project_role_task: ProjectRoleTaskRunner,
     run_delegated_task: DelegatedTaskRunner,
+    run_preauthorized_task: PreauthorizedTaskRunner,
     run_goal_task: DelegatedTaskRunner,
     run_decision_task: TaskRunner,
     event_index_factory: EventIndexFactory,
@@ -591,6 +768,17 @@ def _install_command_handlers(
         run_delegated_task=run_delegated_task,
         store=offline_delegation_store,
     )
+    _install_standing_handlers(
+        registry,
+        channel=channel,
+        project_directory=project_directory,
+        task_factory=task_factory,
+        run_delegated_task=run_delegated_task,
+        standing_proposal_store=standing_proposal_store,
+        standing_autonomy_grants=standing_autonomy_grants,
+        task_bus=task_bus,
+        run_preauthorized_task=run_preauthorized_task,
+    )
     registry._goal_briefs = _build_goal_briefs(
         channel=channel,
         project_directory=project_directory,
@@ -607,6 +795,56 @@ def _install_command_handlers(
         task_factory=task_factory,
         run_decision_task=run_decision_task,
     )
+
+
+def _install_standing_handlers(
+    registry: OrchestratorCommandRegistry,
+    *,
+    channel: IMChannel,
+    project_directory: ProjectAssignmentDirectory,
+    task_factory: OrchestratorTaskFactory,
+    run_delegated_task: DelegatedTaskRunner,
+    standing_proposal_store: StandingProposalStore | None,
+    standing_autonomy_grants: StandingAutonomyGrantSet | None,
+    task_bus: TaskBus,
+    run_preauthorized_task: PreauthorizedTaskRunner,
+) -> None:
+    registry._standing_proposals = _build_standing_proposals(
+        channel=channel,
+        project_directory=project_directory,
+        task_factory=task_factory,
+        run_delegated_task=run_delegated_task,
+        store=standing_proposal_store,
+    )
+    registry._standing_autonomy = StandingAutonomyCoordinator(
+        channel=channel,
+        proposals=registry._standing_proposals,
+        grants=standing_autonomy_grants,
+        preflight=task_bus.preauthorized_refusal,
+        run_task=run_preauthorized_task,
+        usage_for_task=lambda task_id: task_usage_for_task(task_bus, task_id),
+        status_for_task=lambda task_id: _task_status(task_bus, task_id),
+        evidence_root_for_project=lambda project_id: _project_evidence_root(
+            project_directory, project_id
+        ),
+        authorization_time_refusal=task_bus.authorization_time_refusal,
+    )
+
+
+def _project_evidence_root(
+    directory: ProjectAssignmentDirectory,
+    project_id: str,
+) -> Path | None:
+    project = directory.project(project_id)
+    if project is None:
+        return None
+    root = Path(project.repo).expanduser()
+    return root if root.is_absolute() else Path.cwd() / root
+
+
+def _task_status(task_bus: TaskBus, task_id: str) -> TaskStatus | None:
+    snapshot = task_bus.task_snapshot(task_id)
+    return snapshot.status if isinstance(snapshot, TaskSnapshot) else None
 
 
 def _install_memory_and_audit_handlers(
@@ -739,6 +977,23 @@ def _build_offline_delegations(
     store: OfflineDelegationStore | None,
 ) -> OfflineDelegationCommandHandler:
     return OfflineDelegationCommandHandler(
+        channel=channel,
+        project_directory=project_directory,
+        task_for_assignment=task_factory.task_for_assignment,
+        run_delegated_task=run_delegated_task,
+        store=store,
+    )
+
+
+def _build_standing_proposals(
+    *,
+    channel: IMChannel,
+    project_directory: ProjectAssignmentDirectory,
+    task_factory: OrchestratorTaskFactory,
+    run_delegated_task: DelegatedTaskRunner,
+    store: StandingProposalStore | None,
+) -> StandingProposalCoordinator:
+    return StandingProposalCoordinator(
         channel=channel,
         project_directory=project_directory,
         task_for_assignment=task_factory.task_for_assignment,

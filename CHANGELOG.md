@@ -7,7 +7,189 @@
 
 ## [Unreleased]
 
+### Fixed
+- Runtime commissioning drift:strict install/startup现在要求owner-only、checkout-external的expiring commissioning receipt，绑定reviewed
+  Git config、`.env` metadata generation fingerprint与strict dead-man exact bytes。运行中expiry或任一binding漂移会使required
+  `configuration:commissioning-receipt` FAILED并进入既有confirmed alert；不联网、不保存dotenv内容/hash，也不自动restart/replay。
+- Strict runtime dotenv drift:production loader冻结不含内容/hash的`.env`文件元数据代际；运行中编辑、替换或删除会让required
+  `configuration:dotenv-generation`进入FAILED和既有confirmed alert。系统不自动reload/restart，避免旧进程被磁盘新配置冒充。
+- Runtime webhook authority false-green:incident alert与dead-man pulse现在必须使用不同exact URL；双方配置bearer时token也必须不同。
+  service strict aggregate和Phase1 runtime共享secret-free cross-field validator，在launchctl/Channel/state前拒绝且不回显原值；
+  same-origin different-path仍允许，不冒充第二故障域。
+- Strict admission restart bypass:`AICO_ABSENCE_ADMISSION_MODE`现在由Phase1Settings显式读取，Telegram/Feishu每次runtime启动都会
+  在Channel/state构造前执行同一strict enable gate与standing/recovery production preflight；LaunchAgent重启不能回落optional。
+  生产settings loader把可能包含dotenv raw input的Pydantic错误收敛为secret-safe doctor提示。
+- Scheduled autonomy silent terminal window:dispatch结算后的done/failed/interrupted/evidence-missing现在先冻结为exact outcome
+  envelope并写入独立SQLite outbox，再按1/5/15/15分钟最多五次投递；重启与ACK歧义只重发通知，不重跑provider或消费grant。
+  wrong-target ACK拒绝落DELIVERED，耗尽进入required health；非关键started提示失败不再阻断TaskBus submit。
+- Recovery backup false-green custody:latest scheduled artifact/receipt现在按独立cadence重新deep verify，并以secret-free
+  destination fingerprint约束目录identity连续性；删除、篡改、receipt drift、权限放宽、目录替换或custody stale都会持久
+  FAILED并进入required health。heartbeat只做cheap continuity gate，不同步hash大文件；异常不触发restore/delete/rebind。
+- Scheduled autonomy ACK crash window:每份scheduled morning在任何外发前写入独立durable intent；重启时若存在同intent的
+  accepted proposal/task证据就直接结算且不重跑provider，无证据才有界重试。已ACK晨报不重发，intent耗尽使health FAILED，
+  hold notification歧义以稳定intent id显式暴露。
+- Scheduled morning false health:晨报现在发送前持久化exact content，失败按1/5/15/15分钟最多五次重试；发送中崩溃
+  显式标记`duplicate_possible`，耗尽后scheduler health为FAILED。平台ACK先于standing autonomy记录，后者失败不会重发
+  已确认晨报；同一日重启与`push_on_start`复用稳定delivery id。
+- Standing autonomy terminal-state contamination:preauthorized task不再复用`/overnight` handoff grader；普通只读输出
+  保持DONE，只有自身timeout/restart等真实终态才显示interrupted/failed。
+- Dead-man receiver false readiness:`/readyz` 现在同时验证 SQLite 与后台 expiry/delivery worker 的 monotonic
+  progress；连续第三次内部失败或三个 sweep interval无成功进展时返回通用 503，恢复成功后自动转绿。downstream
+  notification pending/backoff 不误触发 restart，`/healthz` 继续只表达进程存活。
+- Bounded owned-task self-healing:heartbeat v3 会原地恢复死亡的 Telegram polling / morning scheduler task,
+  通过 restart timeout、稳定期、尝试上限和冷却熔断避免 tight loop;外部 Channel/provider failure 不触发恢复,
+  doctor 对 recovering/open 分别报告 WARN/FAIL。
+- Single-runtime ownership:同一 SQLite state 的 Telegram/Feishu runtime 在任何 recovery 前竞争 kernel lock;重复进程 fail closed,crash 自动释放,doctor 校验 owner PID 与 launchd PID,避免 live task 被误判 orphan 或重复消费 IM。
+- Recovery audit crash consistency:SQLite transactional outbox 原子提交 interrupted snapshot 与稳定 `AuditEvent`,sink 失败或 append-before-ack 后按 event id 幂等重试,避免恢复状态与审计证据永久分裂。
+- Crash restart task reconciliation:新 runtime 接管 SQLite 时把失去执行所有权的持久化 `running` 任务改为 `interrupted`,写一次恢复审计并要求重试前核对外部副作用;pending approval 与终态保持不变。
+
 ### Added
+- `aico-commission create|verify`:生成/复核secret-free runtime commissioning receipt；expiry取bundle maximum age与completed silent-probe
+  TTL较早值，receipt SHA可由owner外部归档。local receipt固定`business_absence_ready=false`，不冒充receiver签名、provider ACK或human read。
+- Strict absence install admission:`AICO_ABSENCE_ADMISSION_MODE=strict`会复用同一service readiness图，把runtime alerts、external
+  liveness、scheduled recovery、disposable drill和owner-bound standing autonomy提升为launchd安装门禁；默认`optional`保持开发
+  兼容。输出只列固定合同名，成功仍明确external evidence未认证，不声称commercial ready、off-device或human read。
+- Durable silent notification route probes:receiver schema v5新增默认关闭的`silent-route-probe-v1`，复用真实双route URL/token/POST，
+  先持久化stable probe再发送。首次失败只标suspect/PENDING，连续达到阈值才生成既有degraded edge，后续ACK生成recovered；
+  不追赶窗口、不递归更新健康。admin/evidence/recovery v5验证probe checkpoint、source-tagged edge与v4保守迁移；bridge不能保证
+  ACK且不展示probe时必须保持disabled。
+- Durable notification route health edges:receiver schema v4保存逐event ACK bitmask、slot级unknown/healthy/degraded状态与
+  独立健康边沿outbox。1-of-2部分成功会通过尚存route主动发送`notification_route_degraded`，后续真实event恢复时发送
+  `notification_route_recovered`；edge按any-route ACK有界重试且不触发restart。evidence/recovery v4和admin-only route status
+  同步覆盖，v3历史ACK保持unknown，不伪造成功route。
+- Quorum dead-man notification routes:independent receiver可选配置different-origin fallback，两路并发投递同一event/idempotency key；
+  默认1-of-2 ACK即可结算，owner可显式要求2-of-2。quorum miss继续复用原durable 1/5/15分钟退避；settings拒绝同origin、
+  route token复用及notification token复用pulse/admin authority。receiver/evidence/recovery schema升级v3，当前策略与逐事件策略
+  durable保存；pending期间拒绝策略漂移，防止2-of-2重启后被1-of-2降级结算。delivered仍不表示老板已读。
+- Alert-delivery-aware dead-man renewal:pulse/receiver/evidence schema升级v2；heartbeat把secondary alert delivery压缩为
+  `disabled/healthy/pending/failed`，其中pending/failed pulse只排序、不续租，持续超过TTL由独立receiver创建
+  `alert_delivery_unhealthy` outage，恢复后healthy pulse写入same-reason resolved。receiver SQLite v1可保守迁移，backup
+  verifier检查新checkpoint、枚举与reason一致性；payload不含incident、异常、endpoint、target或正文，也不授权自动repair。
+- Confirmed required-component runtime alerts:state schema v13新增durable health confirmation table；required Channel/default
+  Adapter/scheduler连续三份时间递增FAILED后，才通过既有secondary incident/outbox发送`health:*` open，OK后发送same-incident
+  resolved。optional、DEGRADED、瞬时/重复snapshot不告警，与owned-task circuit去重；unsafe plugin name外发前hash，
+  `aico-state`只显示candidate数量。该路径不授权restart、provider replay或restore。
+- Durable scheduled autonomy outcome receipts:state schema v12新增terminal outcome outbox；receipt绑定run/content SHA、source/outcome、
+  criteria/source/evidence/failure与平台message id SHA。`aico-state`显示secret-free attempt/ACK摘要，不显示正文、target、raw message id
+  或raw proposal/task identity；settled-without-outbox会在下一次scheduler工作前补建。
+- Durable scheduled disposable recovery drill:state schema v11新增默认关闭的drill intent/receipt；按独立cadence对latest
+  VERIFIED + custody VERIFIED artifact实际执行state/audit/memory production materializer，五次有界重试并将due/open/
+  exhausted/stale投影到required health。crash同ID恢复且不花失败预算，open/latest exhausted目标跨配置切换受retention保护；
+  receipt只输出secret-free component evidence并保持`business_restore_ready=false`。
+- Bounded crash-consistent recovery retention:state schema v10新增默认关闭的owner opt-in retention；只选择超过age、最新代际之外且
+  custody VERIFIED的scheduled pair，先持久化`PRUNING`与policy SHA，再deep verify并按artifact/sidecar顺序有界删除。
+  restart按文件存在矩阵收敛，artifact-only fail closed；`PRUNED`保留secret-free receipt/policy tombstone，关闭开关不取消既有intent。
+- Continuous recovery artifact custody:scheduled receipt schema v2和state schema v9新增destination fingerprint SHA、custody
+  status/check time/failure count；backup与custody cadence独立，改变备份频率不能重置storage baseline。`aico-state`展示
+  secret-free custody证据，service config支持独立check interval/max age。
+- Durable scheduled core recovery backup:默认关闭的Phase1 scheduler为每个窗口先写SQLite intent，再生成core set并立即deep
+  verify；artifact/receipt崩溃矩阵可复验收敛，1/5/15/15分钟最多五次，RPO stale/exhausted进入required health failure。
+  schema v8与`aico-state`保存secret-free SHA receipt，service doctor拒绝缺失、checkout内或非owner-only目标。scheduler永不
+  restore/delete/create missing mount，也不声称目标已off-device、加密或具备retention。
+- Durable scheduled autonomy receipts:主SQLite schema v7新增scheduled autonomy intent表和
+  PENDING/RUNNING/RETRYING/SETTLED/EXHAUSTED状态；provider dispatch前把intent绑定到proposal/task。
+  `aico-state`分别展示secret-free intent状态、attempt/disposition和proposal/task identity SHA；backup/reset覆盖新表。
+- Durable scheduled morning receipts:SQLite schema v6新增morning delivery outbox；每份晨报绑定稳定delivery id、内容SHA与
+  所含standing receipt指纹，只保存平台message id的SHA。`aico-state`输出secret-free最近投递状态，不显示target、正文或
+  原始message id；正式morning push现在强制配置state DB。
+- Live provider authentication receipts:recovery-set schema v6固定required provider集合，并以`post_restore_evidence_assets`
+  区分合同就绪与本次证据；`provider-auth-receipt`对Claude/Codex运行tool-free、non-persistent、bounded随机challenge，要求
+  exact response、terminal success和usage。30分钟owner-only receipt绑定set/reinjection/revision/executable hash，且不保存
+  challenge、prompt、output、error或credential；offline verify不会重放付费probe，unsupported provider保持fail closed。
+- Independent dead-man receiver recovery:`aico-dead-man-recovery`提供online backup、exact schema/domain offline verify、
+  disposable production restore drill和owner-fenced explicit restore；receiver lifespan持有同一kernel lock，有效live先做
+  verified safety、无法验证的DB/WAL/SHM进入quarantine。core schema v5只记录外部合同就绪，不同步回滚observer。
+- Secret-free runtime reinjection receipts:recovery-set schema v4只记录control-plane secret slot/channel与standing grant
+  enabled mode；`reinjection-receipt`/`verify-reinjection`复用production preflight并绑定set/revision/owner decision，允许灾后
+  轮换credential但不保存值/hash/identity/grant正文。AI provider远端认证单列为unresolved，不把presence冒充live auth。
+- Reviewed configuration revision recovery:`aico-recovery capture`现在要求独立提供full reviewed Git commit，并验证clean
+  HEAD/tree及active Project/Persona config blob/hash；schema v3区分配置未嵌入与恢复合同已就绪。新增`verify-checkout`
+  在隔离恢复时拒绝wrong revision、dirty tree和config drift，不自动checkout/reset或打包secret。
+- Tamper-evident memory recovery:`JsonlMemoryStore`现在用process lock、SHA-256 chain和tail checkpoint串行durable append，
+  写失败不发布phantom索引，legacy需显式`aico-memory seal`。新CLI支持backup/offline verify/disposable drill/owner-fenced
+  restore与corrupt-live quarantine；recovery-set schema v2按state→audit→memory绑定三个component，但仍不声明全局事务或full DR。
+- Bounded-window core recovery set:`aico-recovery capture`在一个记录窗口内生成并绑定state/audit/memory component
+  artifacts；fixed manifest强制`global_transaction=false`、`business_restore_ready=false`并列出config/secret/grant/
+  receiver缺口。`verify`深入运行三套production verifier，`drill`再运行三套materializer；不提供combined restore。
+- Owner-fenced audit restore:`aico-audit drill-backup`在disposable workspace复用production materializer并可输出
+  owner-only evidence；`restore`强制expected SHA、AICO state DB owner fence、new preservation artifact和`--yes`。
+  有效live先生成verified safety，损坏live进入unverified quarantine；双文件替换中断后fail closed且可重跑收敛。
+- Portable audit recovery point:`aico-audit backup`在writer lock内把matching ledger/checkpoint导出为owner-only、
+  no-overwrite单文件artifact；`verify-backup`可脱离live路径流式校验outer/member SHA、固定member contract，并在私有
+  temp中复用production chain/checkpoint verifier。该artifact仍含明文审计正文，不替代off-device encryption/retention。
+- Tamper-evident local audit ledger:JSONL event保持可读顶层字段并加入SHA-256 previous/head chain，owner-only
+  checkpoint检测tail截断，process lock串行化writer；append-fsync/checkpoint原子更新的crash window可安全收敛。
+  `aico-audit verify|seal`提供显式legacy迁移，runtime与service doctor遇到修改、重排、半写或权限异常时fail closed。
+- Persisted authorization clock rollback fence:主SQLite保存authorization high-water，同进程结合monotonic elapsed；
+  超过5秒的wall-clock回拨会事务性废止pending approval，并阻止新risk approval、direct preauthorization和scheduled
+  standing grant直到时间追平。该机制不联网校时，也不声称TPM、签名或恶意主机防护。
+- Owner-bound IM ingress:正式Phase 1 runtime在command解析、state/audit mutation和provider dispatch前同时校验
+  configured channel、owner sender与trusted reply target；陌生sender无法自提自批风险任务，owner在错误群也不会收到
+  状态回复。doctor/install要求显式binding，并禁止将临时identity discovery模式装成长驻服务。
+- Bounded approval lease:risky task在创建approval时冻结默认24小时、可配置5分钟到7天的deadline；startup、老板视图
+  与审批动作前会fail closed回收过期票据。SQLite原子写`approval=expired`、`task=rejected`和audit outbox，sink失败
+  可重投；旧审批不能因重启后放大配置而延长，也不会自动重跑。
+- Standing evidence fingerprint and drift gate:successful result保存最多16个repo-relative source的path/line/file
+  SHA-256/size manifest，单文件最大256KiB；SQLite restart后老板面与下一次scheduled run会重算并将变化/缺失投影为
+  drifted/missing、停止dispatch。正文/path/hash不进入老板IM，hash不冒充签名或业务真值。
+- Bounded standing result envelope:owner-preauthorized结果总长固定32K，并限制criteria/stop/source/list/text/path；
+  charter配置、JSON Schema、Pydantic、Codex Adapter和Orchestrator capture共同fail closed。超长、schema drift与
+  duplicate key只留下bounded failure receipt，不进入老板IM或proposal raw state；该能力不声称provider token硬上限。
+- Repository-grounded standing result contract:preauthorized Codex固定加载versioned output schema，按charter的
+  `A*`/`S*`条目验证complete/blocked、repo-relative file/line存在性并持久化bounded receipt；raw JSON不进入老板IM，
+  prior result missing/invalid/blocked会停止后续scheduled run。该校验不声称source语义真实。
+- Provider-grounded standing usage circuit breaker:preauthorized Codex改用JSONL，在`turn.completed`记录实际token usage并
+  写TaskBus audit/持久proposal receipt；owner grant新增必填`token_stop_threshold`，后续run在累计实测达到阈值或
+  任一已消费run缺usage时fail closed。该能力明确是post-run熔断，不声称当前run硬token/cost上限。
+- Restart-safe standing autonomy receipts:从既有accepted proposal与matching TaskSnapshot派生done/running/failed/
+  interrupted/rejected/evidence-missing，投影到`/inbox`和`/morning`；不新增outcome表、不保存provider正文、不自动
+  retry/refund，full identity只显示short ref。
+- Non-mutating standing-autonomy deployment preflight:`aico-service doctor`现在复用真实Phase 1 Adapter/persona/project/
+  grant binding validator，install前拒绝empty、target drift、unknown/missing charter seat、Codex disabled/wrapper和
+  malformed config；成功只显示bounded count，失败不泄露identity/path/command。检查不打开state或调用provider。
+- Owner-bound read-only standing autonomy:可选 external `0600` grant 精确绑定 owner IM identity、scheduled morning
+  target、project/charter、expiry、persistent max-runs和duration；只有固定 Codex read-only/no-network/no-resume/
+  no-collaboration command可在定时晨报后执行一个 inspection。interactive surfaces不消费，broad Adapter与配置漂移
+  fail closed；本轮未创建真实grant或调用provider。
+- Disposable AICO state restore drill:`aico-state drill`不打开live `--db`，在private temp中调用production restore、
+  重新验证schema/table-count parity并自动清理；可选`0600`、atomic no-overwrite JSON report保存bounded evidence。
+  local report不冒充off-device或full-asset disaster recovery。
+- Owner-fenced AICO state recovery:`aico-state backup`使用SQLite online backup API生成`0600`一致单文件并输出
+  SHA-256；`verify`只读检查integrity/schema；`restore --expected-sha256 --yes`拒绝active runtime、先生成
+  pre-restore safety backup再原子替换。`reset --yes`现在也受同一runtime owner lock保护。
+- Dead-man outage evidence bundle:admin可按完整 outage group导出 bounded、secret-free JSON,包含 current monitor、
+  immutable open/resolved与local delivery/retry状态；`aico-dead-man-evidence` 可离线严格验证 runtime、顺序、最低
+  complete outage数和all-delivered,并输出artifact精确字节SHA-256。显式strict验收还可限制artifact年龄、要求验收时刻仍fresh且
+  已完成的silent probe，以及所有route healthy；默认历史审计语义保持兼容。pulse/public authority不能读取,hash不冒充来源签名。
+- Deployable dead-man receiver:新增独立 FastAPI/CLI 服务、专用 SQLite monitor/outage/outbox、分离的
+  pulse/admin credentials、receiver-time TTL、原子 late-recovery open/resolved、持久 1/5/15 分钟重试和
+  non-root `/data` 容器契约；AICO liveness 改用独立 HTTPS URL/token,不再与 incident alert strict endpoint
+  复用。真实独立主机、TLS、owner notification endpoint 和 outage 样本仍需部署侧验收。
+- External dead-man runtime liveness:heartbeat v5 可向独立 HTTPS receiver 发送 secret-free ephemeral pulse,
+  stable runtime id、per-process boot id、sequence 和稳定 `Idempotency-Key` 支持 bounded retry；receiver reference
+  contract 按 acceptance-time TTL 独立生成 outage open/resolved。pulse 不写 SQLite/outbox,正常 stop 不自动
+  disarm,Mac sleep/网络分区超过 TTL 保守视为 unavailable。
+- Durable out-of-band runtime alerts:owned-task circuit open/healthy transition 通过独立 SQLite incident/outbox
+  原子记录并由可插拔 HTTPS sink 至少一次投递 open/resolved;稳定 `Idempotency-Key`、严格队首顺序和持久化
+  1/5/15 分钟退避关闭重复 heartbeat、sink failure、restart 与 accept-before-ack 窗口,heartbeat v4/doctor
+  同时报告 disabled/healthy/pending/failed,且不保存 URL/token/exception。
+- Runtime component health:heartbeat schema v2 以 required/optional 分级记录 Channel、默认/可选 Adapter 和 morning scheduler 状态;`aico-service doctor` 区分 process stale、primary path failed、optional degraded 和 legacy unknown,不持久化异常详情或 secret。
+- Channel-aware durable entrypoint:`aico-service` 为 Telegram 启动 polling runtime、为 Feishu 启动 webhook runtime,两者共用 component-health heartbeat lifecycle。
+- `aico-service` macOS durable runtime operator:secret-free LaunchAgent render/install/restart/status/doctor/uninstall,登录启动、异常重启、可恢复 plist 替换/移除和 runtime heartbeat。
+- Lead standing-charter proposal queue:项目空闲时由显式 charter 生成一个可审核候选并进入 `/inbox`、`/morning` 和 SQLite;只有 `/proposal accept <id>` 才走正常任务/风险/审批链,拒绝或查看不会执行。
+- `/view` project-scoped Boss Brief:自包含 HTML 第一屏按审批、阻塞、运行中、夜间托管给出确定性 First action,并提供回 IM 的 `/approve`、`/reject`、`/task`、`/inbox`、`/morning` 动作。
+- `projects/sme-agent/`:独立的中小企业 Agent 项目骨架,包含可持续人机对齐协议、AICO Lead/多角色团队配置、项目状态与 handoff 账本,以及术语/知识/指标/维度/数仓资产/实体关系的首个可测试元数据垂直切片。
+- SME Agent week-one commercial delivery slice:新增电商样例 CSV、客户 intake 评估、经营诊断报告模板、确定性收入/退款/广告/库存诊断规则、Markdown 报告渲染、交付 SOP 和样例报告,支撑淘宝/千牛服务商品冷启动。
+- SME Agent premium commercial assets:默认 199 / 699 / 1999 RMB 价格梯度、淘宝/千牛发布级商品页、小红书 7 篇完整正文、详情页视觉文案包、客户项目目录、evidence manifest 和脱敏字段扫描。
+- SME Agent ecommerce delivery runner:从订单/广告/库存 CSV 路径生成客户 workspace、诊断草稿、evidence manifest 和脱敏检查结果,并新增 report generation runbook。
+- SME Agent Taobao visual assets:新增高级信任主图、收入下降痛点主图和详情页长图预览 SVG,用于淘宝/千牛服务商品上架前视觉验证。
+- SME Agent commercial quality pack:导出淘宝 PNG 和小红书 7 张封面 SVG/PNG,新增小红书封面生成脚本与产品质量审查记录,统一价格口径并修复低质感措辞、标签不一致和封面溢出问题。
+- SME Agent domain templates:新增直播/内容电商、本地生活和商业化广告行业模板,覆盖业务过程、维度、指标、敏感字段、人工核对点和扩展入口,用于验证商家数据能否被非玩具化纳入诊断。
+- SME Agent live-commerce validation loop:新增中文导出表头映射、直播/订单拟真样例、支付 GMV/GPM/退款率/支付转化确定性计算和人工复核 Markdown 报告。
+- SME Agent public dogfood fixture:新增基于 KuaiLive / OnlineGMV 公开来源形态的直播电商缩放样例、来源说明和 evidence 报告,用于业务效果验收。
+- SME Agent self-serve local intake:直播诊断工作台支持选择或粘贴两份脱敏 CSV,在 localhost 进程内完成受治理字段映射;缺证据时只追问字段,证据完整时复用确定性诊断和交付报告。
+- SME Agent governed live-commerce delivery:新增 `sme-agent-live-commerce-deliver`,按 customer/run-id 生成 authorization-referenced mapping、questions、redaction、SHA-256 evidence manifest、delivery status 和条件式诊断;raw CSV 默认不保留。
+- SME Agent merchant-owner acceptance console:本地 workbench 预览真实受治理交付包,并提供不持久化的 `199 RMB` 五项验收清单;是否值得付费仍由真实老板决定。
 - OSS 上线治理资产:新增 `CODE_OF_CONDUCT.md`(Contributor Covenant 2.1 中英双语)、
   `.github/FUNDING.yml`(占位)、`.github/dependabot.yml`(weekly pip + monthly
   GitHub Actions 升级)。
@@ -22,6 +204,21 @@
 - `CONTRIBUTING.md` 顶部加 Code of Conduct 引用 + first-time contributor 入口。
 
 ### Fixed
+- Telegram active polling task 或 morning scheduler task 意外退出时不再继续报告 healthy;关闭流程会安全消费后台异常,健康检查 timeout/插件异常只转成脱敏状态。
+- Feishu LaunchAgent 不再错误启动没有 webhook listener 的 `aico-phase1`;webhook lifespan 现在也写 running/stopped component heartbeat。
+- Phase 1 runtime 不再在非阻塞 Channel 启动返回后立刻停止 morning push scheduler;定时早报现在保持到 runtime stop,启动失败仍会清理 scheduler。
+- `/view <project>` 不再把其它项目的 task payload、失败原因、audit event 或 overnight goal 混入当前项目附件;task/audit/memory/offline-delegation truth 先按 project 投影再渲染。
+- SME Agent 客户交付 runner 不再复用可被重试覆盖的单一报告路径,也不会在缺字段、无数据或直接个人信息风险时生成诊断/复制 raw CSV。
+- SME Agent workbench 不再只用文案提醒隐私风险;直接个人信息表头现在与交付 runner 一致地硬阻断指标、finding、报告展示/复制和商业验收控件。
+- SME Agent 不再把缺字段、只有表头或畸形 CSV 当作零经营表现;这些状态现在稳定返回补数问题或可读错误,不生成虚假指标和结论。
+- Provider session 正被其它任务占用时,老板侧即时回复、恢复摘要与 aico-view 现在显示可执行的
+  role-busy 指引,不再泄漏 `Session ID`;原始诊断仍保留在 TaskBus 与显式 `/task`,未知错误保持可见。
+- `/ask --exact <role> <task>` 和明确的“只输出本条/不要请求协作”约束现在会形成可审计的
+  non-delegating task contract:跳过 lead decision / Goal Brief 自动扩展,禁止 `@role` 生成协作子任务;
+  `/ask lead` 解析到实际岗位时会先显示路由说明,避免短验收被静默扩成多 Agent 链。
+- Telegram 紧凑表格现在会把末行后粘连的详情文案从表格列中分离,避免误生成 `补充1`,并将重复的 `/view` 提示收敛为一条。
+- Telegram Bot API 出站请求遇到 TLS 建连 `ConnectTimeout` 时会有限重试一次,避免一次握手抖动中断已完成的 agent 结果;不会重试更可能导致重复消息的 read/write timeout。
+- 风险识别不再把“输出详情命令”这类展示要求误判为 shell 执行,显式运行命令和测试仍保持审批门禁。
 - Telegram long polling default client timeout now exceeds the Bot API poll timeout, preventing empty timeout warnings during normal `getUpdates` waits.
 - Streamed agent output now uses a mobile-readable 1400-character split target with readable boundaries, so long reviewer handoffs no longer wait until Telegram's API limit before splitting.
 - `/overnight` queued / listing / incomplete messages now explain the boss route: `/inbox` for current attention, `/morning` for handoff, `/task` for exact trace, `/view` for HTML snapshot, and `/brief` only for project context.
@@ -31,6 +228,8 @@
 - `/goal` / Outcome Grader / `/dream` / `/recall` 等 Phase 8 内置命令消息现在统一走 IM rich text renderer,标题、列表、字段 label 和 slash command 能正确格式化。
 - `/dream` 输出从逐条任务日志改为按阻塞/失败原因聚合的 reusable lesson candidates,并显式说明 candidate memory 不会自动注入 prompt。
 - IM rich text renderer 现在会统一规范化模型 Markdown 输出:拆分粘连 heading、渲染 Markdown table 为等宽表格、保留 fenced code block,并通过 Telegram HTML parse mode 展示。
+- Telegram native HTML fallback 现在会拦截 `<pre>` 中的 Markdown pipe table,回退到紧凑表格 + `/view` 懒加载详情,避免 raw `|---|` 直通 Bot API payload。
+- Telegram Channel 现在会将紧凑表格的连续整行 code spans 合并为单个 `<pre>` 块,客户端可对齐显示并整块复制;行内 `/view` 仍保持独立 `<code>`。
 - `Collaboration requested` 提示改为结构化富文本输出,显示 source / target。
 - IM rich text fallback 现在能正确处理单行 fenced code,例如 ```uv run pytest``` 不再被吞。
 - Telegram native HTML sanitizer 现在会保留 `<pre>` / `<code>` 中的 `<id>` / `<task_id>` 文本占位符,不再因此把整条 native HTML 回退成裸标签文本。

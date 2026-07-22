@@ -118,8 +118,8 @@ Current status is tracked in [STATUS.md](STATUS.md). As of the current public pa
   `AICO_STATE_DB_PATH` is configured.
 - aico-view: `/view` can send a self-contained read-only HTML snapshot through IM when
   `AICO_VIEW_ENABLED=true`.
-- Local state tooling: `aico-state --db <path>` prints SQLite schema version and
-  table counts; `reset --yes` clears known AICO state tables for fast iteration.
+- Local state tooling: `aico-state --db <path>` prints SQLite schema/table counts and
+  secret-free scheduled-morning delivery receipts; `reset --yes` clears known AICO state tables.
 
 ## Security Model
 

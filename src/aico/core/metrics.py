@@ -159,6 +159,9 @@ def usage_audit_detail(
     output_tokens: int = 0,
     total_tokens: int | None = None,
     cost_usd: float | None = None,
+    cached_input_tokens: int | None = None,
+    cache_write_input_tokens: int | None = None,
+    reasoning_output_tokens: int | None = None,
 ) -> str:
     effective_total = total_tokens if total_tokens is not None else input_tokens + output_tokens
     payload: dict[str, int | float | None] = {
@@ -168,6 +171,12 @@ def usage_audit_detail(
     }
     if cost_usd is not None:
         payload["cost_usd"] = cost_usd
+    optional_tokens = {
+        "cached_input_tokens": cached_input_tokens,
+        "cache_write_input_tokens": cache_write_input_tokens,
+        "reasoning_output_tokens": reasoning_output_tokens,
+    }
+    payload.update({key: value for key, value in optional_tokens.items() if value is not None})
     return json.dumps(payload, sort_keys=True)
 
 

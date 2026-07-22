@@ -13,12 +13,20 @@ dependencies = [
 ]
 
 [project.scripts]
+aico-audit = "aico.app.audit_cli:main"
+aico-dead-man-evidence = "aico.app.dead_man_evidence_cli:main"
+aico-commission = "aico.app.runtime_commissioning_cli:main"
+aico-dead-man-recovery = "aico.app.dead_man_receiver_recovery_cli:main"
+aico-dead-man-receiver = "aico.app.dead_man_receiver_app:main"
 aico-feishu-webhook = "aico.app.feishu_webhook:main"
 aico-github-social-preview = "aico.app.social_preview_cli:main"
 aico-glance = "aico.app.glance_cli:main"
 aico-metrics = "aico.app.metrics_cli:main"
+aico-memory = "aico.app.memory_cli:main"
 aico-phase1 = "aico.app.phase1:main"
+aico-recovery = "aico.app.recovery_cli:main"
 aico-release-room-demo = "aico.app.release_room_demo:main"
+aico-service = "aico.app.service_cli:main"
 aico-state = "aico.app.state_cli:main"
 aico-view = "aico.app.view_cli:main"
 
@@ -38,7 +46,7 @@ build-backend = "hatchling.build"
 packages = ["src/aico"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "projects/sme-agent/tests", "projects/data-agent-v1/tests"]
 asyncio_mode = "auto"
 
 [tool.ruff]

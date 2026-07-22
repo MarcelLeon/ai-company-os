@@ -1,10 +1,11 @@
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
 
 from aico.core import (
     AckStatus,
+    ApprovalRequest,
     ApprovalStatus,
     AuditEvent,
     AuditEventType,
@@ -94,8 +95,37 @@ def test_risk_approval_and_audit_models_are_explicit() -> None:
     assert risk.requires_approval is True
     assert event.event_type is AuditEventType.APPROVAL_REQUESTED
     assert AuditEventType.APPROVAL_DENIED.value == "approval_denied"
+    assert AuditEventType.APPROVAL_EXPIRED.value == "approval_expired"
     assert AuditEventType.COLLABORATION_REQUESTED.value == "collaboration_requested"
     assert ApprovalStatus.PENDING.value == "pending"
+    assert ApprovalStatus.EXPIRED.value == "expired"
+
+
+def test_approval_request_freezes_an_aware_future_expiry() -> None:
+    created_at = datetime(2026, 7, 22, 8, tzinfo=UTC)
+    task = Task(
+        task_id="task-lease",
+        payload="modify one file",
+        requester_id="user-1",
+        target_persona="implementer",
+    )
+    risk = RiskAssessment(risk_level=RiskLevel.WRITE_FILES, requires_approval=True)
+
+    approval = ApprovalRequest(
+        task=task,
+        risk=risk,
+        created_at=created_at,
+        expires_at=created_at + timedelta(minutes=5),
+    )
+
+    assert approval.expires_at == created_at + timedelta(minutes=5)
+    with pytest.raises(ValidationError):
+        ApprovalRequest(
+            task=task,
+            risk=risk,
+            created_at=created_at,
+            expires_at=created_at,
+        )
 
 
 def test_incoming_message_captures_channel_context() -> None:

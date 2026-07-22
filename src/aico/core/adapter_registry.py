@@ -43,6 +43,11 @@ class AdapterRegistry:
     def get(self, adapter_name: str) -> AIAdapter | None:
         return self._adapters.get(adapter_name)
 
+    def adapters(self) -> tuple[AIAdapter, ...]:
+        """Return registered plugins in stable configuration order for observability."""
+
+        return tuple(self._adapters.values())
+
     def snapshots(self) -> tuple[AdapterSnapshot, ...]:
         return tuple(
             AdapterSnapshot(

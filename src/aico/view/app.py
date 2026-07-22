@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from aico.core.audit import read_jsonl_audit_events
-from aico.core.command_messages import short_id_text
+from aico.core.command_messages import short_id_text, task_error_summary
 from aico.core.memory import (
     JsonlMemoryStore,
     MemoryAtom,
@@ -211,7 +211,7 @@ def _render_timeline(
             f"<span class='src {escape(event.source.value)}'>{escape(event.source.value)}</span>"
             f"<span class='kind'>{escape(event.kind)}</span>"
             f"{trace_link}"
-            f"<span class='summary'>{escape(event.summary)}</span></li>"
+            f"<span class='summary'>{escape(task_error_summary(event.summary))}</span></li>"
         )
     boss_links = render_command_links(
         deep_link,
@@ -240,7 +240,7 @@ def _render_trace(
             f"<span class='src {escape(event.source.value)}'>{escape(event.source.value)}</span>"
             f"<span class='kind'>{escape(event.kind)}</span>"
             f"<span class='id'>{escape(event.short_id)}</span>"
-            f"<span class='summary'>{escape(event.summary)}</span></li>"
+            f"<span class='summary'>{escape(task_error_summary(event.summary))}</span></li>"
         )
     short = short_id_text(trace_id)
     boss_links = render_command_links(

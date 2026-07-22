@@ -34,9 +34,9 @@
 
 **为什么是痛点**:NORTH_STAR 第一句要求"像管理一个真实团队一样"。真实老板**不会记 46 个命令**——他只会喊"做了没?为什么?撤掉。"。AICO 把"lead 的内务工具"和"老板的核心动作"塞在同一个命令空间,违背了 boss-first。
 
-### P2:lead 没有"主动机制" — 完全依赖老板先开口
+### P2:~~lead 没有"主动机制" — 完全依赖老板先开口~~(Round 199 第一切片已解决)
 
-**事实**:所有 task 入口都来自 IM 命令解析(`Router` → `TaskBus`)。仓库里没有任何时间触发 / 事件触发 / 阻塞超时触发的 trigger 模块——`grep -rn "cron\|schedule\|trigger" src/aico/core/` 只出现在测试和文档里。
+**当前事实**:项目可声明显式 standing charter;`/inbox`、`/morning` 和定时 morning push 在项目空闲且团队完整时最多生成一个持久化 candidate。默认 candidate 不创建 task，老板可用 `/proposal accept <id>` 进入正常任务链。Round 213 另提供可选的 external owner-bound grant：只有 scheduled morning、精确 target/project/charter、未过期/未耗尽预算和 Codex hard-read-only boundary 的交集才可自动执行一个 inspection；interactive surfaces 不消费。更广的 blocker 超时、事件触发、写操作和自由规划仍未实现。
 
 **为什么是痛点**:absence-first 当前只解决了"老板下指令的异步化",没解决"老板根本不开口的那段时间"。Lead 在老板沉默时无法基于职责主动推进,即使他知道 blocker 已经躺了 3 天。
 
@@ -50,9 +50,33 @@
 
 ### P4:Audit 在 IM 内的表达上限低 — trace 糊成一团
 
-**事实**:`InMemoryAuditLog`(`src/aico/core/audit.py:46`)以 `AuditEvent` 为单位写 JSONL,事件之间没有 `trace_id` 串联(只有 `task_id`);memory 写入和 audit 写入是独立链路;`/audit` 命令的输出是文本行。
+**事实**:`InMemoryAuditLog`以`AuditEvent`为单位写JSONL，event已有`trace_id`，Round 223增加本地SHA-256历史链和
+tail checkpoint，Round 224可导出一致、离线可验证的单文件恢复点，Round 225可做disposable materialization并在
+owner fence下保留现场后恢复；Round 227又把memory升级为独立process-locked hash-chain ledger，支持portable recovery，
+Round 228再把独立选择的reviewed Git commit、clean tree与active config blob/hash绑定进core set，并提供恢复checkout复核；
+Round 229又增加无值control-plane secret slot/grant mode合同和owner decision reinjection receipt；Round 230为第二故障域
+receiver增加独立online backup、domain deep verify、disposable drill和worker-fenced restore，同时刻意不把它并入core combined
+restore；Round 231再用受限Claude/Codex随机challenge和30分钟secret-free receipt补齐provider live-auth恢复合同，并明确拆出
+`post_restore_evidence_assets`；Round 232让scheduled morning以exact-envelope SQLite outbox、bounded retry和secret-free
+platform ACK receipt区分task liveness、transport与standing result；Round 234再把core set capture升级为默认关闭的durable
+scheduled intent、immediate deep verify、crash reconciliation与RPO health，但明确不自动restore/delete，也不attest目标目录的
+off-device/encryption/retention；Round 235再增加destination identity continuity和独立periodic custody deep verify，让artifact
+删除、篡改、权限放宽、目录替换或复验过期不再保持false-green health。Round 236增加默认关闭、owner显式授权的bounded
+retention：先落PRUNING与policy SHA、删前deep verify、保留最新代际并按最老优先有限清理，崩溃按artifact/sidecar矩阵恢复且
+永久保留secret-free PRUNED tombstone；它不代表外部storage policy已配置。Round 237再增加默认关闭的scheduled disposable
+drill，以独立cadence实际运行state/audit/memory production materializer，durable retry/health与retention保护避免恢复路径腐化或
+失败现场被清理，但仍不触碰live state或冒充full business recovery。Round 238再把scheduled autonomy终态投影为独立
+exact-envelope outbox：dispatch结果、缺证或失败会跨重启有界投递，通知失败
+不会重跑provider，started提示失败也不再阻断TaskBus submit；平台ACK、dispatch、terminal outcome和human read仍分开。
+Round 239再关闭“process/pulse fresh但required业务组件永久失败”的静默窗口：required health连续三次FAILED会以durable
+confirmation触发secondary open，OK后发same-incident resolved；optional/DEGRADED/瞬时失败不告警，同名owned-task circuit去重，
+且generic health仍不具备自动repair权限。
+当前checkout没有真实owner/provider/IM/storage样本，kernel fingerprint也不是volume/provider证明，整体仍不是global transaction、平台review签名、
+连续provider可用性或full DR。
+memory写入和audit写入仍是独立链路，`/audit`命令仍只输出最近文本块。
 
-**为什么是痛点**:老板想问"昨晚那个 PR 是怎么来的",当前需要在 `/tasks`、`/audit`、`/recall` 三个命令之间手动拼接 ID。IM 文本框对树状/时序结构有天然表达上限。
+**为什么是痛点**:完整性提升解决“历史有没有静默变”，没有解决“老板能否一眼理解昨晚那个PR怎么来的”。当前仍需在
+`/tasks`、`/audit`、`/recall`间按trace拼接，IM文本框对树状/时序结构有天然表达上限。
 
 ### P5:Rollback 边界不清 — 撤销语义会被无限放大
 
@@ -73,7 +97,7 @@
 | 痛点 | 解法 | 命令归属 |
 |---|---|---|
 | P1 命令爆炸 | **命令分层**:boss / lead / role / harness 四档,老板只看 6 个核心动作 | §3.4 |
-| P2 lead 不主动 | **延后做**:Lead Standing Charter + Proposal Queue(Future F-1) | §6 |
+| P2 lead 不主动 | **第一切片已实现**:显式 Standing Charter + reviewable Proposal Queue(Round 199) | §4 |
 | P3 经验等于事实 | **Memory 与 Experience 分层**:同存储不同 kind,Experience 才会按 trigger 注入 role prompt | §3.1 |
 | P4 audit 糊 | **统一 trace_id 事件流**;IM 侧只暴露 `/why`,深度查询走 aico-view | §3.2 + §3.3 |
 | P5 rollback 边界不清 | **/undo 智能撤销**,语义边界写死:**只撤 AICO 内部状态(memory/experience/assignment),不撤 git/shell/file** | §3.2 |
@@ -161,6 +185,11 @@
 2. **Timeline / Trace** — 按项目 / 时间展示事件流,并可展开单 task 全貌。
 3. **Memory Tree** — memory 与 experience 的关系图(`derived_from` / `supersedes` / `contradicts`)
 
+**Round 197 落地校准**:IM snapshot 的 Boss Brief 不再把“最近事件/记忆数量”当首屏主角,而是按
+approval → blocker → running → overnight → quiet 选出唯一 First action,再展示 Approval needed、
+Blockers、Overnight results 三块注意力卡。task、audit、memory 和 offline delegation 必须先按目标
+project 投影,否则标题写着一个项目但正文混入另一项目事实,既破坏老板判断也形成附件数据泄漏。
+
 **Sprint 切片**:
 - **V1**:最小 FastAPI 服务 + 三视图 read-only(直接读 unified_event 索引)
 - **V2**:Telegram deep link 回 IM 命令预填
@@ -183,6 +212,21 @@
 
 **实现方式**:不删命令,**在 `/help` 输出时按受众分组**;老板查看 `/help` 时默认只显示 boss-only 6 项,`/help all` 才展开全部。这是零代码风险的渐进改造。
 
+**Round 220 approval lease**:`/approve`不是永久能力票据。新request创建时冻结aware deadline，默认24小时且只允许
+5分钟到7天；startup、task/inbox/morning视图与approval action前lazy sweep。SQLite用同一事务写
+`approval=expired`、`task=rejected`和audit outbox，sink失败可重投。配置变化不追溯延长旧lease，过期后必须重新
+提交当前意图；该机制不等于多人审批、owner签名或外部credential撤销。
+
+**Round 221 owner-bound ingress**:requester自审批只在requester先被认证时安全。正式Phase 1 runtime因此在解析
+command前同时绑定configured channel、owner sender和trusted reply target；陌生sender不能查询/派发/审批，owner在
+错误群发命令也不会收到回复。空binding deny all，morning target与reviewer还要交叉校验。显式foreground discovery
+只暴露本地escaped identity且仍拒绝业务，doctor禁止安装；sender ID不是密码学签名或账号接管防护。
+
+**Round 222 authorization clock fence**:expiry只有在时间方向可信时才是安全边界。主SQLite保存authorization
+high-water，同进程以monotonic elapsed推进最低应到时间；超过5秒的wall-clock回拨会废止全部pending approval，并阻止
+新risk approval、direct preauthorization和scheduled standing grant，直到wall time追平。它不联网校时、不修改系统
+时钟，也不是TPM/签名或恶意主机防护；旧authorization永不因追平而复活。
+
 ### 3.5 Absence Loop 加固 (Priority 3,等 Memory+Experience 和 Audit+Rollback 完成)
 
 不在本文细化 sprint,只确认方向:
@@ -193,16 +237,152 @@
 
 等 §3.1 + §3.2 + §3.3 落地后,回到 Phase 8 dogfood 验证根因是否被解决。
 
+**Round 200 运行底座进展**:macOS user LaunchAgent、secret-free heartbeat 和 `aico-service doctor` 已实现,
+同时修复 non-blocking Channel 返回后 morning scheduler 被立即取消的问题。当前 checkout 尚未配置真实 `.env` 或
+安装 LaunchAgent,所以本地 contract 已完成,terminal 关闭后的真实 IM 常驻样本仍是 B-010,不能标成端到端完成。
+
+**Round 201 健康语义加固**:heartbeat v2 不再只看进程时间,而是并发检查 active Channel、default/optional
+Adapter 和 enabled scheduler。required failure、optional degradation、legacy unknown 与 process stale 分开,
+Telegram polling task 静默死亡也会被识别。该层仍是 synthetic observability,不替代 B-010 的真实 IM 样本。
+
+**Round 202 状态恢复加固**:LaunchAgent crash restart 后,新进程无法继承旧 Adapter subprocess、输出流和
+interrupt ownership。持久化 `RUNNING` 因此在 read model 暴露前统一对账为 `INTERRUPTED`,保留 task/Adapter/risk/
+metadata 并写一次 audit;pending approval 与终态不变。AICO 明确要求核对外部副作用,不做无幂等契约的自动 replay。
+
+**Round 203 恢复证据一致性**:SQLite schema v3 用专用 transactional outbox 在同一 transaction 提交 interrupted
+snapshot 与完整、稳定 id 的 recovery `AuditEvent`;TaskBus 投递成功后才 ack。内存 audit 与内置 JSONL 按 event id
+幂等,关闭 sink failure 和 append-before-ack crash 窗口。outbox 只协调交付,不改变 SQLite business state / JSONL
+audit 的既有 truth boundary,也不是分布式或多 runtime exactly-once。
+
+**Round 204 单 owner 加固**:同一 canonical SQLite state 派生一个 kernel advisory lock,并把 TaskBus recovery
+从构造期延迟到 Phase1 runtime 持锁 startup。重复 terminal/LaunchAgent/Feishu process 在 state mutation 和 Channel
+start 前 fail closed;process crash 自动释放,stale metadata 不阻塞。doctor 对齐 owner PID 与 launchd PID,避免手动
+runtime 占锁时把 launchd crash-loop 误报健康。本层是 local single-host fencing,不是分布式 lease。
+
+**Round 205 本地自愈加固**:heartbeat v3 将 generic dependency health 与 owned-task recovery 分开。当前
+runtime 只会原地恢复自己拥有的 Telegram polling / morning scheduler,通过 5 秒 attempt timeout、60 秒
+稳定期、3 次上限和 15 分钟熔断避免 tight loop;外部 Channel/provider failure 不触发恢复。熔断会由 doctor
+明确报 FAIL,当前仍缺少 second-channel out-of-band notification。
+
+**Round 206 独立告警交付**:heartbeat v4 将 owned-task incident delivery 与 primary Channel 解耦。open/healthy
+transition 通过独立 SQLite active-incident + outbox 原子化,重复 heartbeat/restart 不重复建 incident；generic HTTPS
+sink 按稳定 event id 至少一次投递 open/resolved,失败持久化 1/5/15 分钟退避并保持队首顺序。receiver 负责
+`Idempotency-Key` 幂等,不宣称远端 exactly-once；真实 endpoint/credential/sample 仍由 owner 决定。
+
+**Round 239 required component告警**:heartbeat先取得component health，再推进secondary alert与liveness pulse。只有required
+组件连续三份时间递增FAILED才创建`health:*` incident；计数与incident/outbox跨restart持久化，OK才resolved，optional、
+DEGRADED和瞬时失败不open。同名owned-task circuit去重；generic health仍只提供通知，不成为自动repair信号。
+
+**Round 207 外部 dead-man liveness**:heartbeat v5 在component health与incident alert之后驱动低频
+ephemeral pulse。stable runtime id + per-process boot id + sequence 构成幂等身份；失败只保留一个内存 pulse,
+不污染 SQLite incident/outbox。独立 receiver 以 acceptance time + TTL 判 stale,首次超时开单、新 pulse 恢复
+结单；正常 stop 不自动 disarm,永久停用需 owner 显式解除。这样 event loop、launch failure 或 Mac 离线不再要求
+故障 sender 自报,但真实独立 receiver 的部署和 outage sample 仍是外部验收项。
+
+**Round 240 alert-delivery-aware renewal**:pulse schema v2把secondary alert delivery状态带到独立receiver。
+`disabled/healthy`既排序又续租，`pending/failed`只排序；后者持续超过TTL时生成`alert_delivery_unhealthy` outage，恢复后
+healthy pulse以同reason resolved。由此dead-man不再只观察process reachability，还观察承诺的absence notification path是否
+可用；仍不把local ACK冒充human read，也不让notification状态成为自动repair authority。
+
+**Round 241 receiver notification quorum**:独立receiver可把immutable outage event并发发送到两个different-origin HTTPS route，
+按owner选择的1-of-2或2-of-2 ACK quorum结算既有durable outbox。它降低单provider/credential失效导致的absence通知静默，
+同时保持stable event id、队首顺序和backoff；different-origin、local quorum和delivered evidence都不等于物理独立或human read。
+receiver/evidence/recovery schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝策略改变，防止重启配置把2-of-2
+静默降级成1-of-2；历史delivered event仍保留其原始结算合同。
+
+**Round 242 route health edges**:schema v4把aggregate ACK拆成bounded per-route checkpoint和slot健康；partial quorum不再全绿，
+而是在main settle同一事务创建degraded edge，经任一尚存route主动通知老板，后续真实event ACK再创建recovered。edge outbox、
+admin status、evidence与recovery共享同一事实，但meta-alert不递归证明route健康，也不冒充continuous canary或human read。
+
+**Round 243 silent route probe**:schema v5新增默认关闭的`silent-route-probe-v1`。它复用真实route的URL、credential、POST schema与
+幂等键，先持久化exact probe再发送；一个失败窗口只标suspect，达到连续阈值才通过既有edge主动告警，ACK后恢复。只有downstream
+bridge能保证probe不展示、不触发incident时才可启用；local ACK、different origin与unit fake仍不等于commercial HA或human read。
+
+**Round 244 strict absence admission**:`aico-service`新增显式`optional|strict`准入聚合。strict直接复用runtime alert、external
+liveness、scheduled recovery、disposable drill与standing autonomy的真实preflight，在任何launchctl调用前fail closed；默认optional
+保留开发路径。该门禁只证明本机machine contract配置完整，不把URL存在、local preflight或安装成功扩张成外部可用、off-device、
+human read或commercial readiness。
+
+**Round 245 runtime-enforced admission**:strict不再是一次性installer检查。共享的pure gap policy同时被service和Phase1Settings使用；
+dotenv mode显式建模，关键enable漂移在settings阶段fail closed，standing/recovery external binding再于runtime construction第一步复用
+production preflight。Telegram/Feishu都在Channel/state前停止，LaunchAgent restart不能静默回落optional；生产settings error也不会
+把Pydantic raw dotenv input写入stderr。
+
+**Round 246 webhook authority isolation**:incident alert和dead-man pulse不再只做各自HTTPS校验；共享cross-field policy要求exact URL
+不同，双方bearer非空时credential也不同，并同时进入service strict aggregate与Phase1 runtime validation。same origin/different
+strict path仍可用；该机器隔离不证明第二故障域、provider独立或真实delivery。
+
+**Round 208 可部署 dead-man receiver**:独立 FastAPI/CLI 服务以专用 SQLite 持久化 armed monitor、receiver-time
+expiry、active outage 和 immutable notification outbox；admin/pulse authority 分离,迟到恢复原子生成有序
+open/resolved,下游用稳定 event id 至少一次投递并持久化 1/5/15 分钟退避。worker 在 restart 时立即 reconcile,
+non-root 容器把状态限定在 `/data`。同时把 liveness transport 从 incident alert URL/token 中拆开,防止两个 strict
+wire protocol 因“都是 webhook”而互相拒绝。剩余证据边界是第二故障域真实部署与 kill/launch-failure/network
+样本,不是本机 receiver 算法。
+
+**Round 209 receiver 自身进展探针**:`/healthz` 与 `/readyz` 分离；后者除 SQLite外还要求 expiry/delivery
+worker 最近成功推进。progress使用 monotonic clock,连续第三次内部失败或超过三个 sweep interval无成功 pass时
+fail closed为通用 503,让 Compose supervisor自动 restart；下游 notification pending/backoff仍属受控降级,
+不会制造 restart storm。这样 observer 不再因 HTTP server仍活着而掩盖核心 worker静默死亡。
+
+**Round 210 可导出 outage evidence**:receiver新增admin-only、versioned bundle,按最近完整outage分组导出current
+monitor、immutable open/resolved和local delivery/retry状态；pulse/public authority不能读。离线 verifier严格校验
+runtime、identity、chronology、open-before-resolved和delivery order,并输出artifact exact-byte SHA-256。该链路把
+真实演练从截图提升为机器可复核证据,但hash不是签名,bundle也不冒充独立host/TLS/物理fault证明。
+
+**Round 248 当前证据验收**:同一离线verifier增加显式、可组合的最大artifact年龄、验收时刻silent-probe freshness与
+all-route-health条件。历史bundle仍可做审计，但不能无限期充当commissioning证据；生成时fresh而验收时过期、从未完成probe或任一
+unknown/degraded slot都会fail closed。该层不联网、不改变bundle schema，也不把输入artifact升级为receiver签名或platform ACK。
+
+**Round 249 expiring runtime commissioning**:`aico-commission`把clean owner-reviewed Git config evidence、`.env` stat代际fingerprint与
+strict dead-man exact bytes冻结到checkout-external owner-only receipt；expiry取bundle age和completed probe TTL较早值。strict
+service/runtime把它加入准入图，heartbeat持续报告required `configuration:commissioning-receipt`。这把三份独立绿灯变成同一代绑定，
+同时保持startup离线、secret-free和no auto-replay；local receipt仍不是签名、provider ACK、fault action或human read。
+
+**Round 211 主状态恢复原语**:AICO SQLite business state 使用 online backup API生成transaction-consistent、
+standalone、`0600` artifact，并以只读 integrity/schema/SHA校验作为选择证据。restore/reset与runtime复用同一
+kernel owner fence；restore在原子替换前为现有target创建verified safety backup。该切片解决同机可恢复性，不覆盖
+JSONL/config/secrets，也不冒充off-device disaster recovery。
+
+**Round 212 disposable restore evidence**:`aico-state drill`不接触live target，而是在private temp中调用同一
+owner-fenced production restore、重新read-only校验schema/known-table counts并自动清理。可选`0600` report保存
+input/materialized SHA、size和完成时间；它把artifact verify提升为restore-code rehearsal，但仍不证明off-device
+origin、全资产恢复或真实IM业务可用。
+
 ---
 
-## 4. 未来方向(暂不实现,只记录)
+## 4. 主动机制与未来方向
 
-### Future F-1:Lead Self-Driving / Standing Charter
+### F-1:Lead Self-Driving / Standing Charter(⚠️ Round 213 只读预授权切片已实现)
 
-让 lead 在三种触发条件下生成 proposal(blocker 超期 / charter 项无进展 / memory 中有未到期承诺),只写入 inbox 不创建 task。老板 `/accept` 后才进入正式 task 链路;`/reject` 写入 negative memory。
+当前实现只从项目配置中的显式 standing charter 取 objective、role、验收证据、停止条件和 cooldown。在项目空闲且团队完整时,恢复入口最多生成一个 SQLite candidate,写入 `/inbox`、`/morning`、`/proposals`;老板可用 `/proposal accept` 进入正式 task 链路。可选 external owner-only grant 还能让 scheduler morning 对一个精确绑定、未过期、预算内的 Codex read-only inspection 自动记录决定并执行；预算在 dispatch 前持久化，重启不重置。
 
-**前置依赖**:§3 全部完成 + Phase 8 dogfood 跑通。
-**触发北极星修订**:需要明确"lead 提议权 vs 老板决策权",这件事要新开 ADR。
+部署前`aico-service doctor`会通过non-mutating Phase 1 preflight复用真实Adapter/persona/project/grant binding规则；
+只有显示`owner-bound runtime binding verified`才证明静态routing可启动。该证据仍低于provider登录、scheduler tick和
+真实IM receipt，不能关闭B-014。
+
+执行后不新增receipt table；inbox/morning把accepted preauthorized proposal与matching TaskSnapshot做只读join，显示
+terminal/running/evidence-missing状态。这样保留TaskBus单一事实源，并把“预算已扣但dispatch evidence缺失”的
+at-most-once crash window显式交给owner，而不是自动重复成本未知的任务。
+
+Codex在terminal `turn.completed`后还会留下provider token usage；TaskBus写结构化audit，accepted proposal保存同一
+receipt。owner grant的`token_stop_threshold`在下一次dispatch前按累计实测量熔断，任何已消费run缺usage时停授。
+这是完成后累计熔断，不是当前run的hard token cap，也不从token自行估算美元账单。
+
+Codex最终消息还受versioned result schema约束，并以charter `A*`/`S*`覆盖、状态一致性与repo-relative file/line存在
+生成durable outcome receipt。老板面同时看task status和outcome；prior missing/invalid/blocked会停授，原始JSON不进入
+IM。该deterministic层只证明shape/coverage/location，不能把引用存在写成业务语义正确。
+
+result contract本身也不是无界正文：32K总长、criteria/stop/source/list/text/path固定上限从charter配置贯穿schema、
+Adapter、Orchestrator capture与validator。超限或duplicate/schema drift只投影bounded failure，不保存raw结果；这是
+本地runtime/state安全边界，不是provider生成期token/cost enforcement。
+
+成功结果还保存bounded source manifest：最多16个canonical repo-relative source、单文件256KiB，记录line、size与
+full-file SHA-256而不保存正文。下一次dispatch只复核最近成功结果，老板面只复核最近5份；变化或缺失投影为
+`drifted/missing`并停授，避免历史增长造成无界IO。path/hash不进入IM；hash只证明本地字节漂移，不是签名、Git
+attestation或业务语义真值。
+
+**边界**:不扫描 Markdown 猜工作；interactive surfaces 不自动 accept；grant 不能绕过 read-only risk、Adapter sandbox、no-network/no-resume/no-collaboration或预算；不把 charter/grant 当外部发布、支付、客户数据或法律授权。见 ADR-0037、ADR-0051。
+**仍属 Future**:blocker 超期、事件触发、memory 承诺触发和 proposal 质量学习,必须先完成真实 IM dogfood。
 
 ### Future F-2:Team-level Karpathy Loop / AutoResearch
 
@@ -280,7 +460,7 @@
         <mxCell id="L5_rollback" value="/rollback memory|experience|task&#10;(strict scope: AICO state only,&#10;NOT git / shell / file)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#B45309;fillColor=#FEF3C7;fontSize=11;fontColor=#78350F;dashed=1;" vertex="1" parent="1">
           <mxGeometry x="1060" y="290" width="260" height="80" as="geometry"/>
         </mxCell>
-        <mxCell id="L5_charter" value="(Future F-1) /charter · Proposal Queue&#10;Lead self-driving&#10;NOT in current sprint" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#9CA3AF;fillColor=#F3F4F6;fontSize=11;fontColor=#374151;dashed=1;" vertex="1" parent="1">
+        <mxCell id="L5_charter" value="Standing Charter · Proposal Queue&#10;/proposals · /proposal accept|reject&#10;candidate only until boss accepts" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;strokeColor=#0F766E;fillColor=#CCFBF1;fontSize=11;fontColor=#134E4A;" vertex="1" parent="1">
           <mxGeometry x="1340" y="290" width="280" height="80" as="geometry"/>
         </mxCell>
 
@@ -519,7 +699,7 @@
 5. 落地后按 docs/agent/08-self-update-protocol.md 更新 STATUS / ROUNDS / 必要时新增 ADR;
 6. 完成后在本文档 §6 表格中给该 sprint 标 ✅ 并附 ROUNDS 编号。
 
-严格遵守:不扩大 sprint 范围;不绕过 NORTH_STAR;不引入本文 §4 中的 Future 方向。
+严格遵守:不扩大 sprint 范围;不绕过 NORTH_STAR;不引入本文 §4 中仍未实现的 Future 方向。
 ```
 
 ---

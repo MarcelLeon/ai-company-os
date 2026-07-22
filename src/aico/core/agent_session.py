@@ -198,6 +198,11 @@ def task_with_provider_session(
     )
 
 
+def task_without_provider_session(task: Task) -> Task:
+    metadata = tuple(entry for entry in task.metadata if entry.key not in _PROVIDER_SESSION_KEYS)
+    return task.model_copy(update={"metadata": metadata})
+
+
 def provider_session_from_task(task: Task) -> ProviderTaskSession | None:
     metadata = {entry.key: entry.value for entry in task.metadata}
     provider_name = metadata.get(_PROVIDER_NAME_KEY)

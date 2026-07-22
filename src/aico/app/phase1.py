@@ -6,15 +6,25 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import shlex
 import sys
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
 import httpx
-from pydantic import Field, field_validator
+from pydantic import (
+    Field,
+    PrivateAttr,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aico.adapter import AIAdapter
@@ -27,11 +37,51 @@ from aico.adapter.codex import CodexAdapter
 from aico.adapter.cursor import CursorAdapter
 from aico.adapter.gemini import GeminiAdapter
 from aico.adapter.trae import TraeAdapter
+from aico.app.absence_admission import (
+    runtime_webhook_isolation_error,
+    strict_absence_contract_gaps,
+)
+from aico.app.morning_delivery import SQLiteMorningDeliveryStore
 from aico.app.morning_scheduler import (
     MorningPushConfig,
     MorningPushScheduler,
     parse_push_time,
 )
+from aico.app.recovery_backup import SQLiteRecoveryBackupStore
+from aico.app.recovery_backup_scheduler import (
+    RecoveryBackupConfig,
+    RecoveryBackupScheduler,
+)
+from aico.app.recovery_drill import SQLiteRecoveryDrillStore
+from aico.app.runtime_alerts import (
+    RuntimeAlertCoordinator,
+    RuntimeAlertDeliverySnapshot,
+    SQLiteRuntimeAlertStore,
+    WebhookRuntimeAlertSink,
+    disabled_runtime_alert_snapshot,
+)
+from aico.app.runtime_commissioning import (
+    RuntimeCommissioningHealth,
+    verify_runtime_commissioning_receipt,
+)
+from aico.app.runtime_config_source import RuntimeConfigSourceHealth, capture_file_generation
+from aico.app.runtime_health import RuntimeHealthProbe, RuntimeHealthSnapshot
+from aico.app.runtime_heartbeat import AlertProbe, LivenessProbe, RuntimeHeartbeat
+from aico.app.runtime_liveness import (
+    RuntimeAlertDeliverySignal,
+    RuntimeLivenessPublisher,
+    RuntimeLivenessSnapshot,
+    WebhookRuntimeLivenessSink,
+    disabled_runtime_liveness_snapshot,
+)
+from aico.app.runtime_owner import RuntimeOwnerLock, runtime_owner_lock_path
+from aico.app.runtime_self_healing import (
+    BoundedOwnedTaskSupervisor,
+    OwnedTaskRecovery,
+    RuntimeSelfHealingSnapshot,
+)
+from aico.app.scheduled_autonomy import SQLiteScheduledAutonomyStore
+from aico.app.scheduled_autonomy_delivery import SQLiteAutonomyOutcomeDeliveryStore
 from aico.channel import IMChannel
 from aico.channel.feishu import FeishuChannel
 from aico.channel.telegram import TelegramChannel
@@ -59,10 +109,30 @@ from aico.core import (
     RoleProfile,
     RoleScope,
     SQLiteOfflineDelegationStore,
+    SQLiteStandingProposalStore,
     SQLiteTaskStateStore,
     TaskBus,
     agent_cards_from_personas,
     read_jsonl_audit_events,
+)
+from aico.core.approval import (
+    DEFAULT_APPROVAL_MAX_AGE_SECONDS,
+    MAX_APPROVAL_MAX_AGE_SECONDS,
+    MIN_APPROVAL_MAX_AGE_SECONDS,
+)
+from aico.core.ingress_authorization import (
+    IngressBindingError,
+    OwnerBoundIngressAuthorizer,
+    parse_ingress_ids,
+)
+from aico.core.preauthorized_execution import (
+    PreauthorizedExecutionAdapter,
+    PreauthorizedExecutionMode,
+)
+from aico.core.standing_autonomy import (
+    StandingAutonomyConfigError,
+    StandingAutonomyGrantSet,
+    load_standing_autonomy_grants,
 )
 from aico.view.app import ViewSettings
 from aico.view.commands import ViewSnapshotCommandHandler
@@ -73,8 +143,11 @@ class Phase1Settings(BaseSettings):
     """Environment-backed settings for the Phase 1 local runtime."""
 
     model_config = SettingsConfigDict(env_prefix="AICO_", env_file=".env", extra="ignore")
+    _config_source_health: RuntimeConfigSourceHealth | None = PrivateAttr(default=None)
+    _commissioning_health: RuntimeCommissioningHealth | None = PrivateAttr(default=None)
 
     channel: Literal["telegram", "feishu"] = "telegram"
+    absence_admission_mode: Literal["optional", "strict"] = "optional"
     prefer_native_channel_format: bool = False
     telegram_bot_token: str | None = Field(default=None, min_length=1)
     default_persona: str = Field(default="claude-code", min_length=1)
@@ -136,10 +209,37 @@ class Phase1Settings(BaseSettings):
     gemini_max_concurrent_tasks: int = Field(default=5, gt=0)
     persona_config_path: Path | None = None
     project_config_path: Path | None = None
+    owner_sender_ids: str = ""
+    trusted_target_ids: str = ""
+    ingress_discovery_log_identities: bool = False
     approval_reviewer_ids: str = ""
+    approval_max_age_seconds: int = Field(
+        default=DEFAULT_APPROVAL_MAX_AGE_SECONDS,
+        ge=MIN_APPROVAL_MAX_AGE_SECONDS,
+        le=MAX_APPROVAL_MAX_AGE_SECONDS,
+    )
     audit_log_path: Path | None = None
     memory_path: Path | None = None
     state_db_path: Path | None = None
+    reviewed_config_revision: str | None = None
+    commissioning_receipt_path: Path | None = None
+    commissioning_dead_man_evidence_path: Path | None = None
+    recovery_backup_enabled: bool = False
+    recovery_backup_checkout_path: Path = Field(default_factory=Path.cwd)
+    recovery_backup_output_dir: Path | None = None
+    recovery_backup_interval_seconds: float = Field(default=86_400, ge=300, le=604_800)
+    recovery_backup_max_age_seconds: float = Field(default=172_800, ge=300, le=1_209_600)
+    recovery_custody_check_interval_seconds: float = Field(default=3_600, ge=300, le=86_400)
+    recovery_custody_max_age_seconds: float = Field(default=7_200, ge=300, le=172_800)
+    recovery_retention_enabled: bool = False
+    recovery_retention_after_seconds: float = Field(default=2_592_000, ge=86_400, le=31_536_000)
+    recovery_retention_min_generations: int = Field(default=7, ge=2, le=365)
+    recovery_retention_check_interval_seconds: float = Field(default=21_600, ge=300, le=86_400)
+    recovery_retention_max_prunes_per_run: int = Field(default=2, ge=1, le=10)
+    recovery_drill_enabled: bool = False
+    recovery_drill_interval_seconds: float = Field(default=604_800, ge=3_600, le=2_592_000)
+    recovery_drill_max_age_seconds: float = Field(default=1_209_600, ge=3_600, le=7_776_000)
+    recovery_drill_workspace: Path | None = None
     view_enabled: bool = False
     view_output_dir: Path = Path(".aico/view-snapshots")
     morning_push_enabled: bool = False
@@ -149,10 +249,25 @@ class Phase1Settings(BaseSettings):
     morning_push_scope_id: str | None = Field(default=None, min_length=1)
     morning_push_time: str = Field(default="09:00", min_length=1)
     morning_push_on_start: bool = False
+    morning_push_delivery_timeout_seconds: float = Field(default=60, gt=0)
+    standing_autonomy_grant_path: Path | None = None
     log_level: str = "INFO"
     log_path: Path | None = Path("logs/aico.log")
+    runtime_heartbeat_path: Path | None = Path(".aico/runtime-heartbeat.json")
+    runtime_heartbeat_interval_seconds: float = Field(default=30, gt=0)
+    runtime_health_check_timeout_seconds: float = Field(default=5, gt=0)
+    runtime_alert_webhook_url: SecretStr | None = None
+    runtime_alert_webhook_bearer_token: SecretStr | None = None
+    runtime_alert_webhook_timeout_seconds: float = Field(default=5, gt=0)
+    runtime_liveness_enabled: bool = False
+    runtime_liveness_webhook_url: SecretStr | None = None
+    runtime_liveness_webhook_bearer_token: SecretStr | None = None
+    runtime_liveness_webhook_timeout_seconds: float = Field(default=5, gt=0)
+    runtime_monitor_id: SecretStr | None = None
+    runtime_liveness_interval_seconds: int = Field(default=60, gt=0)
+    runtime_liveness_ttl_seconds: int = Field(default=300, gt=0)
 
-    @field_validator("log_path", mode="before")
+    @field_validator("log_path", "runtime_heartbeat_path", mode="before")
     @classmethod
     def empty_log_path_disables_file_logging(cls, value: object) -> object:
         return None if value == "" else value
@@ -171,6 +286,142 @@ class Phase1Settings(BaseSettings):
             if normalized in {"1", "true", "yes", "on"}:
                 return Path(".aico/state.db")
         return value
+
+    @model_validator(mode="after")
+    def validate_runtime_alert_configuration(self) -> Self:
+        if self.runtime_alert_webhook_bearer_token is not None:
+            if self.runtime_alert_webhook_url is None:
+                raise ValueError("AICO_RUNTIME_ALERT_WEBHOOK_URL is required with bearer token")
+        if self.runtime_alert_webhook_url is not None:
+            url = self.runtime_alert_webhook_url.get_secret_value().strip()
+            if not url.startswith("https://"):
+                raise ValueError("AICO_RUNTIME_ALERT_WEBHOOK_URL must use HTTPS")
+            if self.state_db_path is None:
+                raise ValueError(
+                    "AICO_STATE_DB_PATH is required for durable runtime alert delivery"
+                )
+            if self.runtime_heartbeat_path is None:
+                raise ValueError(
+                    "AICO_RUNTIME_HEARTBEAT_PATH is required for runtime alert delivery"
+                )
+        if self.runtime_liveness_webhook_bearer_token is not None:
+            if self.runtime_liveness_webhook_url is None:
+                raise ValueError(
+                    "AICO_RUNTIME_LIVENESS_WEBHOOK_URL is required with liveness bearer token"
+                )
+        if self.runtime_liveness_webhook_url is not None:
+            liveness_url = self.runtime_liveness_webhook_url.get_secret_value().strip()
+            if not liveness_url.startswith("https://"):
+                raise ValueError("AICO_RUNTIME_LIVENESS_WEBHOOK_URL must use HTTPS")
+        if not self.runtime_liveness_enabled:
+            return self
+        if self.runtime_liveness_webhook_url is None:
+            raise ValueError("AICO_RUNTIME_LIVENESS_WEBHOOK_URL is required for runtime liveness")
+        if self.runtime_heartbeat_path is None:
+            raise ValueError("AICO_RUNTIME_HEARTBEAT_PATH is required for runtime liveness")
+        if self.runtime_monitor_id is None:
+            raise ValueError("AICO_RUNTIME_MONITOR_ID is required for runtime liveness")
+        runtime_id = self.runtime_monitor_id.get_secret_value()
+        if re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,127}", runtime_id) is None:
+            raise ValueError("AICO_RUNTIME_MONITOR_ID must be a safe runtime identity")
+        if self.runtime_liveness_interval_seconds < self.runtime_heartbeat_interval_seconds:
+            raise ValueError("runtime liveness interval must be at least the heartbeat interval")
+        if self.runtime_liveness_ttl_seconds < self.runtime_liveness_interval_seconds * 3:
+            raise ValueError("runtime liveness TTL must be at least three pulse intervals")
+        return self
+
+    @model_validator(mode="after")
+    def validate_runtime_webhook_isolation(self) -> Self:
+        error = runtime_webhook_isolation_error(
+            alert_url=_secret_value(self.runtime_alert_webhook_url),
+            liveness_url=_secret_value(self.runtime_liveness_webhook_url),
+            alert_token=_secret_value(self.runtime_alert_webhook_bearer_token),
+            liveness_token=_secret_value(self.runtime_liveness_webhook_bearer_token),
+        )
+        if error is not None:
+            raise ValueError(error)
+        return self
+
+    @model_validator(mode="after")
+    def validate_owner_bound_control_plane(self) -> Self:
+        try:
+            owners = self.owner_sender_id_tuple()
+            trusted_targets = self.trusted_target_id_tuple()
+            reviewers = self.approval_reviewer_id_tuple()
+        except IngressBindingError:
+            raise ValueError("IM ingress bindings are invalid") from None
+        if reviewers and not set(reviewers).issubset(owners):
+            raise ValueError("approval reviewers must be configured owner senders")
+        if (
+            self.morning_push_enabled
+            and self.morning_push_target_id is not None
+            and self.morning_push_target_id not in trusted_targets
+        ):
+            raise ValueError("morning push target must be a trusted IM target")
+        if self.morning_push_enabled and self.state_db_path is None:
+            raise ValueError("AICO_STATE_DB_PATH is required for durable morning push delivery")
+        if self.recovery_retention_enabled and not self.recovery_backup_enabled:
+            raise ValueError("recovery retention requires scheduled recovery backup")
+        if self.recovery_drill_enabled and not self.recovery_backup_enabled:
+            raise ValueError("recovery drill requires scheduled recovery backup")
+        if self.recovery_backup_enabled:
+            required = {
+                "AICO_STATE_DB_PATH": self.state_db_path,
+                "AICO_AUDIT_LOG_PATH": self.audit_log_path,
+                "AICO_MEMORY_PATH": self.memory_path,
+                "AICO_PROJECT_CONFIG_PATH": self.project_config_path,
+                "AICO_REVIEWED_CONFIG_REVISION": self.reviewed_config_revision,
+                "AICO_RECOVERY_BACKUP_OUTPUT_DIR": self.recovery_backup_output_dir,
+            }
+            missing = next((name for name, value in required.items() if value is None), None)
+            if missing is not None:
+                raise ValueError(f"{missing} is required when recovery backup is enabled")
+            revision = (self.reviewed_config_revision or "").strip().lower()
+            if re.fullmatch(r"[a-f0-9]{40}([a-f0-9]{24})?", revision) is None:
+                raise ValueError("AICO_REVIEWED_CONFIG_REVISION must be a full Git revision")
+            if self.recovery_backup_max_age_seconds < self.recovery_backup_interval_seconds:
+                raise ValueError("recovery backup max age must cover one interval")
+            if self.recovery_custody_max_age_seconds < self.recovery_custody_check_interval_seconds:
+                raise ValueError("recovery custody max age must cover one interval")
+            if self.recovery_retention_enabled and (
+                self.recovery_retention_after_seconds
+                < self.recovery_backup_interval_seconds * self.recovery_retention_min_generations
+            ):
+                raise ValueError("recovery retention age must cover preserved generations")
+            if self.recovery_drill_max_age_seconds < self.recovery_drill_interval_seconds:
+                raise ValueError("recovery drill max age must cover one interval")
+        return self
+
+    @model_validator(mode="after")
+    def validate_absence_admission(self) -> Self:
+        if self.absence_admission_mode == "optional":
+            return self
+        isolation_ready = (
+            runtime_webhook_isolation_error(
+                alert_url=_secret_value(self.runtime_alert_webhook_url),
+                liveness_url=_secret_value(self.runtime_liveness_webhook_url),
+                alert_token=_secret_value(self.runtime_alert_webhook_bearer_token),
+                liveness_token=_secret_value(self.runtime_liveness_webhook_bearer_token),
+            )
+            is None
+        )
+        gaps = strict_absence_contract_gaps(
+            {
+                "runtime alerts": self.runtime_alert_webhook_url is not None,
+                "runtime liveness": self.runtime_liveness_enabled,
+                "runtime endpoint isolation": isolation_ready,
+                "runtime commissioning": (
+                    self.commissioning_receipt_path is not None
+                    and self.commissioning_dead_man_evidence_path is not None
+                ),
+                "recovery backup": self.recovery_backup_enabled,
+                "standing autonomy": self.standing_autonomy_grant_path is not None,
+            },
+            recovery_drill_enabled=self.recovery_drill_enabled,
+        )
+        if gaps:
+            raise ValueError(f"strict absence admission not ready: {', '.join(gaps)}")
+        return self
 
     def claude_command_tuple(self) -> tuple[str, ...]:
         return _split_command(self.claude_command)
@@ -191,11 +442,13 @@ class Phase1Settings(BaseSettings):
         return _split_command(self.gemini_command)
 
     def approval_reviewer_id_tuple(self) -> tuple[str, ...]:
-        return tuple(
-            reviewer_id.strip()
-            for reviewer_id in self.approval_reviewer_ids.split(",")
-            if reviewer_id.strip()
-        )
+        return parse_ingress_ids(self.approval_reviewer_ids)
+
+    def owner_sender_id_tuple(self) -> tuple[str, ...]:
+        return parse_ingress_ids(self.owner_sender_ids)
+
+    def trusted_target_id_tuple(self) -> tuple[str, ...]:
+        return parse_ingress_ids(self.trusted_target_ids)
 
 
 def _split_command(command_text: str) -> tuple[str, ...]:
@@ -203,6 +456,10 @@ def _split_command(command_text: str) -> tuple[str, ...]:
     if not command:
         raise ValueError("command must not be empty")
     return command
+
+
+def _secret_value(value: SecretStr | None) -> str | None:
+    return value.get_secret_value() if value is not None else None
 
 
 def _optional_idle_timeout(seconds: float) -> float | None:
@@ -219,21 +476,55 @@ class Phase1Runtime:
     project_directory: ProjectAssignmentDirectory
     orchestrator: Orchestrator
     morning_scheduler: MorningPushScheduler | None = None
+    recovery_backup_scheduler: RecoveryBackupScheduler | None = None
+    task_bus: TaskBus | None = None
+    owner_lock: RuntimeOwnerLock | None = None
 
     async def start(self) -> None:
-        self.orchestrator.bind()
-        if self.morning_scheduler is not None:
-            self.morning_scheduler.start()
+        owner_acquired = False
+        scheduler_started = False
+        recovery_backup_started = False
         try:
-            await self.channel.start()
-        finally:
+            if self.owner_lock is not None:
+                self.owner_lock.acquire()
+                owner_acquired = True
+            if self.task_bus is not None:
+                self.task_bus.recover_startup_state()
+            self.orchestrator.bind()
             if self.morning_scheduler is not None:
-                await self.morning_scheduler.stop()
+                self.morning_scheduler.start()
+                scheduler_started = True
+            if self.recovery_backup_scheduler is not None:
+                self.recovery_backup_scheduler.start()
+                recovery_backup_started = True
+            await self.channel.start()
+        except Exception:
+            try:
+                if self.recovery_backup_scheduler is not None and recovery_backup_started:
+                    await self.recovery_backup_scheduler.stop()
+            finally:
+                try:
+                    if self.morning_scheduler is not None and scheduler_started:
+                        await self.morning_scheduler.stop()
+                finally:
+                    if self.owner_lock is not None and owner_acquired:
+                        self.owner_lock.release()
+            raise
 
     async def stop(self) -> None:
-        if self.morning_scheduler is not None:
-            await self.morning_scheduler.stop()
-        await self.channel.stop()
+        try:
+            if self.recovery_backup_scheduler is not None:
+                await self.recovery_backup_scheduler.stop()
+        finally:
+            try:
+                if self.morning_scheduler is not None:
+                    await self.morning_scheduler.stop()
+            finally:
+                try:
+                    await self.channel.stop()
+                finally:
+                    if self.owner_lock is not None:
+                        self.owner_lock.release()
 
 
 def build_phase1_runtime(
@@ -241,7 +532,202 @@ def build_phase1_runtime(
     *,
     feishu_client: httpx.AsyncClient | None = None,
 ) -> Phase1Runtime:
+    preflight_absence_admission(settings)
     channel = _build_channel(settings, feishu_client=feishu_client)
+    adapter, adapters = _build_adapters(settings)
+    registry = AdapterRegistry(
+        adapters,
+        default_adapter_name=adapter.name,
+        aliases={"claude": adapter.name},
+    )
+    personas = _load_personas(settings)
+    _validate_personas(personas, registry)
+    persona_registry = PersonaRegistry(personas)
+    agent_directory = AgentDirectory(agent_cards_from_personas(persona_registry, registry))
+    project_directory = _load_project_directory(settings, agent_directory, registry)
+    session_store = InMemoryAgentSessionStore()
+    task_bus = TaskBus(
+        registry,
+        persona_registry=persona_registry,
+        audit_log=_build_audit_log(settings),
+        approval_policy=RequesterOrListedApproverPolicy(settings.approval_reviewer_id_tuple()),
+        approval_max_age_seconds=settings.approval_max_age_seconds,
+        task_store=_task_state_store(settings),
+    )
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona=settings.default_persona),
+        task_bus=task_bus,
+        session_store=session_store,
+        provider_session_factory=_provider_session_factory(persona_registry),
+        agent_directory=agent_directory,
+        project_directory=project_directory,
+        memory_store=JsonlMemoryStore(settings.memory_path) if settings.memory_path else None,
+        offline_delegation_store=_offline_delegation_store(settings),
+        standing_proposal_store=_standing_proposal_store(settings),
+        standing_autonomy_grants=_standing_autonomy_grants(
+            settings,
+            project_directory,
+            agent_directory,
+            registry,
+        ),
+        view_snapshot_handler=_view_snapshot_handler(settings, channel, project_directory),
+        prefer_native_channel_format=settings.prefer_native_channel_format,
+        ingress_authorizer=OwnerBoundIngressAuthorizer(
+            channel_name=settings.channel,
+            owner_sender_ids=settings.owner_sender_id_tuple(),
+            trusted_target_ids=settings.trusted_target_id_tuple(),
+        ),
+        reveal_denied_ingress_identity=settings.ingress_discovery_log_identities,
+    )
+    morning_scheduler = _morning_push_scheduler(settings, orchestrator)
+    recovery_backup_scheduler = _recovery_backup_scheduler(settings)
+    return Phase1Runtime(
+        channel=channel,
+        adapter=adapter,
+        registry=registry,
+        persona_registry=persona_registry,
+        session_store=session_store,
+        project_directory=project_directory,
+        orchestrator=orchestrator,
+        morning_scheduler=morning_scheduler,
+        recovery_backup_scheduler=recovery_backup_scheduler,
+        task_bus=task_bus,
+        owner_lock=_runtime_owner_lock(settings),
+    )
+
+
+def preflight_absence_admission(settings: Phase1Settings) -> None:
+    """Fail before runtime construction when a strict external binding drifted."""
+    if settings.absence_admission_mode == "optional":
+        return
+    preflight_standing_autonomy(settings)
+    preflight_recovery_backup(settings)
+    settings._commissioning_health = preflight_runtime_commissioning(settings)
+
+
+def preflight_runtime_commissioning(
+    settings: Phase1Settings,
+) -> RuntimeCommissioningHealth:
+    """Verify strict current evidence before constructing any runtime plugin."""
+    source = settings._config_source_health
+    required = (
+        settings.project_config_path,
+        settings.reviewed_config_revision,
+        settings.runtime_monitor_id,
+        settings.commissioning_receipt_path,
+        settings.commissioning_dead_man_evidence_path,
+        source,
+    )
+    if any(value is None for value in required):
+        raise ValueError("runtime commissioning configuration is incomplete")
+    assert settings.project_config_path is not None
+    assert settings.reviewed_config_revision is not None
+    assert settings.runtime_monitor_id is not None
+    assert settings.commissioning_receipt_path is not None
+    assert settings.commissioning_dead_man_evidence_path is not None
+    assert source is not None
+    health = RuntimeCommissioningHealth(
+        checkout_path=settings.recovery_backup_checkout_path,
+        project_config_path=settings.project_config_path,
+        persona_config_path=settings.persona_config_path,
+        expected_config_revision=settings.reviewed_config_revision,
+        expected_runtime_id=settings.runtime_monitor_id.get_secret_value(),
+        dotenv_path=source.path,
+        dead_man_evidence_path=settings.commissioning_dead_man_evidence_path,
+        receipt_path=settings.commissioning_receipt_path,
+    )
+    verify_runtime_commissioning_receipt(
+        checkout_path=health.checkout_path,
+        project_config_path=health.project_config_path,
+        persona_config_path=health.persona_config_path,
+        expected_config_revision=health.expected_config_revision,
+        expected_runtime_id=health.expected_runtime_id,
+        dotenv_path=health.dotenv_path,
+        dead_man_evidence_path=health.dead_man_evidence_path,
+        receipt_path=health.receipt_path,
+    )
+    return health
+
+
+def preflight_standing_autonomy(
+    settings: Phase1Settings,
+) -> StandingAutonomyGrantSet | None:
+    """Validate real routing and Adapter eligibility without opening runtime state."""
+    if settings.standing_autonomy_grant_path is None:
+        return None
+    try:
+        adapter, adapters = _build_adapters(settings)
+        registry = AdapterRegistry(
+            adapters,
+            default_adapter_name=adapter.name,
+            aliases={"claude": adapter.name},
+        )
+        personas = _load_personas(settings)
+        _validate_personas(personas, registry)
+        agent_directory = AgentDirectory(
+            agent_cards_from_personas(PersonaRegistry(personas), registry)
+        )
+        project_directory = _load_project_directory(settings, agent_directory, registry)
+        return _standing_autonomy_grants(
+            settings,
+            project_directory,
+            agent_directory,
+            registry,
+        )
+    except StandingAutonomyConfigError:
+        raise
+    except (OSError, UnicodeError, ValueError):
+        raise StandingAutonomyConfigError("standing autonomy runtime binding is invalid") from None
+
+
+def preflight_recovery_backup(
+    settings: Phase1Settings,
+) -> RecoveryBackupConfig | None:
+    """Validate the scheduled capture destination without creating state or artifacts."""
+    if not settings.recovery_backup_enabled:
+        return None
+    if (
+        settings.state_db_path is None
+        or settings.audit_log_path is None
+        or settings.memory_path is None
+        or settings.project_config_path is None
+        or settings.reviewed_config_revision is None
+        or settings.recovery_backup_output_dir is None
+    ):
+        raise ValueError("recovery backup configuration is incomplete")
+    return RecoveryBackupConfig(
+        state_path=settings.state_db_path,
+        audit_path=settings.audit_log_path,
+        memory_path=settings.memory_path,
+        checkout_path=settings.recovery_backup_checkout_path,
+        project_config_path=settings.project_config_path,
+        persona_config_path=settings.persona_config_path,
+        expected_config_revision=settings.reviewed_config_revision,
+        output_dir=settings.recovery_backup_output_dir,
+        interval_seconds=settings.recovery_backup_interval_seconds,
+        max_age_seconds=settings.recovery_backup_max_age_seconds,
+        custody_check_interval_seconds=settings.recovery_custody_check_interval_seconds,
+        custody_max_age_seconds=settings.recovery_custody_max_age_seconds,
+        retention_enabled=settings.recovery_retention_enabled,
+        retention_after_seconds=settings.recovery_retention_after_seconds,
+        retention_min_generations=settings.recovery_retention_min_generations,
+        retention_check_interval_seconds=settings.recovery_retention_check_interval_seconds,
+        retention_max_prunes_per_run=settings.recovery_retention_max_prunes_per_run,
+        drill_enabled=settings.recovery_drill_enabled,
+        drill_interval_seconds=settings.recovery_drill_interval_seconds,
+        drill_max_age_seconds=settings.recovery_drill_max_age_seconds,
+        drill_workspace=settings.recovery_drill_workspace,
+    )
+
+
+def _runtime_owner_lock(settings: Phase1Settings) -> RuntimeOwnerLock:
+    lock_path = runtime_owner_lock_path(settings.state_db_path, base_dir=Path.cwd())
+    resource = settings.state_db_path or Path.cwd()
+    return RuntimeOwnerLock(lock_path, resource_path=resource)
+
+
+def _build_adapters(settings: Phase1Settings) -> tuple[ClaudeCodeAdapter, list[AIAdapter]]:
     adapter = ClaudeCodeAdapter(
         command=settings.claude_command_tuple(),
         cwd=settings.claude_working_directory,
@@ -303,47 +789,7 @@ def build_phase1_runtime(
                 max_concurrent_tasks=settings.gemini_max_concurrent_tasks,
             )
         )
-    registry = AdapterRegistry(
-        adapters,
-        default_adapter_name=adapter.name,
-        aliases={"claude": adapter.name},
-    )
-    personas = _load_personas(settings)
-    _validate_personas(personas, registry)
-    persona_registry = PersonaRegistry(personas)
-    agent_directory = AgentDirectory(agent_cards_from_personas(persona_registry, registry))
-    project_directory = _load_project_directory(settings, agent_directory, registry)
-    session_store = InMemoryAgentSessionStore()
-    orchestrator = Orchestrator(
-        channel=channel,
-        router=MessageRouter(default_persona=settings.default_persona),
-        task_bus=TaskBus(
-            registry,
-            persona_registry=persona_registry,
-            audit_log=_build_audit_log(settings),
-            approval_policy=RequesterOrListedApproverPolicy(settings.approval_reviewer_id_tuple()),
-            task_store=_task_state_store(settings),
-        ),
-        session_store=session_store,
-        provider_session_factory=_provider_session_factory(persona_registry),
-        agent_directory=agent_directory,
-        project_directory=project_directory,
-        memory_store=JsonlMemoryStore(settings.memory_path) if settings.memory_path else None,
-        offline_delegation_store=_offline_delegation_store(settings),
-        view_snapshot_handler=_view_snapshot_handler(settings, channel, project_directory),
-        prefer_native_channel_format=settings.prefer_native_channel_format,
-    )
-    morning_scheduler = _morning_push_scheduler(settings, orchestrator)
-    return Phase1Runtime(
-        channel=channel,
-        adapter=adapter,
-        registry=registry,
-        persona_registry=persona_registry,
-        session_store=session_store,
-        project_directory=project_directory,
-        orchestrator=orchestrator,
-        morning_scheduler=morning_scheduler,
-    )
+    return adapter, adapters
 
 
 def _morning_push_scheduler(
@@ -356,8 +802,13 @@ def _morning_push_scheduler(
         raise ValueError("AICO_MORNING_PUSH_TARGET_ID is required when morning push is enabled")
     if settings.morning_push_project is None:
         raise ValueError("AICO_MORNING_PUSH_PROJECT is required when morning push is enabled")
+    if settings.state_db_path is None:
+        raise ValueError("AICO_STATE_DB_PATH is required when morning push is enabled")
     return MorningPushScheduler(
         orchestrator=orchestrator,
+        store=SQLiteMorningDeliveryStore(settings.state_db_path),
+        autonomy_store=SQLiteScheduledAutonomyStore(settings.state_db_path),
+        outcome_store=SQLiteAutonomyOutcomeDeliveryStore(settings.state_db_path),
         config=MorningPushConfig(
             channel_name=settings.channel,
             target_id=settings.morning_push_target_id,
@@ -366,7 +817,27 @@ def _morning_push_scheduler(
             scope_id=settings.morning_push_scope_id or settings.morning_push_target_id,
             push_time=parse_push_time(settings.morning_push_time),
             push_on_start=settings.morning_push_on_start,
+            delivery_timeout_seconds=settings.morning_push_delivery_timeout_seconds,
         ),
+    )
+
+
+def _recovery_backup_scheduler(
+    settings: Phase1Settings,
+) -> RecoveryBackupScheduler | None:
+    config = preflight_recovery_backup(settings)
+    if config is None:
+        return None
+    if settings.state_db_path is None:
+        raise ValueError("recovery backup state path is missing")
+    return RecoveryBackupScheduler(
+        store=SQLiteRecoveryBackupStore(settings.state_db_path),
+        drill_store=(
+            SQLiteRecoveryDrillStore(settings.state_db_path)
+            if settings.recovery_drill_enabled or settings.recovery_retention_enabled
+            else None
+        ),
+        config=config,
     )
 
 
@@ -380,6 +851,74 @@ def _offline_delegation_store(settings: Phase1Settings) -> SQLiteOfflineDelegati
     if settings.state_db_path is None:
         return None
     return SQLiteOfflineDelegationStore(settings.state_db_path)
+
+
+def _standing_proposal_store(settings: Phase1Settings) -> SQLiteStandingProposalStore | None:
+    if settings.state_db_path is None:
+        return None
+    return SQLiteStandingProposalStore(settings.state_db_path)
+
+
+def _standing_autonomy_grants(
+    settings: Phase1Settings,
+    project_directory: ProjectAssignmentDirectory,
+    agent_directory: AgentDirectory,
+    registry: AdapterRegistry,
+) -> StandingAutonomyGrantSet | None:
+    if settings.standing_autonomy_grant_path is None:
+        return None
+    roots = tuple(Path(project.repo) for project in project_directory.projects())
+    grants = load_standing_autonomy_grants(
+        settings.standing_autonomy_grant_path,
+        forbidden_roots=roots,
+    )
+    _validate_standing_autonomy_grants(
+        settings,
+        grants,
+        project_directory,
+        agent_directory,
+        registry,
+    )
+    return grants
+
+
+def _validate_standing_autonomy_grants(
+    settings: Phase1Settings,
+    grants: StandingAutonomyGrantSet,
+    project_directory: ProjectAssignmentDirectory,
+    agent_directory: AgentDirectory,
+    registry: AdapterRegistry,
+) -> None:
+    if grants.grants and not settings.morning_push_enabled:
+        raise ValueError("standing autonomy grants require scheduled morning push")
+    for grant in grants.grants:
+        expected_target = (
+            settings.channel,
+            settings.morning_push_target_id,
+            settings.morning_push_thread_id,
+            settings.morning_push_project,
+        )
+        granted_target = (
+            grant.channel_name,
+            grant.target_id,
+            grant.thread_id,
+            grant.project_id,
+        )
+        if granted_target != expected_target:
+            raise ValueError("standing autonomy grant does not match scheduled morning target")
+        project = project_directory.project(grant.project_id)
+        if project is None:
+            raise ValueError("standing autonomy grant references an unknown project")
+        if not any(charter.id == grant.charter_id for charter in project.standing_charter):
+            raise ValueError("standing autonomy grant references an unknown charter")
+        charter = next(item for item in project.standing_charter if item.id == grant.charter_id)
+        assignment = project_directory.appointment_for_role(project.id, charter.role)
+        card = None if assignment is None else agent_directory.resolve(assignment.agent)
+        adapter = None if card is None else registry.get(card.adapter_name)
+        if not isinstance(adapter, PreauthorizedExecutionAdapter) or not (
+            adapter.supports_preauthorized_execution(PreauthorizedExecutionMode.READ_ONLY.value)
+        ):
+            raise ValueError("standing autonomy grant requires an enforced read-only adapter")
 
 
 def _view_snapshot_handler(
@@ -434,19 +973,184 @@ def _build_channel(
 async def run_phase1(settings: Phase1Settings) -> None:
     configure_logging(settings)
     runtime = build_phase1_runtime(settings)
-    await runtime.start()
-    try:
+    async with phase1_runtime_lifespan(settings, runtime):
         await _wait_forever()
+
+
+@asynccontextmanager
+async def phase1_runtime_lifespan(
+    settings: Phase1Settings,
+    runtime: Phase1Runtime,
+) -> AsyncIterator[None]:
+    heartbeat: RuntimeHeartbeat | None = None
+    runtime_started = False
+    heartbeat_started = False
+    try:
+        await runtime.start()
+        runtime_started = True
+        heartbeat = _runtime_heartbeat(settings, runtime)
+        if heartbeat is not None:
+            await heartbeat.start()
+            heartbeat_started = True
+        yield
     finally:
-        await runtime.stop()
+        try:
+            if heartbeat is not None and heartbeat_started:
+                await heartbeat.stop()
+        finally:
+            if runtime_started:
+                await runtime.stop()
+
+
+def _runtime_heartbeat(
+    settings: Phase1Settings,
+    runtime: Phase1Runtime,
+) -> RuntimeHeartbeat | None:
+    if settings.runtime_heartbeat_path is None:
+        return None
+    probe = RuntimeHealthProbe(
+        channel=runtime.channel,
+        registry=runtime.registry,
+        morning_scheduler=runtime.morning_scheduler,
+        recovery_backup_scheduler=runtime.recovery_backup_scheduler,
+        configuration=(
+            settings._config_source_health if settings.absence_admission_mode == "strict" else None
+        ),
+        commissioning=(
+            settings._commissioning_health if settings.absence_admission_mode == "strict" else None
+        ),
+        timeout_seconds=settings.runtime_health_check_timeout_seconds,
+    )
+    supervisor = _owned_task_supervisor(runtime)
+    alert_probe = _runtime_alert_probe(settings)
+    liveness_probe = _runtime_liveness_probe(settings)
+    return RuntimeHeartbeat(
+        settings.runtime_heartbeat_path,
+        interval_seconds=settings.runtime_heartbeat_interval_seconds,
+        health_probe=probe.check,
+        self_healing_probe=supervisor.check,
+        alert_probe=alert_probe,
+        liveness_probe=liveness_probe,
+    )
+
+
+def _owned_task_supervisor(runtime: Phase1Runtime) -> BoundedOwnedTaskSupervisor:
+    recoveries: list[OwnedTaskRecovery] = []
+    if isinstance(runtime.channel, TelegramChannel):
+        recoveries.append(
+            OwnedTaskRecovery(
+                "channel:telegram-polling",
+                runtime.channel.owned_task_alive,
+                runtime.channel.restart_owned_task,
+            )
+        )
+    if runtime.morning_scheduler is not None:
+        recoveries.append(
+            OwnedTaskRecovery(
+                "scheduler:morning-push",
+                runtime.morning_scheduler.owned_task_alive,
+                runtime.morning_scheduler.restart_owned_task,
+            )
+        )
+    recovery_backup_scheduler = getattr(runtime, "recovery_backup_scheduler", None)
+    if recovery_backup_scheduler is not None:
+        recoveries.append(
+            OwnedTaskRecovery(
+                "scheduler:recovery-backup",
+                recovery_backup_scheduler.owned_task_alive,
+                recovery_backup_scheduler.restart_owned_task,
+            )
+        )
+    return BoundedOwnedTaskSupervisor(recoveries)
+
+
+def _runtime_alert_probe(settings: Phase1Settings) -> AlertProbe:
+    if settings.runtime_alert_webhook_url is None:
+
+        async def disabled(
+            snapshot: RuntimeSelfHealingSnapshot,
+            health_snapshot: RuntimeHealthSnapshot | None,
+        ) -> RuntimeAlertDeliverySnapshot:
+            del health_snapshot
+            return disabled_runtime_alert_snapshot(snapshot.checked_at)
+
+        return disabled
+    if settings.state_db_path is None:
+        raise ValueError("AICO_STATE_DB_PATH is required for durable runtime alert delivery")
+    token = settings.runtime_alert_webhook_bearer_token
+    sink = WebhookRuntimeAlertSink(
+        url=settings.runtime_alert_webhook_url.get_secret_value(),
+        bearer_token=token.get_secret_value() if token is not None else None,
+        timeout_seconds=settings.runtime_alert_webhook_timeout_seconds,
+    )
+    coordinator = RuntimeAlertCoordinator(
+        store=SQLiteRuntimeAlertStore(settings.state_db_path),
+        sink=sink,
+    )
+    return coordinator.check
+
+
+def _runtime_liveness_probe(settings: Phase1Settings) -> LivenessProbe:
+    if not settings.runtime_liveness_enabled:
+
+        async def disabled(
+            alerting: RuntimeAlertDeliverySnapshot | None = None,
+        ) -> RuntimeLivenessSnapshot:
+            del alerting
+            return disabled_runtime_liveness_snapshot(datetime.now(UTC))
+
+        return disabled
+    if settings.runtime_liveness_webhook_url is None or settings.runtime_monitor_id is None:
+        raise ValueError("runtime liveness transport and identity are required")
+    token = settings.runtime_liveness_webhook_bearer_token
+    sink = WebhookRuntimeLivenessSink(
+        url=settings.runtime_liveness_webhook_url.get_secret_value(),
+        bearer_token=token.get_secret_value() if token is not None else None,
+        timeout_seconds=settings.runtime_liveness_webhook_timeout_seconds,
+    )
+    publisher = RuntimeLivenessPublisher(
+        runtime_id=settings.runtime_monitor_id.get_secret_value(),
+        sink=sink,
+        interval_seconds=settings.runtime_liveness_interval_seconds,
+        expires_after_seconds=settings.runtime_liveness_ttl_seconds,
+    )
+
+    async def check(
+        alerting: RuntimeAlertDeliverySnapshot | None = None,
+    ) -> RuntimeLivenessSnapshot:
+        signal = (
+            RuntimeAlertDeliverySignal.DISABLED
+            if alerting is None
+            else RuntimeAlertDeliverySignal(alerting.status.value)
+        )
+        return await publisher.check(alert_delivery_status=signal)
+
+    return check
 
 
 def main() -> None:
     _parse_args()
     try:
-        asyncio.run(run_phase1(Phase1Settings()))
+        asyncio.run(run_phase1(load_phase1_settings()))
     except KeyboardInterrupt:
         return
+
+
+def load_phase1_settings() -> Phase1Settings:
+    """Load dotenv settings without exposing raw validation input in process errors."""
+    source = Path.cwd() / ".env"
+    generation_before = capture_file_generation(source)
+    try:
+        settings = Phase1Settings()
+    except ValidationError:
+        raise RuntimeError(
+            "AICO configuration validation failed; run aico-service doctor"
+        ) from None
+    generation_after = capture_file_generation(source)
+    if generation_before != generation_after:
+        raise RuntimeError("AICO configuration changed while loading; retry startup")
+    settings._config_source_health = RuntimeConfigSourceHealth(source, generation_after)
+    return settings
 
 
 def _parse_args() -> None:
@@ -582,7 +1286,7 @@ def _load_project_directory(
         raw = json.loads(settings.project_config_path.read_text(encoding="utf-8"))
         config = ProjectAssignmentConfig.model_validate(raw)
     _validate_project_assignments(config, agent_directory, registry)
-    return ProjectAssignmentDirectory(config)
+    return ProjectAssignmentDirectory(config, default_to_single_project=True)
 
 
 def _default_project_assignment_config(

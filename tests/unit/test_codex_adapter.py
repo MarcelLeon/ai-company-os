@@ -1,5 +1,12 @@
+import json
+from datetime import UTC, datetime
+
 from aico.adapter.claude_code import DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS
-from aico.adapter.codex import DEFAULT_CODEX_COMMAND, CodexAdapter
+from aico.adapter.codex import (
+    DEFAULT_CODEX_COMMAND,
+    STANDING_RESULT_SCHEMA_PATH,
+    CodexAdapter,
+)
 from aico.core import (
     Capability,
     OutputType,
@@ -8,6 +15,9 @@ from aico.core import (
     Task,
     task_with_provider_session,
 )
+from aico.core.collaboration import task_with_exact_output_constraint
+from aico.core.preauthorized_execution import task_with_preauthorized_execution
+from aico.core.standing_result import MAX_STANDING_RESULT_CHARS
 
 
 class FakeLineReader:
@@ -146,6 +156,55 @@ def test_codex_adapter_keeps_resume_safe_exec_options() -> None:
     )
 
 
+def test_codex_adapter_forces_ephemeral_read_only_command_for_preauthorized_task() -> None:
+    adapter = CodexAdapter(
+        command=(
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "exec",
+            "--search",
+            "--sandbox",
+            "danger-full-access",
+        )
+    )
+    task = task_with_exact_output_constraint(_task("Inspect recovery evidence."))
+    task = task_with_preauthorized_execution(
+        task,
+        grant_id="grant-1",
+        expires_at=datetime(2027, 1, 1, tzinfo=UTC),
+        max_duration_seconds=60,
+    )
+
+    assert adapter.supports_preauthorized_execution("read_only") is True
+    assert adapter._command_for_task(task) == (  # noqa: SLF001
+        "codex",
+        "--ask-for-approval",
+        "never",
+        "--sandbox",
+        "read-only",
+        "exec",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--ephemeral",
+        "--strict-config",
+        "-c",
+        "experimental_network.enabled=false",
+        "--output-schema",
+        str(STANDING_RESULT_SCHEMA_PATH),
+        "--color",
+        "never",
+        "--json",
+        task.payload,
+    )
+    assert STANDING_RESULT_SCHEMA_PATH.is_file()
+
+
+def test_codex_adapter_refuses_preauthorized_mode_for_non_codex_executable() -> None:
+    adapter = CodexAdapter(command=("custom-provider-wrapper", "exec"))
+
+    assert adapter.supports_preauthorized_execution("read_only") is False
+
+
 async def test_codex_adapter_filters_cli_noise_from_stdout() -> None:
     async def factory(command: tuple[str, ...], cwd: object) -> FakeProcess:
         _ = (command, cwd)
@@ -168,6 +227,67 @@ async def test_codex_adapter_filters_cli_noise_from_stdout() -> None:
     assert [output.content for output in outputs if output.type is OutputType.TEXT] == [
         "Release plan: implementer, tester, reviewer, release-manager.\n"
     ]
+
+
+async def test_codex_adapter_extracts_json_message_and_post_run_usage() -> None:
+    async def factory(command: tuple[str, ...], cwd: object) -> FakeProcess:
+        _ = (command, cwd)
+        return FakeProcess(
+            stdout=[
+                b'{"type":"thread.started","thread_id":"thread-1"}\n',
+                b'{"type":"item.completed","item":{"id":"item-1",'
+                b'"type":"agent_message","text":"inspection complete"}}\n',
+                b'{"type":"turn.completed","usage":{"input_tokens":80,'
+                b'"cached_input_tokens":40,"cache_write_input_tokens":10,'
+                b'"output_tokens":20,"reasoning_output_tokens":12}}\n',
+            ]
+        )
+
+    adapter = CodexAdapter(command=("codex", "exec", "--json"), process_factory=factory)
+
+    await adapter.receive_task(_task("inspect"))
+    outputs = [output async for output in adapter.stream_output("task-1")]
+
+    assert [output.content for output in outputs if output.type is OutputType.TEXT] == [
+        "inspection complete\n"
+    ]
+    assert adapter.task_usage("task-1") is not None
+    assert adapter.task_usage("task-1").model_dump() == {  # type: ignore[union-attr]
+        "input_tokens": 80,
+        "output_tokens": 20,
+        "total_tokens": 100,
+        "cached_input_tokens": 40,
+        "cache_write_input_tokens": 10,
+        "reasoning_output_tokens": 12,
+    }
+
+
+async def test_codex_adapter_bounds_preauthorized_final_message() -> None:
+    oversized = "x" * (MAX_STANDING_RESULT_CHARS + 100)
+
+    async def factory(command: tuple[str, ...], cwd: object) -> FakeProcess:
+        _ = (command, cwd)
+        event = {
+            "type": "item.completed",
+            "item": {"id": "item-1", "type": "agent_message", "text": oversized},
+        }
+        return FakeProcess(stdout=[f"{json.dumps(event)}\n".encode()])
+
+    adapter = CodexAdapter(process_factory=factory)
+    task = task_with_exact_output_constraint(_task("Inspect recovery evidence."))
+    task = task_with_preauthorized_execution(
+        task,
+        grant_id="grant-1",
+        expires_at=datetime(2027, 1, 1, tzinfo=UTC),
+        max_duration_seconds=60,
+    )
+
+    await adapter.receive_task(task)
+    outputs = [output async for output in adapter.stream_output(task.task_id)]
+    text_outputs = [output.content for output in outputs if output.type is OutputType.TEXT]
+
+    assert len(text_outputs) == 1
+    assert len(text_outputs[0]) == MAX_STANDING_RESULT_CHARS + 1
 
 
 def _task(payload: str) -> Task:

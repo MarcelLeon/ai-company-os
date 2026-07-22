@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def utc_now() -> datetime:
@@ -75,6 +75,7 @@ class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    EXPIRED = "expired"
 
 
 class AuditEventType(StrEnum):
@@ -83,6 +84,7 @@ class AuditEventType(StrEnum):
     APPROVAL_APPROVED = "approval_approved"
     APPROVAL_REJECTED = "approval_rejected"
     APPROVAL_DENIED = "approval_denied"
+    APPROVAL_EXPIRED = "approval_expired"
     COLLABORATION_REQUESTED = "collaboration_requested"
     ADAPTER_DISPATCHED = "adapter_dispatched"
     TASK_COMPLETED = "task_completed"
@@ -150,6 +152,17 @@ class TaskOutput(FrozenModel):
     timestamp: datetime = Field(default_factory=utc_now)
 
 
+class TaskUsage(FrozenModel):
+    """Provider-reported usage observed after a task turn completes."""
+
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    cache_write_input_tokens: int = Field(default=0, ge=0)
+    reasoning_output_tokens: int = Field(default=0, ge=0)
+
+
 class AdapterSnapshot(FrozenModel):
     name: str = Field(min_length=1)
     status: AdapterStatus
@@ -184,6 +197,17 @@ class ApprovalRequest(FrozenModel):
     reason: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _validate_expiry(self) -> ApprovalRequest:
+        if self.expires_at is None:
+            return self
+        if self.created_at.tzinfo is None or self.expires_at.tzinfo is None:
+            raise ValueError("approval lease timestamps must be timezone-aware")
+        if self.expires_at <= self.created_at:
+            raise ValueError("approval lease expiry must be after creation")
+        return self
 
 
 class AuditEvent(FrozenModel):

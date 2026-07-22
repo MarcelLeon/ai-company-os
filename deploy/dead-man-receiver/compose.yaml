@@ -1,0 +1,34 @@
+services:
+  dead-man-receiver:
+    build:
+      context: ../..
+      dockerfile: deploy/dead-man-receiver/Dockerfile
+    env_file: ${AICO_DEAD_MAN_ENV_FILE:-.env}
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - dead-man-data:/data
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=2).read()
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  dead-man-data:

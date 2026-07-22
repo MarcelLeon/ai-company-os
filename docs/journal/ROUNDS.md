@@ -8319,3 +8319,4423 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - `STATUS.md` 当前轮次更新为 Round 164。
 - B-005 从 DEFERRED 改为 RESOLVED。
 - P-034 最后更新到 Round 164,覆盖 `/overnight` wrapper 的 `Current task:` 风险边界。
+
+## Round 165 — 2026-06-18 — Codex
+
+### 输入
+- 人类确认启动独立“中小企业 Agent”项目,要求充分使用 AICO Team / AI Lead 能力。
+- 重点不是一两小时生成首版,而是建立明天、后天仍能快速恢复并持续演进的人机对齐机制和可维护工程边界。
+
+### 思考与讨论
+- 候选 A:把元数据、RAG、Skill、Tool、Agent Loop 直接加入 `src/aico` → ❌ 否决。AICO 是通用组织治理层,业务领域进入 core 会破坏可插拔边界。
+- 候选 B:第一轮一次性生成数据库、API、RAG、Agent Loop 和 UI → ❌ 否决。范围过宽会让大量代码缺少真实验收,第二天只能维护脚手架。
+- 候选 C:在 `projects/sme-agent/` 建立独立项目办公室,配 AICO 团队,并只实现元数据首条垂直切片 → ✅ 选定。它同时验证项目连续性、团队组织和真实代码质量。
+- 候选 D:创建嵌套 Git 仓库 → ❌ 否决。当前仍需要由 AICO 仓库统一 review、test 和演示;嵌套仓库会增加版本边界和 CI 复杂度。
+
+### 产出
+- 新增 `projects/sme-agent/` 独立项目:
+  - `AGENTS.md`、`NORTH_STAR.md`、`STATUS.md`、README、独立 pyproject。
+  - `docs/operating-model/alignment.md`:Goal Brief → Challenge → Decide → Delegate → Verify → Handoff 的持续对齐循环,以及 L0-L4 信息压缩层。
+  - 当前 handoff、Round/Pitfall/Blocker、ADR-0001 和系统模块边界。
+- 新增 `projects/sme-agent/aico-project.json`:
+  - Claude 承担 lead / metadata / knowledge / runtime roles。
+  - Codex 承担 tester / reviewer / challenger read-only roles。
+  - 每个岗位绑定 workspace、权限和最小资源,避免每次从聊天重新解释项目。
+- 新增 AICO runbook 和 Phase 1 Goal Brief,固化真实启动、次日恢复、验收证据和停止条件。
+- 实现 metadata vertical slice:
+  - 术语、知识文档、指标、维度、数仓资产、业务实体和关系的不可变模型。
+  - `MetadataRepository` Protocol + `InMemoryMetadataRepository` Adapter。
+  - 注册、搜索、关系端点校验、邻接遍历和关系去重。
+- 新增 AICO 侧配置回归测试,防止 team config 和连续性文档漂移。
+
+### 验证结果
+- `uv run pytest projects/sme-agent/tests tests/unit/test_sme_agent_project.py -q`:7 passed。
+- `uv run ruff check projects/sme-agent/src projects/sme-agent/tests tests/unit/test_sme_agent_project.py`:通过。
+- `uv run mypy --config-file projects/sme-agent/pyproject.toml projects/sme-agent/src projects/sme-agent/tests`:通过。
+- 新项目源代码最大文件 78 行,没有接近单类 500 行或单方法 100 行硬限制。
+- 根 `pyproject.toml` 的 pytest testpaths 纳入 `projects/sme-agent/tests`,避免主 CI 漏跑独立项目测试。
+- `uv run pytest -q`:447 passed,1 skipped。
+- `uv run ruff check .`,`uv run ruff format --check .`,`uv run mypy src tests`,`git diff --check`:通过。
+
+### 关键决策
+- 🔒 SME Agent 是 AICO 管理的独立业务项目,AICO 不承载其企业知识、Skill/Tool Registry 或业务 Agent Runtime。
+- 🔒 跨天连续性依靠 North Star / Status / Goal Brief / ADR / Handoff / Evidence 分层工件,不依赖聊天历史。
+- 🔒 第一阶段保持模块化单体;只有部署或扩缩容证据出现后才拆服务。
+
+### 留给下一轮
+- 用真实 AICO runtime 加载 `projects/sme-agent/aico-project.json`,执行 `/use project sme-agent` 和 `/team`。
+- 让 Lead 为“华东区本月收入为什么下降”生成 Phase 1 Goal Brief 和最小企业样例数据集。
+- 领域契约确认后再实现持久化;暂不先上 UI、向量库或 provider-specific LLM SDK。
+
+### 状态变化
+- AICO 新增一个可被 Team / AI Lead 持续管理的真实项目场景。
+- SME Agent Phase 0 / Phase 1 启动,当前无新增 AICO core blocker。
+
+## Round 166 — 2026-06-18 — Codex + Lead + Challenger
+
+### 输入
+- 人类确认继续推进 SME Agent,要求真正使用 Team / AI Lead 机制并保证多日连续性。
+
+### 思考与讨论
+- 候选 A:立即添加 Postgres / API / RAG → ❌ 否决。独立 Lead 与 Challenger 都指出当前领域语义仍可能把错误关系和值建模持久化。
+- 候选 B:只保留模型 review 结论,不改代码 → ❌ 否决。Team 的价值是纠正交付,不是生成更多评论。
+- 候选 C:收口 Phase 1 metadata contract → ✅ 选定。先修显式过滤、术语链路、关系矩阵、版本/审批/来源和 CI evidence,再进入持久化。
+- 候选 D:静默停止当前 AICO Telegram runtime 并切换 SME config → ❌ 否决。当前已有 live polling process;直接中断会影响用户正在使用的运行态,并且第二个 poller 会冲突。
+
+### 产出
+- SME Agent application grounding:
+  - “营业收入”优先通过 glossary `DEFINES` 解析到 metric。
+  - `华东区` / `本月` 作为结构化 filter value,不再伪装成 dimension alias。
+  - 输出 metric、dimensions、filters、warehouse、entity、knowledge reference 和稳定 metadata IDs。
+- Metadata governance:
+  - 新增 relation kind × source kind × target kind 兼容矩阵。
+  - approved metadata 必须有 `approved_by` 和 `source_refs`。
+  - metadata 修改必须递增 version,kind 不允许跨版本漂移。
+- 持续对齐:
+  - 新增 one active writer per slice、human semantic steward、independent tester/reviewer 规则。
+  - 新增 `docs/evidence/round-1.md`,记录命令结果、行为证据、review 结果和剩余 Gate。
+  - Goal Brief、STATUS、handoff、ROUNDS 和 BLOCKERS 全部对齐当前代码事实。
+- CI:
+  - `.github/workflows/ci.yml` 增加 SME Agent strict mypy command,避免根 CI 漏过子项目类型回归。
+
+### 验证结果
+- SME Agent tests:10 passed。
+- Root full gate:`uv run pytest -q` 452 passed,1 skipped。
+- `uv run ruff check .`,`uv run ruff format --check .`:通过。
+- AICO mypy 与 SME Agent strict mypy:通过。
+- `git diff --check`:通过。
+- 最大 SME Agent source file 204 行;类 <500 行,单方法 <100 行。
+
+### 关键决策
+- 🔒 “governed” 必须包含关系约束、版本、来源和具名 human steward;AI Lead 只负责交付决策,不代替企业语义审批。
+- 🔒 Metadata grounding references 不冒充 cited passage 或原因分析;文档摄取和 passage citation 留给后续 Knowledge phase。
+- 🔒 多 Agent 写代码默认一个 slice 一个 active writer;其余 Agent 做 challenge/test/review,避免共享 workspace 冲突。
+
+### 留给下一轮
+- 选择维护时机,按 SME Agent runbook 切换现有 AICO runtime 配置并跑真实 project-office/restart/morning sample。
+- 人类 finance/data steward 确认样例语义。
+- 两个 Gate 通过后再实现 persistent metadata repository。
+
+### 状态变化
+- SME Agent Phase 1 本地领域合同完成,保留真实 AICO dogfood 与 human semantic acceptance 两个 Gate。
+- AICO core 无新增 blocker;live runtime 切换记录在 SME Agent B-001。
+
+### Runtime follow-up
+- 经用户批准停止旧 AICO polling 进程,使用 `projects/sme-agent/aico-project.json` 和独立 SME state/memory/audit 路径成功启动新 runtime。
+- 当前自动化环境无法保持 Telegram Desktop 可见窗口,不能代替用户从客户端发送 Bot 入站消息。
+- B-001 收敛为 3 条直接可发的 IM 命令(`/use project sme-agent`、`/team`、`/brief`);runtime 保持运行等待样本。
+
+## Round 167 — 2026-06-23 — Codex + side challengers
+
+### 输入
+- 人类把 SME Agent 的目标明确为商业化产品:后续上架淘宝/千牛售卖,现在开始小红书运营获客,通过 AICO 支撑产品设计、研发、测试和持续迭代。
+- 人类要求 LLM 与少量人类形成自闭环,并启动 side LLM 对功能和推广策略做至少 3 次以上反思和客观辩证。
+
+### 思考与讨论
+- 候选 A:继续按原 Phase 1 技术路线先做持久化 / RAG / Agent Loop → ❌ 否决。当前最紧约束是可卖 SKU、平台页面、客户数据和交付 SOP,不是更多底层架构。
+- 候选 B:直接承诺“一周上线千牛服务市场应用” → ❌ 否决。平台入驻、类目、审核和资质依赖人类后台页面确认;在规则未验证前不能把服务市场审核当成确定路径。
+- 候选 C:双轨推进:本周先用淘宝店铺卖人工复核的 AI 经营诊断服务,同时准备千牛/服务市场材料 → ✅ 选定。它能最快测试付费意愿,也不夸大当前技术能力。
+- 候选 D:只做内容不做商品页 → ❌ 否决。没有可购买入口无法验证从内容到成交的闭环。
+
+### 产出
+- `projects/sme-agent/docs/commercialization/launch-kit.md`:首个可卖 SKU、价格、承诺边界、AICO 团队角色。
+- `projects/sme-agent/docs/commercialization/llm-human-division.md`:LLM/人类责任分工和三类 LLM challenge gate。
+- `projects/sme-agent/docs/commercialization/user-input-checklist.md`:人类需要提供的平台、报价、数据、内容和交付输入。
+- `projects/sme-agent/docs/commercialization/week-one-plan.md`:一周上线计划。
+- `projects/sme-agent/docs/commercialization/challenge-log.md`:四轮商业化反思,覆盖定位、自动化、渠道和增长。
+- `projects/sme-agent/docs/commercialization/taobao-listing.md`:淘宝/千牛商品页初稿、FAQ 和服务边界。
+- `projects/sme-agent/docs/commercialization/customer-intake.md`:私信/表单客户问诊清单和接单拒单条件。
+- `projects/sme-agent/docs/commercialization/xiaohongshu-calendar.md`:小红书第一周内容日历。
+- `projects/sme-agent/docs/operations/xiaohongshu-week-1.md`:小红书 7 天内容定位、选题和私信问诊脚本。
+
+### 关键决策
+- 🔒 第一周卖“AI 经营诊断服务”,不是卖“通用中小企业 Agent 平台”。
+- 🔒 客户可见承诺必须是 AI 辅助 + 人工复核 + 证据/假设可追溯,不得承诺全自动、保证增长或替代财税法专业意见。
+- 🔒 AICO 是内部产品公司操作系统,负责 Lead/Challenger/Writer/Analyst/Engineer/Reviewer 分工;SME Agent 是商业交付产品。
+
+### 留给下一轮
+- 人类提供淘宝/千牛发布页面截图、类目约束、目标价格、目标行业、小红书账号资料和匿名样例数据。
+- 将 launch kit 转成可直接上架的商品标题、主图文案、详情页、FAQ、售后/免责声明。
+- 实现 SME Agent “诊断报告生成”第一切片:客户项目目录、样例 CSV schema、报告模板、evidence manifest 和 tests。
+
+### 状态变化
+- `STATUS.md` 当前轮次更新为 Round 167,最高优先级加入 SME Agent 商业化冷启动。
+- SME Agent 自身 `STATUS.md` 进入 Commercialization sprint,并新增 commercialization/operations 文档。
+
+## Round 168 — 2026-06-23 — Codex + side challengers
+
+### 输入
+- 人类要求减少资料清单和人类干预,由 LLM 尽可能闭环完成调研、研发、测试和复杂配置;只有必要授权时再找人类。
+
+### 思考与讨论
+- 候选 A:继续等待淘宝/千牛页面、真实样例数据和小红书截图 → ❌ 否决。平台发布权和真实账号需要人类,但样例报告、交付工具和运营资产可以先由 LLM 自己推进。
+- 候选 B:直接做 LLM 自动报告生成 → ❌ 否决。首单商业化最怕幻觉和过度承诺,必须先有确定性计算和人工复核边界。
+- 候选 C:先做电商 week-one 样例交付切片 → ✅ 选定。它能支撑淘宝商品页展示、内部交付演练和后续真实客户数据替换。
+
+### 产出
+- 新增 `projects/sme-agent/src/sme_agent/commercialization/ecommerce_diagnosis.py`:
+  - CSV loader:orders / ad spend / inventory。
+  - 指标计算:净收入、退款率、客单价、广告 ROAS、疑似滞销 SKU、库存成本估值。
+  - 保守诊断规则:退款率偏高、广告 ROAS 偏低、滞销库存。
+  - Markdown renderer:输出人工复核草稿和边界声明。
+- 新增样例数据:
+  - `projects/sme-agent/sample_data/ecommerce_week_one/orders.csv`
+  - `projects/sme-agent/sample_data/ecommerce_week_one/ad_spend.csv`
+  - `projects/sme-agent/sample_data/ecommerce_week_one/inventory.csv`
+- 新增交付资产:
+  - `projects/sme-agent/docs/commercialization/delivery-sop.md`
+  - `projects/sme-agent/docs/commercialization/sample-report-ecommerce.md`
+- 更新 SME Agent `STATUS.md`、`docs/handoffs/current.md` 和项目 journal。
+
+### 验证结果
+- `uv run pytest projects/sme-agent/tests -q`:16 passed。
+- `uv run ruff check projects/sme-agent/src projects/sme-agent/tests`:通过。
+- `uv run mypy --config-file projects/sme-agent/pyproject.toml projects/sme-agent/src projects/sme-agent/tests`:通过。
+
+### 关键决策
+- 🔒 人类最小干预不等于零人类复核:对外经营诊断必须保留人工确认项和免责声明。
+- 🔒 第一周样例优先选择淘宝/电商卖家场景,因为它与上架渠道和客户认知链路最短。
+- 🔒 商业化代码先服务交付流水线,不是先建完整 SaaS 平台。
+
+### 留给下一轮
+- 继续自动推进客户项目目录生成、evidence manifest 和脱敏检查。
+- 如果需要真实淘宝/千牛发布,再请求人类登录/确认类目/点击发布。
+- 增长 challenger 超时未返回,下一轮可用现有 challenge-log 继续补私信转化和小红书正文。
+
+## Round 169 — 2026-06-23 — Codex
+
+### 输入
+- 人类确认继续并采用默认价格,同时强调商业化卖相:页面要让老板信服,高级感更强。
+
+### 思考与讨论
+- 候选 A:强调“AI Agent 平台”技术能力 → ❌ 否决。老板买的是经营诊断可信度,不是底层架构。
+- 候选 B:用“保证增长/降本增效”做强卖点 → ❌ 否决。短期转化可能强,但合规和信任风险大。
+- 候选 C:用“证据链 + 人工复核 + 隐私边界 + 老板可读报告”塑造高级感 → ✅ 选定。它和当前交付能力一致,也更能支撑长期口碑。
+
+### 产出
+- 默认价格梯度固定:199 RMB AI 经营体检、699 RMB 标准诊断报告、1999 RMB AI 经营助手体验版。
+- `projects/sme-agent/docs/commercialization/taobao-listing.md`:升级为可直接粘贴的淘宝/千牛商品页,包含标题、Hero、套餐、报告结构、信任定位、边界和下单后话术。
+- `projects/sme-agent/docs/commercialization/taobao-visual-pack.md`:新增主图文案、详情页结构、价格卡、隐私边界和信任标签。
+- `projects/sme-agent/docs/commercialization/xiaohongshu-calendar.md`:从选题日历升级为 7 篇完整正文和 DM 问诊脚本。
+- `projects/sme-agent/src/sme_agent/commercialization/delivery.py`:新增客户项目目录、evidence manifest 渲染/写入、脱敏字段扫描。
+- `projects/sme-agent/src/sme_agent/commercialization/runner.py`:新增从 CSV 路径生成客户 workspace、诊断草稿、evidence manifest 和脱敏检查的 library runner。
+- `projects/sme-agent/docs/commercialization/report-generation-runbook.md`:新增报告生成操作手册。
+- `projects/sme-agent/tests/unit/test_commercialization.py`:补 workspace、manifest、redaction tests。
+
+### 验证结果
+- `uv run pytest projects/sme-agent/tests -q`:20 passed。
+- runner 临时目录 smoke:报告和 evidence manifest 成功生成,样例表头脱敏风险为 false。
+- `uv run ruff check projects/sme-agent/src projects/sme-agent/tests`:通过。
+- `uv run ruff format --check projects/sme-agent/src projects/sme-agent/tests`:通过。
+- `uv run mypy --config-file projects/sme-agent/pyproject.toml projects/sme-agent/src projects/sme-agent/tests`:通过。
+
+### 关键决策
+- 🔒 “高级感”定义为商业可信、证据可追溯、边界清晰和老板可读,不是夸张视觉或 AI 黑话。
+- 🔒 真实发布、登录、付款、外部平台提交仍需要人类授权;LLM 可准备到发布前一步。
+
+### 留给下一轮
+- 生成或规格化淘宝主图/详情图素材。
+- 有浏览器/登录授权后检查淘宝/千牛发布表单,停止在最终发布前。
+
+## Round 170 — 2026-06-24 — Codex
+
+### 输入
+- 人类确认继续。
+
+### 产出
+- `projects/sme-agent/docs/commercialization/assets/taobao-main-premium.svg`:高级信任主图。
+- `projects/sme-agent/docs/commercialization/assets/taobao-main-pain.svg`:收入下降痛点主图。
+- `projects/sme-agent/docs/commercialization/assets/taobao-detail-preview.svg`:详情页长图预览。
+- `projects/sme-agent/docs/commercialization/visual-assets.md`:视觉资产使用说明。
+
+### 验证结果
+- Python XML parse check:3 个 SVG 全部可解析。
+- `uv run pytest projects/sme-agent/tests -q`:20 passed。
+- `uv run ruff check projects/sme-agent/src projects/sme-agent/tests`:通过。
+- `uv run mypy --config-file projects/sme-agent/pyproject.toml projects/sme-agent/src projects/sme-agent/tests`:通过。
+- `git diff --check`:通过。
+
+### 关键决策
+- 🔒 主图风格采用“经营报告 / 可信诊断”,不采用机器人或暴富视觉。
+- 🔒 SVG 先作为可审阅源资产,待确认平台尺寸后再导出 PNG/JPG。
+
+### 留给下一轮
+- 有浏览器/登录授权后检查淘宝/千牛发布流程,停在最终发布前。
+- 如果平台只接受位图,按实际尺寸导出 SVG。
+
+## Round 171 — 2026-06-24 — Codex
+
+### 输入
+- 人类要求先不登录,把登录外的事情准备好,并严格检查产品质量;如有质量问题则修复。
+
+### 产出
+- 统一商业化价格口径:199 / 699 / 1999。
+- 用本机 Chrome/Playwright 将淘宝 SVG 导出 PNG。
+- 新增 `projects/sme-agent/tools/render_xiaohongshu_covers.py`,生成 7 张小红书封面 SVG。
+- 导出 7 张小红书封面 PNG。
+- 新增 `projects/sme-agent/docs/commercialization/product-quality-review.md`,记录质量检查、发现问题和修复。
+- 更新 `visual-assets.md` 资产索引。
+
+### 修复
+- 旧价格区间残留。
+- 主图标签语义不一致。
+- 小红书封面双编号文件名。
+- 小红书封面文字溢出。
+- “低价”措辞影响高级感。
+
+### 验证结果
+- Taobao PNG:800 x 800、800 x 800、900 x 1800。
+- Xiaohongshu PNG:7 张 1080 x 1440。
+- SVG XML parse:全部通过。
+- 代表图片人工抽检通过。
+
+### 留给下一轮
+- 有登录授权时检查淘宝/千牛发布流程,停在最终发布前。
+- 若仍不登录,准备首发操作 checklist 和发布当天节奏。
+
+## Round 172 — 2026-06-24 — Codex
+
+### 输入
+- 人类追问 SME Agent 如何验证有效、有意义,要求基于抖音/快手直播中小商家痛点、行业/卖家/订单/支付/GMV 指标做更适合主播和中小商家的应用。
+- 同时要求实现时保持可扩展,后续支持本地生活商家、商业化广告投放主、线索维度、内循环和外循环业务过程。
+
+### 思考与讨论
+- 候选 A:继续做通用“上传表格问 AI” → ❌ 否决。它容易演示,但没有行业过程、指标口径和敏感字段约束,难证明不是玩具。
+- 候选 B:把抖音/快手字段直接写进现有诊断 runner → ❌ 否决。短期快,但会让本地生活和广告扩展变成核心代码分支。
+- 候选 C:新增可注册行业模板,先定义业务过程、维度、指标、敏感字段和人工核对点 → ✅ 选定。它能把商业验证变成字段映射覆盖率、指标可计算性、老板报告可信度和付费反馈。
+
+### 产出
+- 新增 SME Agent domain templates:
+  - `live_commerce`:行业、卖家、内容、直播间、商品、订单、支付维度,以及 GMV、支付 GMV、支付订单数、支付买家数、客单价、退款率、GPM、支付转化率。
+  - `local_services`:门店/商圈/核销 GMV 扩展入口。
+  - `performance_ads`:广告主/计划/素材/线索、广告消耗、线索成本、内循环订单映射和外循环线索映射扩展入口。
+- 新增 ADR-0002,明确“行业模板先于诊断”是产品架构决策。
+- 新增领域模板说明文档,解释为什么这不是玩具以及下一步如何验收。
+- 更新 SME Agent `STATUS.md`、handoff 和系统架构文档。
+
+### 验证结果
+- `uv run pytest projects/sme-agent/tests/unit/test_domain_templates.py -q`:5 passed。
+- `uv run pytest projects/sme-agent/tests -q`:25 passed。
+- `uv run pytest -q`:467 passed,1 skipped。
+- `uv run ruff check .`:通过。
+- `uv run ruff format --check .`:通过。
+- `uv run mypy src tests`:通过。
+- `uv run mypy --config-file projects/sme-agent/pyproject.toml projects/sme-agent/src projects/sme-agent/tests`:通过。
+- `git diff --check`:通过。
+
+### 关键决策
+- 🔒 不把“AI 能回答”当成产品有效性证明;先看真实/拟真商家数据能否映射、指标能否计算、结论能否被老板理解并愿意付费。
+- 🔒 新行业 = 新 `DomainTemplate`,不是修改 agent runtime。
+- 🔒 直播电商先走支付 GMV / GPM / 退款率 / 支付转化这类老板能理解的诊断指标,同时保留口径人工确认。
+
+### 留给下一轮
+- 找一份真实或拟真的抖音/快手商家导出,做字段映射覆盖率和缺失字段报告。
+- 实现 template-backed live-commerce diagnosis runner。
+- 再推进淘宝/千牛发布流程检查,但最终发布、登录、付款仍需人类授权。
+
+## Round 173 — 2026-06-24 — Codex
+
+### 输入
+- 人类确认方向正确:拿到直播电商行业/卖家/订单/支付信息后,就可以闭环验证能力且可置信度高。
+- 人类要求无疑问就继续推进,遇到问题先自行调研和解决,不行再请求人类。
+
+### 思考与讨论
+- 候选 A:等待真实抖音/快手导出再开发 → ❌ 否决。真实数据需要人类授权,但软件契约可以先用拟真样例验证。
+- 候选 B:先让 LLM 写直播电商诊断 → ❌ 否决。商业交付的可信度来自字段映射、指标计算和证据链,不是话术。
+- 候选 C:实现“中文表头映射 → 指标可计算 → 人工复核报告”的确定性闭环 → ✅ 选定。它能最小化人类干预,又能证明不是玩具。
+
+### 产出
+- 新增 `projects/sme-agent/src/sme_agent/domains/mapping.py`,支持行业模板字段映射覆盖率、可计算指标和敏感字段来源识别。
+- 为直播电商模板补中文导出别名,如 `订单编号`、`直播场次ID`、`观看人数`、`买家匿名ID`。
+- 新增 `projects/sme-agent/src/sme_agent/commercialization/live_commerce_diagnosis.py`,支持直播场次/订单 CSV 加载、GMV/支付 GMV/支付订单数/支付买家数/客单价/退款率/GPM/支付转化计算、finding 和 Markdown 报告。
+- 新增 `projects/sme-agent/sample_data/live_commerce_week_one/` 拟真样例。
+- 新增 `projects/sme-agent/docs/commercialization/live-commerce-validation.md` 作为商家数据验收路径。
+- 新增 `projects/sme-agent/tests/unit/test_live_commerce_diagnosis.py`。
+- 更新 SME Agent `STATUS.md`、handoff、root `STATUS.md` 和 `CHANGELOG.md`。
+
+### 验证结果
+- TDD 红灯:`uv run pytest projects/sme-agent/tests/unit/test_live_commerce_diagnosis.py -q` 初始因缺少模块失败。
+- 目标测试:`uv run pytest projects/sme-agent/tests/unit/test_live_commerce_diagnosis.py -q`:3 passed。
+- SME 子项目:`uv run pytest projects/sme-agent/tests -q`:28 passed。
+- 全量:`uv run pytest -q`:470 passed,1 skipped。
+- `uv run ruff check .`:通过。
+- `uv run ruff format --check .`:通过。
+- `uv run mypy src tests`:通过。
+- `uv run mypy --config-file projects/sme-agent/pyproject.toml projects/sme-agent/src projects/sme-agent/tests`:通过。
+- `git diff --check`:通过。
+
+### 关键决策
+- 🔒 直播电商商业验证先看字段映射覆盖率和指标可计算性,再看 LLM 文案。
+- 🔒 中文平台导出表头是一等输入;客户不需要先理解 canonical schema。
+- 🔒 真实客户数据、平台登录和外部发布仍需人类授权。
+
+### 留给下一轮
+- 把直播电商 mapping/report 接进客户 workspace runner。
+- 支持字段 override 和缺字段追问。
+- 增加两场直播或两周对比,支撑“为什么这场比上场差”的付费诊断问题。
+
+## Round 174 — 2026-06-26 — Codex
+
+### 输入
+- 人类要求为第二层业务效果验收从网上爬/取一些数据,用于 dogfooding SME Agent 能力。
+
+### 思考与讨论
+- 候选 A:直接下载 KuaiLive 全量公开数据集 → ❌ 否决。Zenodo 全量约 858 MB,对本轮验收过重,且当前 Agent 只需要小样本验证映射/指标/报告链路。
+- 候选 B:声称网上存在真实商家订单级支付数据 → ❌ 否决。真实商家订单/支付/退款明细通常是隐私数据,公开网页很少合法提供完整订单级后台导出。
+- 候选 C:使用 KuaiLive / OnlineGMV 公开来源形态和聚合信息,构造带来源说明的缩放 dogfood fixture → ✅ 选定。它能让人类马上 dogfood,同时不伪造数据真实性。
+
+### 产出
+- 新增 `projects/sme-agent/sample_data/live_commerce_public_dogfood/live_sessions.csv`。
+- 新增 `projects/sme-agent/sample_data/live_commerce_public_dogfood/orders.csv`。
+- 新增 `projects/sme-agent/sample_data/live_commerce_public_dogfood/SOURCE.md`,记录 KuaiLive、Zenodo、OnlineGMV 来源、缩放方式和不可冒充真实客户数据的警告。
+- 新增 `projects/sme-agent/docs/evidence/public-web-dogfood-report.md`,固化 dogfood 报告。
+- 更新 `live-commerce-validation.md`、SME Agent status / handoff、root status 和 changelog。
+- 新增公开来源 dogfood fixture 回归测试。
+
+### 验证结果
+- TDD 红灯:公开来源 dogfood 测试初始因 fixture 文件不存在失败。
+- `uv run pytest projects/sme-agent/tests/unit/test_live_commerce_diagnosis.py::test_public_web_dogfood_fixture_runs_through_live_commerce_agent -q`:1 passed。
+- 手动 dogfood 输出:GMV 2850、支付 GMV 2249、支付订单数 5、客单价 449.80、退款率 0.17、GPM 398.97、支付转化率 0.0009。
+- `uv run pytest -q`:471 passed,1 skipped。
+- `uv run ruff check .`:通过。
+- `uv run ruff format --check .`:通过。
+- `uv run mypy src tests`:通过。
+- `uv run mypy --config-file projects/sme-agent/pyproject.toml projects/sme-agent/src projects/sme-agent/tests`:通过。
+- `git diff --check`:通过。
+
+### 关键决策
+- 🔒 公开 dogfood 数据必须标明来源、缩放和限制,不能装成真实客户后台。
+- 🔒 第二层业务验收先看报告是否让老板相信“这能接真实数据”,不是看样例是否代表行业统计。
+
+### 留给下一轮
+- 人类直接阅读 `public-web-dogfood-report.md`,从老板视角判断结论是否可信、是否愿意追问。
+- 将直播电商诊断接进客户 workspace runner。
+- 加字段 override 和缺字段追问,用于真实商家导出。
+
+## Round 175 — 2026-06-28 — Codex
+
+### 输入
+- 人类提出一个新的 AICO 产品体验验证方向:
+  - 认可多 Agent 编排复杂动态任务可能是 agent 的最终发展状态。
+  - 认可 AICO 的 `human-absent` 假设先进,但指出当前项目“不好用”。
+  - 希望设计能提高产品体验的验证方法、实际使用 SOP / quickstart,并用“让 AICO 研发企业级 Data-Agent”作为能力强弱的直观验收课题。
+- 人类确认设计方向后要求继续落地。
+
+### 思考与讨论
+- 候选 A:继续只用 SME Agent 作为单一 dogfood 样板 → ❌ 否决。SME Agent 已经能证明一个业务方向,但它混合了商业化目标和 AICO 体验目标,不适合作为长期回归尺。
+- 候选 B:只补 AICO quickstart 文档 → ❌ 否决。Quickstart 能降低启动摩擦,但不能回答“能不能用 AICO 做出高质量产品”这个根问题。
+- 候选 C:建立 Data-Agent Benchmark → ✅ 选定。用当前 AICO 编排 Claude/Codex 多角色团队研发 `data-agent-v1`,人类同时评分 AICO 编排体验和 Data-Agent 产品质量;优化 AICO 后再跑 `data-agent-v2` 对比。
+
+### 产出
+- 新增 `docs/benchmarks/data-agent-aico-benchmark.md`:
+  - 定义 baseline v1 → human score → AICO improvement → v2 rerun → score delta 的产品基准循环。
+  - 固化 Data-Agent 产品合同:本地可运行、企业样例数据、语义层、SQL/确定性计算证据、20 条 golden eval、测试、README、quickstart 和 handoff。
+  - 固化 AICO 证据合同:project office、Goal Brief、challenger、tester/reviewer、`/overnight`、`/morning`、`/inbox`、`/task`、`/view`。
+- 新增 `docs/human/data-agent-aico-sop.md`:
+  - 给人类老板的 SOP,把操作收敛到设目标、批风险、业务裁决和最终打分。
+  - 写入首轮 IM 命令模板和 morning recovery 流程。
+  - 写明 Computer Use 只用于 IM/HTML/local UI 体验检查,遇到外部发布、上传、付款、账号或敏感数据传输必须停下确认。
+- 新增 `benchmarks/data-agent/scorecard.md`:
+  - 100 分评分卡,AICO orchestration 50 分、Data-Agent product quality 50 分。
+  - 加 mandatory fail conditions,避免用模型口头完成、伪造真实数据或绕过人工授权。
+- 新增 `docs/superpowers/specs/2026-06-28-data-agent-aico-benchmark-design.md`:
+  - 记录设计边界:本轮只固化 benchmark 和 SOP,不创建 `data-agent-v1` 项目工程。
+- 更新 `STATUS.md`,把 Data-Agent Benchmark baseline 提为当前最高优先级,并保留 SME Agent 商业化为高优并行线。
+
+### 验证结果
+- 本轮不改运行代码,未跑 pytest。
+- 已做文档自检:
+  - 新增文档包含明确 scope、acceptance、fail conditions 和下一切片。
+  - 无未完成占位词。
+  - `git diff --check` 通过。
+
+### 关键决策
+- 🔒 AICO 的强弱不再只靠功能清单判断,而用“它能不能组织多 Agent 做出一个可评分的产品”判断。
+- 🔒 Data-Agent Benchmark 的评分标准先于产品实现落地;下一步不能边做 `data-agent-v1` 边改 v1 评分尺。
+- 🔒 人类在 benchmark 中只做老板职责:目标、审批、业务裁决和最终评分;如果需要微操,就给 AICO 体验扣分。
+
+### 留给下一轮
+- 创建 `projects/data-agent-v1/` 和 `projects/data-agent-v1/aico-project.json`。
+- 准备企业数据样例、20 条 golden eval 和 `benchmarks/data-agent/runs/<date>-v1/` evidence 目录。
+- 按 `docs/human/data-agent-aico-sop.md` 启动 current AICO baseline run,并在完成后让人类填写 scorecard。
+
+## Round 176 — 2026-06-28 — Codex
+
+### 输入
+- 人类确认“完成它”,要求把 Data-Agent Benchmark 从设计推进到可执行 baseline。
+
+### 思考与讨论
+- 候选 A:直接启动 AICO runtime 跑真实 IM baseline → ❌ 暂缓。当前还缺 `data-agent-v1` 工程、项目配置、样例数据和 eval,直接跑会把评分目标和产品脚手架混在一起。
+- 候选 B:只创建文档和空目录 → ❌ 否决。无法让人类按 quickstart 试用,也不能证明 Data-Agent 产品质量。
+- 候选 C:完成 executable scaffold → ✅ 选定。创建独立 `projects/data-agent-v1/`,AICO project config、企业样例数据、确定性查询引擎、CLI、20 条 golden eval、测试和 evidence 目录;下一轮再跑真实 AICO baseline。
+
+### 产出
+- 新增 `projects/data-agent-v1/` 独立 benchmark 产品:
+  - `AGENTS.md`、`NORTH_STAR.md`、`STATUS.md`、README、Goal Brief、handoff、journal、pitfalls、blockers 和 evidence 文档。
+  - `aico-project.json`,定义 lead / architect / implementer / tester / reviewer / challenger 角色。
+- 新增 deterministic Data-Agent V1 代码:
+  - `src/data_agent_v1/models.py`
+  - `src/data_agent_v1/semantic_layer.py`
+  - `src/data_agent_v1/loader.py`
+  - `src/data_agent_v1/engine.py`
+  - `src/data_agent_v1/cli.py`
+  - `src/data_agent_v1/eval_runner.py`
+- 新增样例企业数据:
+  - orders、ad spend、refunds、inventory、customers。
+  - 覆盖华东收入下降、广告 ROAS、退款商品/分群、地区、渠道、商品、库存、客户分群等问题。
+- 新增 20 条 golden eval:`projects/data-agent-v1/evals/golden_questions.json`。
+- 新增测试:
+  - `projects/data-agent-v1/tests/unit/test_engine.py`
+  - `projects/data-agent-v1/tests/unit/test_golden_eval.py`
+  - `tests/unit/test_data_agent_project.py`
+- 更新 root `pyproject.toml`,把 `projects/data-agent-v1/tests` 纳入主 pytest testpaths。
+- 新增 `benchmarks/data-agent/runs/2026-06-28-v1/` evidence 文件,记录 goal brief、AICO evidence checklist、eval result、scorecard 和 UI notes。
+
+### 验证结果
+- 第一次 targeted pytest 红灯:CSV fixture 有两行缺 `product_name`,导致 `paid_revenue` 被读成 `paid`;已修复。
+- 第二次 targeted pytest 红灯:意图匹配把英文 `revenue drop` 漏掉,并把中文“多少”里的“少”误判为下降;已收紧规则。
+- `PYTHONPATH=projects/data-agent-v1/src uv run pytest projects/data-agent-v1/tests tests/unit/test_data_agent_project.py -q`:7 passed。
+- `PYTHONPATH=projects/data-agent-v1/src uv run python -m data_agent_v1.eval_runner`:golden_eval 20/20 passed。
+- `uv run ruff check projects/data-agent-v1/src projects/data-agent-v1/tests tests/unit/test_data_agent_project.py`:通过。
+- `uv run mypy --config-file projects/data-agent-v1/pyproject.toml projects/data-agent-v1/src projects/data-agent-v1/tests`:通过。
+- `PYTHONPATH=projects/data-agent-v1/src uv run pytest -q`:478 passed,1 skipped。
+- `git diff --check`:通过。
+
+### 关键决策
+- 🔒 `data-agent-v1` 是独立 benchmark 产品,不进入 AICO core。
+- 🔒 v1 先用确定性引擎而不是 LLM,让 AICO baseline 的质量问题可以归因到编排体验和产品工程,不是模型随机性。
+- 🔒 真实 AICO baseline 还没跑;本轮完成的是可运行 scaffold 和机器 gate,下一轮必须通过 IM/project office 产生证据。
+
+### 留给下一轮
+- 启动 AICO:
+  - `AICO_PROJECT_CONFIG_PATH=projects/data-agent-v1/aico-project.json`
+  - 独立 `.aico/data-agent-v1-*` audit/memory/state 路径。
+- 按 `docs/human/data-agent-aico-sop.md` 发送第一组 IM 命令。
+- 将 `/project`、`/team`、`/goal`、`/ask challenger`、`/overnight`、`/morning`、`/inbox`、`/task`、`/view` 证据写入 `benchmarks/data-agent/runs/2026-06-28-v1/aico-evidence.md`。
+- 让人类填写 `benchmarks/data-agent/runs/2026-06-28-v1/human-scorecard.md`;未评分前不要开始 `data-agent-v2`。
+
+## Round 177 — 2026-06-28 — Codex
+
+### 输入
+- 人类追问:
+  - 为什么 canonical seed question 是“本月华东区收入为什么下降？”
+  - Data-Agent 背后灌了什么样例数据？
+  - 希望在 `projects/data-agent-v1/sample_data/enterprise_week_one` 放一个清晰的数据建模视图,说明底层数据、业务过程和实体关系。
+
+### 思考与讨论
+- 候选 A:只在聊天里解释 CSV → ❌ 否决。后续读者仍然要打开多张 CSV 猜关系,不利于 benchmark 可复用。
+- 候选 B:新建外部图源或复杂建模文档 → ❌ 否决。当前样例数据很小,最好把说明放在数据目录旁边,让读者打开 fixture 就能理解。
+- 候选 C:在样例数据目录新增 README + Mermaid 图 → ✅ 选定。它无需额外工具,同时能表达业务过程、ER 关系、表粒度和指标公式。
+
+### 产出
+- 新增 `projects/data-agent-v1/sample_data/enterprise_week_one/README.md`:
+  - Business Process View:Marketing spend → Customer → Paid order → Refund, Inventory 作为 product supply context。
+  - Entity Relationship View:Customer、Order、Refund、Product、Inventory、Ad Spend。
+  - 表粒度与 join key:orders / refunds / ad_spend / inventory / customers。
+  - 指标定义:paid revenue、revenue drop、ROAS、refund rate、inventory months of cover。
+  - 展开 canonical seed question 的计算:East 2026-05 paid revenue 120000,East 2026-06 paid revenue 84000,下降 36000 / 30.0%,最大渠道拖累 Douyin -17000。
+- 更新 `projects/data-agent-v1/README.md`,链接到 sample data model README。
+- 更新 Data-Agent V1 `STATUS.md` / handoff / project rounds。
+
+### 验证结果
+- 本轮只改文档,未跑 pytest。
+- `git diff --check`:通过。
+
+### 关键决策
+- 🔒 Benchmark 数据必须先让人类看懂底层业务模型,再要求人类评分 Data-Agent 产品质量。
+- 🔒 Product master 暂作为 conceptual entity,由 `orders.csv` 和 `inventory.csv` 推断;不额外造一个空洞维表。
+
+### 留给下一轮
+- 启动真实 AICO IM baseline,把 data model README 作为 challenger/reviewer 的输入材料之一。
+- 人类评分时先看 `enterprise_week_one/README.md`,再试 Data-Agent CLI 和 scorecard。
+
+## Round 178 — 2026-06-28 — Codex
+
+### 输入
+- 人类要求“除了 human scorecard 外都帮我做完”,并授权尝试用电脑上的 Telegram / Computer Use 操作。
+
+### 思考与讨论
+- 候选 A:直接把 human-scorecard 也预填 → ❌ 否决。用户明确要求 human scorecard 由人类自己打分,且评分必须来自人的产品体验判断。
+- 候选 B:绕过 Telegram,只补本地 CLI 证据 → ❌ 不足。Data-Agent 产品质量可以本地验证,但 AICO orchestration 的 50 分必须有真实 IM/project office 证据。
+- 候选 C:启动专用 AICO runtime、补齐评分材料、尝试 Telegram 桌面只读验证,等待发送确认 → ✅ 选定。它符合 Computer Use 的第三方通信确认策略,也避免把未发送的 IM transcript 伪造成已完成 baseline。
+
+### 产出
+- 启动了专用 AICO runtime:
+  - `AICO_PROJECT_CONFIG_PATH=projects/data-agent-v1/aico-project.json`
+  - 独立 `.aico/data-agent-v1-*` audit / memory / state 路径。
+- 用 Computer Use 读取 Telegram:
+  - `/Applications/Telegram.app` 可见已登录聊天列表和 `ai_co` bot。
+  - `/Applications/Telegram 2.app` 是未登录 QR code 页,不得用于本 benchmark。
+  - Computer Use 可读屏,但对已登录 Telegram 的 click 动作返回 tool activation error。
+- 更新 `benchmarks/data-agent/runs/2026-06-28-v1/aico-evidence.md`:
+  - 写入 runtime 命令、IM 命令序列、证据粘贴位置、AICO 打分提示。
+  - 明确 IM 消息尚未由 agent 发送,因为第三方通信需要 action-time confirmation。
+- 新增 `benchmarks/data-agent/runs/2026-06-28-v1/scoring-brief.md`:
+  - 给人类评分用的 evidence map、mandatory fail guidance、评分流程和严格扣分点。
+- 更新 `benchmarks/data-agent/runs/2026-06-28-v1/data-agent-eval.md`:
+  - 记录三条手工验收问题的实际 CLI 输出。
+  - 记录 golden eval 20/20 和 targeted tests 7/7。
+- 更新 `benchmarks/data-agent/runs/2026-06-28-v1/screenshots-or-ui-notes.md`:
+  - 记录 Telegram 双实例、Computer Use 点击异常和 CLI-first UX 边界。
+
+### 验证结果
+- `PYTHONPATH=projects/data-agent-v1/src uv run python -m data_agent_v1.cli "本月华东区收入为什么下降？"`:通过,输出 paid revenue 下降 36000 / 30.0%,最大渠道拖累 Douyin -17000。
+- `PYTHONPATH=projects/data-agent-v1/src uv run python -m data_agent_v1.cli "广告 ROAS 低是哪个渠道拖累的？"`:通过,输出 Douyin ROAS 1.40 为最低。
+- `PYTHONPATH=projects/data-agent-v1/src uv run python -m data_agent_v1.cli "退款率上升主要来自哪些商品或客户分群？"`:通过,输出 Smart Camera 为主要退款商品。
+- `PYTHONPATH=projects/data-agent-v1/src uv run python -m data_agent_v1.eval_runner`:golden_eval 20/20 passed。
+- `PYTHONPATH=projects/data-agent-v1/src uv run pytest projects/data-agent-v1/tests tests/unit/test_data_agent_project.py -q`:7 passed。
+
+### 关键决策
+- 🔒 不把“本地 Data-Agent 产品验证通过”等同于“真实 AICO IM baseline 完成”。
+- 🔒 任何发送 Telegram benchmark 指令的桌面动作都要等人类 action-time confirmation;确认后再补 `/morning`、`/inbox`、`/task`、`/view` 证据。
+- 🔒 human-scorecard 保持未填写;本轮只提供充分信息和证据,不给人类主观体验代打分。
+
+### 留给下一轮
+- 人类确认后,向 Telegram `ai_co` 发送 `aico-evidence.md` 中的 exact IM commands。
+- 观察 AICO runtime 输出和 Telegram 回复;若出现待审批任务,用 `/inbox` 和 `/task <short_id>` 判定是否批准。
+- 将真实 `/morning`、`/inbox`、`/task`、`/view` 第一屏或摘要补回 `aico-evidence.md`。
+- 然后人类填写 `human-scorecard.md`;未评分前不要开始 `data-agent-v2`。
+
+## Round 179 — 2026-06-30 — Codex
+
+### 输入
+- 人类要求建立一个“挑刺”的子 agent 做验收打分,并希望由 agent 继续做 Computer Use / Telegram baseline 发送,因为人类没有精力亲自操作。
+
+### 思考与讨论
+- 候选 A:让子 agent 操作 Telegram 并打最终分 → ❌ 否决。子 agent 适合独立挑刺,但桌面 UI/第三方发送动作必须由主 agent 负责安全边界和证据记录。
+- 候选 B:伪造 Telegram transcript 或把 local run 当成 Telegram → ❌ 否决。AICO 的 benchmark 核心就是 IM 真实体验,不能把本地注入冒充真实 Telegram。
+- 候选 C:子 agent 只读挑刺 + 主 agent 尝试真实 Telegram + 失败后跑 local injected IM baseline → ✅ 选定。这样既保留独立审查,也把工具限制变成可评分证据。
+
+### 产出
+- 使用 `multi_agent_v1.spawn_agent` 创建只读挑刺子 agent,输出 `ai-critic-scorecard-draft.md`:
+  - AICO orchestration 草稿分 4/50。
+  - Data-Agent product 草稿分 38/50。
+  - 明确指出 benchmark 最大问题是“产品先做出来,AICO 编排后补证据”。
+- 尝试真实 Telegram baseline:
+  - 停止旧的卡住 `aico-phase1` polling 进程。
+  - 启动专用 data-agent AICO runtime,使用独立 `.aico/data-agent-v1-*` state/audit/memory 路径。
+  - Computer Use 能显示已登录 Telegram 和 `ai_co`,但 click / key 工具继续报 “Computer Use is not active for Telegram”。
+  - `open` 和直接 executable 启动 Telegram 不可靠;System Events 也无法稳定拿到 Telegram 进程。
+  - 未发送真实 Telegram 消息,未伪造 transcript。
+- 新增 local injected IM baseline:
+  - 文件:`benchmarks/data-agent/runs/2026-06-28-v1/local-im-baseline-transcript.md`。
+  - 使用真实 AICO `Orchestrator`、`ProjectAssignmentDirectory`、command handlers、offline delegation、`/view` handler。
+  - 使用 `RecordingChannel` 和 deterministic fake adapters,不冒充真实 Claude/Codex 或 Telegram。
+  - 覆盖 `/project`、`/team`、`/goal`、`/ask challenger`、`/ask lead`、`/ask tester`、`/ask reviewer`、`/overnight`、`/morning`、`/inbox`、`/tasks`、`/view`。
+  - 生成 local view snapshot:`benchmarks/data-agent/runs/2026-06-28-v1/local-view-snapshots/aico-view-data-agent-v1.html`。
+- 更新 `aico-evidence.md`、`scoring-brief.md`、`screenshots-or-ui-notes.md`,明确区分真实 Telegram 缺口和 local injected command-contract evidence。
+
+### 验证结果
+- Local injected IM baseline 运行结果:20 sent messages,9 edited messages,3 Claude fake tasks,6 Codex fake tasks,27 audit events。
+- `/view` 本地快照文件生成成功。
+- 真实 Telegram baseline 仍未完成;不能把 local injected baseline 计为真实 IM UX 证据。
+
+### 关键决策
+- 🔒 挑刺子 agent 的分数是参考草稿,不能替代 `human-scorecard.md`。
+- 🔒 local injected IM baseline 只证明 AICO 命令合同和项目 office 机制可跑,不能证明 Telegram 手机端体感。
+- 🔒 真实 Telegram 发送失败本身要进入 AICO UX 扣分项,不要藏起来。
+
+### 留给下一轮
+- 若要完成正式 AICO orchestration 评分,必须解决真实 Telegram 输入/发送:
+  - 让人类手动在 `ai_co` 粘贴 `aico-evidence.md` 的命令;或
+  - 修好本机 Telegram app / Computer Use click-key session;或
+  - 改用可自动化的 IM channel。
+- 在真实 transcript 出来前,建议人类只正式填写 Data-Agent product 半边;AICO orchestration 半边按 critic 草稿低分或标记缺证。
+
+## Round 180 — 2026-07-02 — Codex
+
+### 输入
+- 人类反馈流程好但太重,要求 agent 执行所有非人类必要工作和审美判断相关工作;最后只把必须由人类执行的内容留下。
+- 人类指出打分文档是英文,默认输出应为中文。
+
+### 思考与讨论
+- 候选 A:继续给操作指引,让人类自己整理 → ❌ 否决。用户明确希望减少人类工作。
+- 候选 B:替人类直接填最终 `human-scorecard.md` → ❌ 否决。最终主观体验和接受度仍是人类必要判断。
+- 候选 C:由 agent 完成客观验证、文档中文化、AI 预检打分、UX/审美初评和剩余动作压缩 → ✅ 选定。它最大化减少人类负担,同时不伪造人类评分。
+
+### 产出
+- 中文化关键评分/操作材料:
+  - `benchmarks/data-agent/scorecard.md`
+  - `benchmarks/data-agent/runs/2026-06-28-v1/human-scorecard.md`
+  - `benchmarks/data-agent/runs/2026-06-28-v1/scoring-brief.md`
+  - `benchmarks/data-agent/runs/2026-06-28-v1/aico-evidence.md`
+  - `benchmarks/data-agent/runs/2026-06-28-v1/ai-critic-scorecard-draft.md`
+  - `benchmarks/data-agent/runs/2026-06-28-v1/data-agent-eval.md`
+  - `docs/human/data-agent-aico-sop.md`
+- 新增 `benchmarks/data-agent/runs/2026-06-28-v1/ai-precheck-and-score.md`:
+  - 记录 agent 已完成的客观验证。
+  - 给出 UX/审美初评:local `/view` 快照视觉基础可读,但业务接手价值很低,因为 recent events / experiences / facts 全为 0。
+  - 给出建议分:AICO 8/50(严格口径 4/50),Data-Agent 38/50,总分约 46/100。
+- 新增 `benchmarks/data-agent/runs/2026-06-28-v1/human-remaining-actions.md`:
+  - 把人类剩余动作压缩为三件事:确认 AICO 低分口径、确认 Data-Agent 产品分、填写 `human-scorecard.md`。
+
+### 验证结果
+- `PYTHONPATH=projects/data-agent-v1/src uv run python -m data_agent_v1.eval_runner`:golden_eval 20/20 passed。
+- `PYTHONPATH=projects/data-agent-v1/src uv run pytest projects/data-agent-v1/tests tests/unit/test_data_agent_project.py -q`:7 passed。
+- 复验两条核心 CLI 问题输出正常:
+  - “本月华东区收入为什么下降？”
+  - “广告 ROAS 低是哪个渠道拖累的？”
+
+### 关键决策
+- 🔒 默认面向人类的 benchmark / scoring 输出使用中文。
+- 🔒 AI 可以完成客观验证、UX 初评和建议分,但不替代人类最终 scorecard。
+- 🔒 `/view` 当前即使视觉上能读,也不能因为“有页面”给 traceability 高分;空状态本身就是扣分证据。
+
+### 留给下一轮
+- 人类只需打开 `human-remaining-actions.md`,按三步完成最终评分。
+- 如果人类选择继续追求真实 Telegram baseline,下一轮优先修 Telegram UI/control blocker,不要直接开始 `data-agent-v2`。
+
+## Round 181 — 2026-07-06 — Codex
+
+### 输入
+- 人类提供 Telegram Web 链接 `https://web.telegram.org/k/#@ai_co_telegram_bot`,指出验收时格式问题最严重,要求结合后台日志分析并优化 AICO 自身能力。
+- 人类认可“IM 交付层老板可读性协议”方案,要求直接修复。
+
+### 思考与讨论
+- 候选 A:继续只调 prompt,要求 agent 自己输出更规范的 Telegram HTML → ❌ 否决。真实记录已经证明 provider 会输出 `Findings1.`、表格粘连和本地路径,只靠 prompt 不能兜住。
+- 候选 B:只降低流式分片上限 → ❌ 否决。后台日志显示已分片,但仍有 3 字符/几十字符尾片和语义断裂;问题不是单条长度,而是没有按老板语义卡片切。
+- 候选 C:把坏样本固化成测试,修 core renderer / streaming / boss command 文案 → ✅ 选定。它保持 Channel 只做映射,不把 Telegram 特例塞回业务命令,并直接服务 absence-first 的“老板看懂下一步”。
+
+### 产出
+- `src/aico/core/native_output.py`:普通 agent 输出归一化新增 `Findings1.`、连续编号、`Missing Tests未...`、`Verdict:` 等粘连拆分;保持 Telegram native HTML sanitizer 仍只接受安全子集。
+- `src/aico/core/streaming.py`:新增 tiny-tail 兜底,避免接近阅读上限时发送 3 字符/几十字符碎片消息。
+- `src/aico/core/inbox.py`:把 `/inbox` 从后台状态 dump 改为老板摘要;空状态只显示“当前无待处理事项”,有动作时优先显示一个下一步和少量深挖入口。
+- `src/aico/view/commands.py`:DocumentChannel 发送 `/view` 附件前先发中文说明;文本 channel fallback 也包含用途、替代命令和本地文件路径。
+- 新增 `tests/unit/test_inbox.py`,并更新 native output / streaming / view / orchestrator 测试,覆盖真实 Telegram 坏样本和新的老板摘要 contract。
+- 新增 PITFALL P-042,记录“真实 Telegram 链路跑通但老板可读性仍失败”。
+
+### 验证结果
+- 红灯测试先确认当前实现失败:
+  - `Findings1.` 粘连未拆;
+  - 接近分片上限会发送微型尾片;
+  - `/inbox` 空状态仍露出 `none` 和 `task_completed`;
+  - `/view` 附件缺少说明。
+- 修复后 targeted gate:110 passed。
+- 完整 pytest:`490 passed,1 skipped`。
+- `uv run mypy src tests`:通过。
+- `uv run ruff check .`:通过。
+- `git diff --check`:通过。
+- `uv run ruff format --check .`:未全绿,原因是既有未改文件 `projects/data-agent-v1/src/data_agent_v1/engine.py` 需要格式化;本轮 touched files format check 已通过,未顺手改无关文件。
+
+### 关键决策
+- 🔒 Telegram 发送成功不等于 AICO 体验成功;老板入口命令必须回答“现在要我做什么”。
+- 🔒 原始 agent 输出和老板 IM 输出分层:原文/审计留给 `/task`、`/why`、`/audit`;默认 IM 第一屏给摘要和下一步。
+- 🔒 不把 Telegram HTML 方言泄漏到 Channel 外;core 继续产出平台中立 `MessageContent`,只在 native output sanitizer 中做安全兜底。
+
+### 留给下一轮
+- 重跑 1 条真实 Telegram sample:
+  - `/ask lead 综合 challenger 意见,给出最终切片计划、角色分工、验收证据和第一步任务。`
+  - `/inbox`
+  - `/view`
+- 验收重点:
+  - `Findings1.` / 表格粘连是否消失;
+  - 是否不再出现 3 字符碎片消息;
+  - `/inbox` 第一屏是否像老板待办而不是后台日志;
+  - `/view` 是否先给用途说明再发附件。
+- 如果真实样本通过,再更新 data-agent-v1 scorecard 中 AICO orchestration 半边的格式体验分;否则继续推进语义卡片化 renderer。
+
+## Round 182 — 2026-07-06 — Codex
+
+### 输入
+- 人类追问 Round A、B、C 是否都修完;确认 A 完成、B/C 半完成后,要求“都修复完吧,我一起验收”。
+
+### 思考与讨论
+- 候选 A:只回答还需要真实 Telegram sample → ❌ 否决。用户要求先把非人工必要修复做完,再一起验收。
+- 候选 B:把 B 简化为更低分片阈值 → ❌ 否决。这会继续按长度切,不能保证 Decision / Risks / Next Actions 成为可扫读卡片。
+- 候选 C:补语义卡片分片 + Telegram UX 坏签名回归套件 → ✅ 选定。它把 Round B/C 的剩余工作落成可自动验证 contract,真实 Telegram 只剩抽样体感验收。
+
+### 产出
+- `src/aico/core/streaming.py`:
+  - 新增老板语义卡片识别,按 Summary / Findings / Decision / Risks / Next Actions / Verdict 等 heading 切分。
+  - 卡片本身超长时再回退原长度切分,避免把单个超大 finding 原样塞进一条消息。
+- `src/aico/core/native_output.py`:
+  - 新增本地 Markdown 文件链接简化,例如 `[templates.py](/Users/.../templates.py:106)` → `templates.py:106`。
+  - 继续保留上一轮 `Findings1.`、连续编号、`Missing Tests未...` 等归一化。
+- `tests/unit/test_streaming.py`:
+  - 新增红灯测试,证明长度策略会把 Summary 和 Decision 混在一起,语义卡片策略会拆开。
+- `tests/unit/test_native_output.py`:
+  - 新增本地 Markdown 文件链接简化回归。
+- 新增 `tests/unit/test_telegram_ux_regression.py`:
+  - 集中覆盖真实 Telegram 坏签名:`Findings1.`、`.2.` 连号粘连、`Missing Tests未...`、`]/Users/` 本地路径、Markdown 表格分隔符。
+
+### 验证结果
+- 先写红灯:
+  - 初版语义卡片测试因长度策略把 Summary + Decision 混在一条消息而失败。
+  - 本地 Markdown 链接测试因 `/Users/wangzq...` 裸露而失败。
+- 修复后:
+  - `uv run pytest tests/unit/test_native_output.py tests/unit/test_telegram_ux_regression.py tests/unit/test_streaming.py -q`:17 passed。
+  - 相关大回归:`114 passed`。
+  - 完整 pytest:`494 passed,1 skipped`。
+  - `uv run mypy src tests`:通过。
+  - `uv run ruff check .`:通过。
+  - touched files `ruff format --check`:通过。
+  - `git diff --check`:通过。
+  - 全仓 `uv run ruff format --check .` 仍只因既有未改文件 `projects/data-agent-v1/src/data_agent_v1/engine.py` 失败;本轮未顺手格式化无关文件。
+
+### 关键决策
+- 🔒 Round B 以“语义卡片分片”作为完成标准,不是调低长度阈值。
+- 🔒 Round C 以“真实坏签名自动回归”作为完成标准,真实 Telegram 截图只负责最后体感抽样。
+- 🔒 本地绝对路径不应默认暴露在 Telegram 老板消息里;保留 `path:line` 足够用于追溯,完整路径进入 `/task` / logs。
+
+### 留给下一轮
+- 启动当前 AICO runtime 后跑 1 条真实 Telegram sample:
+  - `/ask lead 综合 challenger 意见,给出最终切片计划、角色分工、验收证据和第一步任务。`
+  - `/inbox`
+  - `/view`
+- 人类验收时重点看:
+  - 是否按 Summary / Decision / Risks / Next Actions 分卡;
+  - 是否没有 `Findings1.`、裸 `/Users/...`、Markdown 表格分隔符和微型尾片;
+  - `/inbox` 是否像待办而不是后台 dump;
+  - `/view` 是否先解释再发附件。
+
+## Round 183 — 2026-07-06 — Codex
+
+### 输入
+- 人类要求查看“最新改动后的交互内容”,指出真实 Telegram 里表格问题很大。
+- 人类指出 `/view` 附件 `aico-view-data-agent-v1.html` 的任务区只有 id,希望在 human-absent first 假设下给不在场老板更多任务信息或可追溯详情入口。
+
+### 思考与讨论
+- 候选 A:继续让上游 agent 不要输出 Markdown 表格 → ❌ 否决。真实 Telegram 已出现标题和表格粘在一行的坏输出,出口层必须兜底。
+- 候选 B:保留等宽表,只去掉 `|---|` 分隔符 → ❌ 否决。等宽表在 Telegram 手机气泡里仍然横向难扫读,不能算老板可读。
+- 候选 C:把 Markdown 表格降级为移动端 key-value 列表,并让 `/view` snapshot join task_records 提供任务 brief → ✅ 选定。它同时服务 IM 第一屏和离线 HTML 接手,符合 absence-first。
+
+### 产出
+- `src/aico/core/message_rendering.py`:
+  - Markdown 表格从等宽表改为 key-value 列表,例如 `| Option | Decision |` → `• Option: Start v2` / `Decision: Reject`。
+  - 新增 glued table 预处理,兼容 `本轮角色分工| 角色 | ... ||---|...` 这种真实 Telegram 坏样本。
+- `src/aico/view/snapshot.py`:
+  - 新增 `recent tasks` 区,从 SQLite task_records + task_snapshots 合并出任务 brief。
+  - 任务卡显示短 id、persona、adapter、status、updated time、从 `Current task:` / goal metadata / payload 抽取的描述。
+  - 任务卡提供 `open /task <short-id>` 深链,让 HTML 快照能把老板带回 IM 追原文。
+- `tests/unit/test_telegram_ux_regression.py`:新增真实 glued table 回归。
+- `tests/unit/test_message_rendering.py`:更新表格渲染 contract。
+- `tests/unit/test_view_snapshot_commands.py`:新增 `/view` HTML task description + deep-link contract。
+- `STATUS.md` 更新当前轮次和 data-agent benchmark 修复状态。
+- 新增 PITFALL P-043,记录“去掉表格分隔符不等于手机可读”。
+
+### 验证结果
+- 先写红灯:
+  - 表格测试确认旧实现仍输出等宽表或原始 `|---|---|`。
+  - `/view` 测试确认旧 HTML 没有 `recent tasks` 和任务描述。
+- 修复后:
+  - `uv run pytest tests/unit/test_telegram_ux_regression.py tests/unit/test_message_rendering.py tests/unit/test_view_snapshot_commands.py -q`:16 passed。
+  - touched-file `uv run ruff check ...`:通过。
+  - 用真实 `.aico/data-agent-v1-state.db` 生成 `/tmp/aico-view-data-agent-v1-fixed.html`:包含 `recent tasks`、任务描述、persona/adapter/status 和 `open /task <short-id>`。
+  - 用真实坏表格样本调用 `agent_output_message(...)`:输出变为多行 key-value 列表,不再保留 Markdown 表格。
+
+### 关键决策
+- 🔒 Telegram 表格的默认降级形态是“每行一个业务实体 + 缩进字段”,不是等宽表。
+- 🔒 `/view` 不是 trace id 列表,而是不在场老板的只读接手面板;任务必须至少能说明“谁在做、状态如何、任务是什么、怎么回 IM 看详情”。
+- 🔒 真实 HTML 视觉检查若被浏览器 file URL 安全策略阻止,不得绕过策略;使用结构化 HTML / 测试契约 / 真实状态生成结果做替代证据。
+
+### 留给下一轮
+- 重启或确保当前 AICO runtime 加载新代码后,重新发送一条真实 Telegram sample:
+  - `/ask lead 综合 challenger 意见,给出最终切片计划、角色分工、验收证据和第一步任务。`
+  - `/view`
+- 验收重点:
+  - Telegram 气泡里不再出现 Markdown 宽表或 `|---|`。
+  - 表格内容能按角色/字段快速扫读。
+  - 新 `/view` 附件里 `recent tasks` 不只是一串 id,至少展示任务描述和 `open /task <short-id>`。
+
+## Round 184 — 2026-07-06 — Codex
+
+### 输入
+- 人类反馈 Round 183 的“表格统一转项目符 + 字段结构”不好看,要求行列少时仍可使用表格。
+- 人类要求修复真实 E2E 暴露的 `col 4` 和 runtime 重启后第一次 `/ask` 仍提示 `No active project` 的问题。
+- 验证约束:真实 Telegram 验证时提问少于 5 条,但问题可以复杂,不要只为了测试而测试。
+
+### 思考与讨论
+- 候选 A:继续把所有表格降级为 key-value 列表 → ❌ 否决。它解决宽表可读性,但牺牲少行少列场景的紧凑性和美观度,人类真实验收已经判定不好看。
+- 候选 B:所有表格都保留 Markdown 表格 → ❌ 否决。真实 provider 会输出四列角色表、长 evidence 单元格和 glued table,这些在 Telegram 手机气泡里仍然难扫读。
+- 候选 C:按表格尺寸和内容阈值分流 → ✅ 选定。少行少列短内容保留规范 Markdown 表格;宽表、长单元格、行列不齐或坏表降级为字段列表。
+- 候选 D:让 `ProjectAssignmentDirectory` 永远在单项目时默认 active → ❌ 否决。全量测试证明它会改变普通命令“未选择项目”的旧语义。
+- 候选 E:把单项目默认 active 做成 opt-in,并只在 Phase1 runtime 构建时开启 → ✅ 选定。真实单项目 runtime 重启后可恢复,普通目录/多项目测试不被隐式污染。
+
+### 产出
+- `src/aico/core/message_rendering.py`:
+  - 新增小表格保留阈值:2-3 列、最多 4 行、短单元格、估算宽度不超过移动端阅读阈值时保留 Markdown 表格。
+  - 宽表、长表、行列不齐表继续降级为 key-value 列表。
+  - malformed table 的额外列标签从 `col 4` 改为 `补充`。
+  - 表格行不再被普通 heading detector 错误加粗。
+- `src/aico/core/project_assignment.py`:
+  - `ProjectAssignmentDirectory` 新增 `default_to_single_project` opt-in 参数。
+  - 开启后,新 scope 没有显式 active project 且配置里只有一个项目时,自动把该项目设为 active。
+- `src/aico/app/phase1.py`:
+  - Phase1 runtime 构建 project directory 时开启 `default_to_single_project=True`,支持单项目 runtime 重启恢复。
+- 测试更新:
+  - `tests/unit/test_telegram_ux_regression.py`:覆盖小表保留、宽表降级、glued table、extra cell `补充`。
+  - `tests/unit/test_project_assignment.py`:覆盖 opt-in 单项目默认 active。
+  - `tests/unit/test_phase1_app.py`:覆盖真实 runtime 构建后启用单项目恢复。
+  - `tests/unit/test_message_rendering.py`、`tests/unit/test_telegram_channel.py`:同步小表格保留契约。
+- `STATUS.md` 更新当前轮次和 data-agent benchmark 修复状态。
+- `docs/journal/PITFALLS.md` 修正 P-043:从“统一降级”改为“按移动端可读性分流”。
+
+### 验证结果
+- 先写红灯:
+  - 小表格保留测试失败,旧实现仍降级为 key-value。
+  - malformed table extra cell 测试失败,旧实现显示 `col 4`。
+  - 单项目新 scope 默认 active 测试失败,旧实现返回 `None`。
+- 修复后:
+  - targeted tests:`77 passed`。
+  - full pytest:`500 passed, 1 skipped`。
+  - `uv run ruff check .`:通过。
+  - `uv run mypy src tests`:通过。
+  - touched-file `ruff format --check`:通过。
+  - 全仓 `uv run ruff format --check .` 仍只因既有未改文件 `projects/data-agent-v1/src/data_agent_v1/engine.py` 失败;本轮未顺手格式化无关文件。
+- 真实 Telegram E2E:
+  - 启动 data-agent-v1 专用 runtime 后发送 4 条以内消息,测试后已停止 runtime。
+  - 第 1 条重启后直接 `/ask lead ...` 被接住,没有 `No active project`,验证单项目默认 project 恢复生效。
+  - Telegram 可见输出中 2 列小表保留为 Markdown 表格:`| 验收项 | 建议 |`。
+  - 4 列角色表被降级为字段列表:`• 角色: ... / 状态 / 证据 / 下一步`,没有保留宽表。
+  - malformed table 最终输出为 `补充: 补充说明必须可读`,未出现新的 `col 4`。
+  - 真实样本同时暴露新问题:`/ask lead` 仍可能触发 reviewer/challenger/implementer 多任务链,且第 2 条并发请求因 Claude provider session 占用报 `Session ID ... is already in use`;部分输出仍有 `今日验收 3 条要点1.`、`FindingsHigh:`、`Risks / approval need-` 粘连。
+
+### 关键决策
+- 🔒 Telegram 表格渲染采用阈值分流,不是统一降级或统一保留。
+- 🔒 单项目默认 active 是 runtime opt-in 能力,不能改变普通 `ProjectAssignmentDirectory` 的默认语义。
+- 🔒 `col N` 这类实现细节不能出现在老板 IM 输出里;缺表头字段使用业务可读标签。
+
+### 留给下一轮
+- 优先修复真实 Telegram E2E 暴露的协作/路由问题:
+  - 支持短格式验收的 no-collab / exact-output 模式,避免一个表格 smoke prompt 自动拉起 challenger / reviewer / implementer 链。
+  - `/ask <role>` 必须尊重目标 role;如果 project default/appointment 会改写目标,需要在 IM 中解释。
+  - provider session 并发时不要让第二个请求直接报 `Session ID ... is already in use`,应排队、复用新 session 或给老板可执行提示。
+- 继续修复 native output 粘连:
+  - `今日验收 3 条要点1.`。
+  - `FindingsHigh:`。
+  - `Risks / approval need-`。
+- 修复后再跑 1 条真实 Telegram sample,消息数控制在 3 条以内;不用再重复验证小表/补充字段,除非相关 renderer 又改了。
+
+## Round 185 — 2026-07-07 — Codex
+
+### 输入
+- 人类要求把上轮候选中的第二推荐“芙莉莲”和第三推荐“鬼灭无限城”都做成共享记忆和 `/dream`
+  能力验证 case。
+- 设计要求:
+  - case 要更生动、更被人熟知,借助热门 IP 叙事宣传产品能力强大;
+  - 设计时要反复 review 是否符合客观规律和现实;
+  - 如果产品表现不够强,要内省并优化 AICO 自身能力,完成设计、验证和优化迭代闭环。
+
+### 思考与讨论
+- 候选 A:只写两篇宣传文案 → ❌ 否决。这样容易把 AICO 能力讲成故事滤镜,无法证明 shared memory / dream
+  真的可复现。
+- 候选 B:直接使用官方角色名、截图和台词做传播 → ❌ 否决。短期更抓眼,但有版权/商标/同人边界风险,也会让
+  验证 case 依赖外部 IP 细节而不是 AICO 产品能力。
+- 候选 C:用“inspired-by”的原创化映射 + 机器 E2E 验证 + 产品自省修复 → ✅ 选定。芙莉莲式 case
+  验证长期事实记忆和候选经验晋升;无限城式 case 验证作战情报记忆、reviewer 协作审计和 approval-blocked
+  dream candidate。
+
+### 产出
+- 新增设计和执行计划:
+  - `docs/superpowers/specs/2026-07-07-pop-culture-memory-dream-showcase-design.md`
+  - `docs/superpowers/plans/2026-07-07-pop-culture-memory-dream-showcase.md`
+- 新增两份 showcase 文档:
+  - `docs/showcase/frieren-memory-dream-case.md`
+  - `docs/showcase/infinity-castle-memory-dream-case.md`
+- 新增中文验证报告:
+  - `docs/showcase/pop-culture-memory-dream-validation-report.md`
+- 新增 `tests/unit/test_pop_culture_memory_dream_showcase.py`:
+  - `frieren-party`:验证 `/remember` → Shared memory 注入 → blocked task → `/dream` candidate experience →
+    `/experience promote` → implementer prompt 注入。
+  - `infinity-castle`:验证 safe exits 记忆召回、`@reviewer` child task、`collaboration_requested` audit、
+    blocked approval dream candidate 和 swordsman experience 注入。
+- 产品自省修复:
+  - `src/aico/core/memory.py`: `MemoryGovernor.allows()` 只允许 `MemoryKind.FACT` 进入 Shared memory packet,
+    避免 promoted experience 同时出现在 Shared memory 和 Experience layer。
+  - `src/aico/core/dream.py`: `/dream` 的 Next 从 `/remember <accepted lesson>` 改为 `/experience review`
+    和 `/experience promote <candidate-id> as <role>`。
+- 更新 `STATUS.md` 当前补充验收状态。
+- 新增 PITFALL P-045,记录 Dream candidate / Shared memory / Experience 生命周期边界。
+
+### 验证结果
+- 先写红灯:
+  - `test_memory_retriever_excludes_experience_from_shared_memory_packet` 确认旧实现会把 `mem-exp` 混入
+    Shared memory packet。
+  - `test_orchestrator_dream_writes_reviewable_candidate_memory` 确认旧 `/dream` 仍提示
+    `/remember <accepted lesson>`。
+- 修复并补充报告后:
+  - 红灯聚焦测试:2 passed。
+  - showcase E2E:2 passed。
+  - targeted tests:`10 passed`。
+  - 相关回归:`98 passed`。
+  - full pytest:`503 passed, 1 skipped`。
+  - `uv run mypy src tests`:通过。
+  - `uv run ruff check .`:通过。
+  - touched-file `ruff check`:通过。
+  - touched-file `ruff format --check`:通过。
+  - `git diff --check`:通过。
+
+### 关键决策
+- 🔒 公开传播可以借熟悉叙事,但必须原创化表达:用“长记忆旅队”“无限变化城堡作战室”等结构,不使用官方图片、
+  Logo、角色名或原台词做商业物料。
+- 🔒 Shared memory 和 Experience 是两个 prompt layer:事实进 Shared memory,候选经验经 promote 后进
+  Reusable experience。
+- 🔒 showcase case 不能假设语义召回读心。任务文本必须和 memory claim 有可解释关联,否则不应宣称“系统记住并召回”。
+- 🔒 协作 child task 当前按 `target_persona` 审计;不保证携带完整 project assignment metadata。宣传时说“source/target
+  role audit trace”,不要夸成完整组织图谱自动继承。
+
+### 留给下一轮
+- 如果要把这两份 showcase 做成小红书/B站宣传素材,先把文案改成原创化视觉脚本,不要直接用官方图。
+- 可以继续补一个真实 IM dogfood:
+  - 用 `frieren-party` 或 `infinity-castle` 创建临时 project config;
+  - 在 Telegram 中跑 4-6 条命令;
+  - 用 `/view` 附件展示 Memory / Experience / Audit 证据。
+- 后续产品优化候选:
+  - collaboration child task 可考虑保留 project assignment metadata,让 `/task` 和 `/view` 的组织上下文更完整。
+  - memory retrieval 可在 `/recall` 或 `/why` 中解释“为什么召回/为什么没召回”,增强宣传 case 的可信度。
+
+## Round 186 — 2026-07-07 — Codex
+
+### 输入
+- 人类认可先前对 Telegram 表格/Markdown/语法融合问题的理解,要求开始实现,最多 3 个迭代完成优化。
+- 目标是显著改善 Telegram 消息交互体验,覆盖 `/ask`、`/inbox`、`/view`、implementer/reviewer 常见输出里的
+  Markdown 表格、无序列表、native HTML fallback 和标题粘连问题。
+- 约束:先建立 golden test 和快速验证闭环,不影响主链路;允许调用 Telegram 问问题,限制 20 条。
+
+### 思考与讨论
+- 候选 A:直接让模型“少用 Markdown 表格” → ❌ 否决。只能改善一部分输出,无法兜住 provider 坏样本和非 native fallback。
+- 候选 B:Telegram 端统一 native HTML → ❌ 否决。Telegram HTML 不支持表格/list tags,一刀切会让 `<ul>/<li>` 或宽表暴露。
+- 候选 C:平台中立富文本 + Telegram 出口 payload golden + native prompt 约束 → ✅ 选定。核心继续产出
+  `MessageContent` / spans,Telegram Channel 只负责 Bot API HTML 映射;小表保留,宽表/坏表降级为字段列表。
+
+### 产出
+- `src/aico/core/native_output.py`:
+  - 归一化 common HTML lists,将 unsupported `<ul>/<ol>/<li>` 转为 `• ` bullets。
+  - 增加中文/英文标题粘连拆分,覆盖 `今日验收 3 条要点1.`、`FindingsHigh:`、
+    `Risks / approval need-`、`Next Actions-` 等坏样本。
+  - native Telegram 指令明确:小表可保留 Markdown 表格;宽表/长表使用字段列表;不要用 `<pre>` 包表格。
+  - 非 native fallback 会把 `<b>/<code>/<pre>` 转成轻量 Markdown,避免 raw tags 漏到普通富文本路径。
+- `src/aico/core/message_rendering.py`:
+  - 表格渲染保持阈值分流,并补强 glued table 拆分。
+  - 字段 label span 支持 bullet-prefixed 行,避免 Telegram HTML offset 错位。
+  - 中文老板字段 `结论/风险/建议/下一步/证据/补充` 可加粗;`Option/Decision` 等英文字段同步纳入 label allowlist。
+- `tests/unit/test_telegram_ux_regression.py`:
+  - 覆盖中文编号标题、severity heading、inline Markdown bullets、HTML list fallback。
+- `tests/unit/test_message_rendering.py`、`tests/unit/test_native_output.py`、`tests/unit/test_telegram_channel.py`:
+  - 覆盖中文字段加粗、native table 指令、Bot API payload 中宽表降级和 HTML list fallback。
+- `STATUS.md` 更新当前 Telegram UX golden loop 状态。
+- `docs/journal/PITFALLS.md` 新增 P-046,记录 Telegram Web 不适合作为稳定自动化发送 harness。
+
+### 验证结果
+- 先写红灯:
+  - `test_chinese_numbered_heading_is_split_before_list`:旧实现会保留 `今日验收 3 条要点1.`。
+  - `test_compact_severity_headings_expand_to_boss_cards`:旧实现会保留 `FindingsHigh:`。
+  - `test_inline_markdown_bullets_become_scannable_list_items`:旧实现会把多个 `- ` 粘在一段。
+  - `test_unsupported_native_html_lists_fall_back_to_readable_bullets`:旧 fallback 会泄漏 list tags。
+  - `test_telegram_channel_sends_wide_agent_table_as_mobile_fields`:曾暴露 bullet field label offset 错位,
+    payload 变成 `Op<b>tion: </b>`。
+- 修复后:
+  - 相关链路:`uv run pytest tests/unit/test_telegram_ux_regression.py tests/unit/test_message_rendering.py tests/unit/test_native_output.py tests/unit/test_streaming.py tests/unit/test_telegram_channel.py tests/unit/test_inbox.py tests/unit/test_view_snapshot_commands.py -q`
+    → 58 passed。
+  - 全量:`uv run pytest -q` → 511 passed, 1 skipped。
+  - `uv run ruff check src/aico/core/native_output.py src/aico/core/message_rendering.py tests/unit/test_telegram_ux_regression.py tests/unit/test_message_rendering.py tests/unit/test_native_output.py tests/unit/test_telegram_channel.py`
+    → 通过。
+  - touched-file `ruff format --check` → 通过。
+  - `git diff --check` → 通过。
+- 真实 Telegram 尝试:
+  - 已重启本机 `aico-phase1`,启用 `AICO_PREFER_NATIVE_CHANNEL_FORMAT=true`。
+  - Telegram Desktop 未登录;Chrome Telegram Web 已登录并打开 `@ai_co_telegram_bot`。
+  - 自动化 UI 中 `/inbox` 停留在输入框,点击发送按钮、Space、Return 均未提交,因此本轮没有把新消息计为真实
+    Telegram E2E 证据。
+  - 旧聊天记录只能作为坏样本来源和历史对照,不能作为本轮新代码实端验收。
+
+### 关键决策
+- 🔒 Telegram 表格策略维持“阈值分流”:小表格保留 Markdown,宽表/坏表转字段列表。
+- 🔒 Telegram HTML 是出口格式,不是核心数据模型;核心仍使用平台中立 `MessageContent` / spans。
+- 🔒 unsupported Telegram HTML tag 必须 fallback 成老板可读文本,不能把 raw `<ul>/<li>` 发到 IM。
+- 🔒 实端证据必须分层:renderer golden、Bot API payload golden、真实客户端视觉样本。未发送的 Web 输入框和旧消息记录不能算新证据。
+
+### 留给下一轮
+- 若要补齐真实 Telegram 视觉验收,优先做一个受控 dogfood harness 或由人类客户端发送 1-3 条消息:
+  - `/inbox`
+  - `/view`
+  - `/ask reviewer 只输出本条结果,不要请求协作。请输出一个含小表、宽表、HTML list 风险项的 Telegram 展示样例。`
+- 修 P-044 仍是后续高优:短验收 prompt 应支持 no-collab / exact-output,避免格式 smoke 被自动扩成多角色协作链。
+
+## Round 187 — 2026-07-07 — Codex
+
+### 输入
+- 人类真实执行 Round 186 建议的 Telegram 验收 prompt:
+  `/ask reviewer 只输出本条结果，不要请求协作。请输出一个含小表、宽表、HTML list 风险项的 Telegram 展示样例。`
+- 人类反馈:“这个没有达到预期效果，表格是错乱的。”
+- 人类同时要求不要打扰其电脑使用,因此本轮不再使用 Computer Use / GUI 自动化。
+
+### 思考与讨论
+- 候选 A:继续调阈值,让更小的表格保留 → ❌ 否决。真实反馈已经说明 Telegram 气泡里小表也不可靠。
+- 候选 B:用 `<pre>` 包表格 → ❌ 否决。等宽块在手机气泡里仍有横向阅读和换行问题,且不适合老板快速扫读。
+- 候选 C:Telegram/IM 无裸表格,所有 Markdown table 都转字段列表 → ✅ 选定。符合真实反馈,也让展示策略更简单可测。
+
+### 产出
+- `src/aico/core/message_rendering.py`:
+  - 删除“小表保留 Markdown 表格”的分支。
+  - 所有 Markdown 表格统一渲染为 `• 表头: 主值` + 缩进字段列表。
+  - 表格降级生成的 bullet / 缩进行支持任意短字段 label 加粗,例如 `Sprint`、`风险项`、`状态`。
+- `src/aico/core/native_output.py`:
+  - Telegram native instruction 改为明确禁止 Markdown table。
+  - 要求任意 table-like content 都输出为 bullet field lists。
+- `tests/unit/test_telegram_ux_regression.py`:
+  - 小表测试从“保留 Markdown 表格”改为“降级字段列表”。
+  - 新增“小表 + 宽表 + HTML list”综合展示样例,断言不含 raw Markdown table。
+- `tests/unit/test_message_rendering.py`、`tests/unit/test_native_output.py`、`tests/unit/test_telegram_channel.py`:
+  - 同步更新 rich text、native prompt、Bot API payload golden。
+- `STATUS.md` 和 P-043 更新当前策略:Telegram/IM 不裸发表格。
+
+### 验证结果
+- 先写红灯:
+  - `test_small_markdown_table_falls_back_to_mobile_key_value_rows` 失败,旧实现仍输出 `| Option | Decision |`。
+  - `test_telegram_showcase_sample_uses_no_raw_markdown_tables` 失败,旧实现仍保留 `| 风险项 | 状态 |`。
+  - `test_rich_text_message_renders_small_markdown_tables_as_fields` 失败,旧实现仍输出 pipe table。
+- 修复后:
+  - targeted:`uv run pytest tests/unit/test_telegram_ux_regression.py tests/unit/test_message_rendering.py tests/unit/test_native_output.py tests/unit/test_telegram_channel.py -q`
+    → 47 passed。
+  - full:`uv run pytest -q` → 512 passed, 1 skipped。
+  - `uv run mypy src tests` → no issues。
+  - touched-file `ruff check` / `ruff format --check` → 通过。
+  - `git diff --check` → 通过。
+
+### 关键决策
+- 🔒 Telegram/IM 消息不再裸发 Markdown 表格,包括 2 列小表。
+- 🔒 表格的 IM 形态是字段列表;真正需要二维查看,走 `/view` HTML 或附件。
+- 🔒 不再用 Computer Use 做 Telegram 视觉复测,避免抢用户焦点;真实端验收由用户客户端或后续可编程 harness 完成。
+
+### 留给下一轮
+- 继续修 P-044:no-collab / exact-output,避免格式验收 prompt 被自动协作链放大。
+- 若用户再次验收失败,优先要求一段可复制的 Telegram 气泡文本或截图描述,不要抢用户桌面。
+
+## Round 188 — 2026-07-08 — Codex
+
+### 输入
+- 人类反馈 Round 187 的字段列表不可读:
+  - “现在返回的这个，这是人能看懂的？？？”
+  - 要求“用 telegram 表格”,表格尽量使用表格,可以适当减少字符,并提供懒加载方式看详情。
+- 人类贴出真实坏样本:原始表格被降级成多行 `• 类型: ... / 补充: ...`,其中 `指标 / 数据来源 / 口径 / 当前值 / 期望值 / 风险 / 处理建议`
+  这类真实表头被当成普通数据行和一串 `补充` 字段。
+- 本轮继续遵守“不打扰用户使用”,不使用 Computer Use / GUI 自动化。
+
+### 思考与讨论
+- 候选 A:坚持 Round 187 的字段列表 → ❌ 否决。避免错乱但失去横向比较,人类已明确不可读。
+- 候选 B:回到裸 Markdown pipe table → ❌ 否决。真实 Telegram 已证明 pipe table 会错乱。
+- 候选 C:紧凑 Telegram 表格 + 截断 + `/view` 懒加载详情 → ✅ 选定。既保留表格感,又控制气泡宽度。
+
+### 产出
+- `src/aico/core/message_rendering.py`:
+  - Markdown table 不再降级为字段列表,而是渲染为紧凑等宽表格行。
+  - 长单元格按列数截断,例如长 evidence / seat / 建议列变为 `…`。
+  - 一旦表格截断或列数较多,追加 `详情: /view 查看完整表格`。
+  - 缺表头额外列从重复 `补充` 改为 `补充1/补充2/...`。
+  - 识别“嵌入式新表头”:当 body 中出现更宽行且后续行同宽时,将其作为新表头开启第二张表。
+- `src/aico/core/native_output.py`:
+  - Telegram native instruction 改为优先紧凑 Telegram-readable tables。
+  - 明确长单元格先缩短,详情交给 `/view` 或 `/task`。
+- `tests/unit/test_telegram_ux_regression.py`:
+  - 新增混合宽度真实坏样本,覆盖 `指标/数据来源/口径/当前值/期望值/风险/处理建议` 不再变成一串 `补充`。
+  - 更新“小表 + 宽表 + HTML list”展示样例为紧凑表格 + lazy details。
+- `tests/unit/test_message_rendering.py`、`tests/unit/test_native_output.py`、`tests/unit/test_telegram_channel.py`:
+  - 同步更新 rich text、native prompt、Bot API payload golden。
+- `STATUS.md` 和 P-043 更新当前策略。
+
+### 验证结果
+- 先写红灯:
+  - 9 个 targeted tests 失败,旧实现仍输出字段列表。
+  - 混合宽度表格测试确认旧实现会出现 `补充: 当前值`、`补充: 期望值` 等不可读输出。
+- 修复后:
+  - targeted:`uv run pytest tests/unit/test_telegram_ux_regression.py tests/unit/test_message_rendering.py tests/unit/test_telegram_channel.py tests/unit/test_native_output.py -q`
+    → 48 passed。
+  - full:`uv run pytest -q` → 513 passed, 1 skipped。
+  - `uv run mypy src tests` → no issues。
+  - touched-file `ruff check` / `ruff format --check` → 通过。
+  - `git diff --check` → 通过。
+
+### 关键决策
+- 🔒 Telegram 表格策略不是“裸 pipe table”,也不是“全字段列表”;默认紧凑等宽表格。
+- 🔒 宽表通过截断控制气泡宽度,完整细节交给 `/view` / `/task`。
+- 🔒 当模型输出多个表头粘在一个 Markdown table 中时,renderer 需要识别嵌入式表头,不能把真实列名降级成 `补充`。
+
+### 留给下一轮
+- 让用户用同一条 `/ask reviewer ... 小表、宽表、HTML list ...` 再验一次 Telegram 气泡。
+- 若仍觉得宽,下一轮调 `_table_cell_cap()` 的列宽上限,不要改回字段列表。
+
+## Round 189 — 2026-07-09 — Codex
+
+### 输入
+- 人类要求端到端测试表格和 Markdown 展示问题,如果还有问题就彻底解决。
+- 约束:可以使用 Computer Use,但不要占用主屏幕。本轮继续优先代码 / payload / mock Bot API 验证,不做焦点抢占式 GUI 自动化。
+
+### 思考与讨论
+- 候选 A:直接打开 Telegram Web / Desktop 继续点发送 → ❌ 否决。P-046 已证明 Telegram Web 不是稳定自动发送 harness,且人类明确不要占用主屏幕。
+- 候选 B:只重跑现有 48 条 golden → ❌ 否决。现有 golden 能证明 Round 188 的普通 Markdown 路径,不能证明 native Telegram HTML 直通路径没有绕过 renderer。
+- 候选 C:补一个 native HTML `<pre>` 宽表样本,并在 mock Bot API payload 层验最终 `sendMessage` HTML → ✅ 选定。它覆盖 AICO 实际出口,不打扰用户桌面,也符合机器 Gate 先行。
+
+### 产出
+- `src/aico/core/native_output.py`:
+  - `_contains_markdown_structure()` 在接受 native Telegram HTML 前,先去掉允许 HTML tag 再检测 Markdown table。
+  - `_telegram_html_to_light_markdown()` 对 `<pre>` 内容分流:普通代码仍保留 code block,但 `<pre>` 中的 Markdown table 交给 rich text renderer 生成紧凑表格。
+- `tests/unit/test_native_output.py`:
+  - 新增 `<pre>` 包 Markdown pipe table 的 red-green 回归,确认 native HTML 不再直通。
+  - 断言回退后仍有 `详情: /view 查看完整表格`,且 `详情` 是字段 label,不是整行 code block。
+- `tests/unit/test_telegram_channel.py`:
+  - 新增 mock Bot API payload golden,确认 `sendMessage` payload 不含 raw `|---|---|---|---|`,并包含 `<b>详情</b>: <code>/view</code> 查看完整表格`。
+- `STATUS.md`、`docs/journal/PITFALLS.md` 更新 Round 189 状态和 P-047。
+- `CHANGELOG.md` 记录 Unreleased / Fixed。
+
+### 验证结果
+- 先写红灯:
+  - `test_telegram_html_message_rejects_unsupported_html_and_markdown` 失败,旧实现接受 `<pre>` 包 Markdown table。
+  - `test_agent_output_message_reformats_native_pre_markdown_tables` 失败,旧实现以 `native_format=telegram_html` 原样返回。
+  - `test_telegram_channel_does_not_send_native_pre_markdown_table_raw` 失败,最终 payload 仍包含 `|---|---|---|---|`。
+  - 第一次修复后又暴露 `/view` 提示被整行 code span 吃掉,补充 red assertion 后再修。
+- 修复后:
+  - 新增红灯聚焦测试:2 passed。
+  - native/channel targeted:`29 passed`。
+  - Telegram UX 相关链路:`50 passed`。
+  - full pytest:`515 passed, 1 skipped`。
+  - `uv run mypy src tests`:no issues。
+  - touched-file `ruff check` / `ruff format --check`:通过。
+  - `git diff --check`:通过。
+
+### 关键决策
+- 🔒 native Telegram HTML 不是可信终态;即使 tag 合法,仍要识别内部是否藏着 Channel 不适合直通的 Markdown table。
+- 🔒 `<pre>` 可以保留代码 / 日志,但 `<pre>` 中的 Markdown table 必须回到统一 renderer,避免绕过紧凑表格和 `/view` lazy details。
+- 🔒 本轮端到端证据以 mock Bot API payload 为准;未使用 Computer Use / Telegram Web,不把旧聊天记录当作新代码证据。
+
+### 留给下一轮
+- 若仍要做真实客户端体感验收,优先使用可编程 Telegram dogfood harness 或让人类客户端发送 1 条代表性样本,不要依赖 Telegram Web 自动点击。
+- P-044 仍是高优:短格式展示验收 prompt 需要 no-collab / exact-output 通道,避免格式 smoke 被多 agent 协作链放大。
+
+## Round 190 — 2026-07-09 — Codex
+
+### 输入
+- 人类指出 `/dream` 产出的 candidate experience 如果需要老板主动知道 `/experience review`,动线仍不够省心。
+- 明确目标:实现“系统/lead 把候选经验推到老板面前确认”,并端到端模拟同意和不同意两种情况。
+
+### 思考与讨论
+- 候选 A:只增强 `/dream` 文案 → ❌ 否决。老板离线后不一定看过 `/dream` 输出,仍不是 boss-absent。
+- 候选 B:新增单独通知命令 → ❌ 暂不做。已有 `/inbox` 和 `/morning` 是老板回收上下文的主入口,不应再造平行入口。
+- 候选 C:把 candidate experience 纳入 `/inbox` 和 `/morning` → ✅ 选定。candidate 保持不可自动注入,但会被推到老板可见队列,由 promote/archive 完成确认闭环。
+
+### 产出
+- `src/aico/core/inbox.py`:
+  - `inbox_message()` 新增 `experience_candidates` 输入。
+  - 无其他待办时,候选经验会成为第一行动:`review experience <id> -> /experience review`。
+  - 增加“经验候选”区,直接展示 promote / archive 两条确认动作。
+- `src/aico/core/morning.py`:
+  - `morning_message()` 新增 `experience_candidates` 输入。
+  - 早晨摘要显示 `Experience candidates` 并把 `/experience review` 放进 Next actions。
+- `src/aico/core/orchestrator_command_registry.py`:
+  - 当前项目 `/inbox`、`/morning`、自动 morning push 都从 memory store 查询 `status=candidate` 的 experience。
+- `tests/unit/test_inbox.py`:
+  - 新增 candidate experience boss-facing 渲染测试。
+- `tests/unit/test_pop_culture_memory_dream_showcase.py`:
+  - 芙莉莲式 case 模拟老板同意: `/dream` -> `/inbox` -> `/morning` -> `/experience promote ... as implementer` -> candidate 从 inbox 消失 -> active experience 注入 role prompt。
+  - 无限城式 case 模拟老板不同意: `/dream` -> `/inbox` -> `/morning` -> `/experience archive <id>` -> candidate 从 inbox 消失 -> 后续 role prompt 不注入该经验。
+- `STATUS.md` 和 `docs/journal/PITFALLS.md` 更新本轮状态与新坑。
+
+### 验证结果
+- 先写红灯:
+  - `test_inbox_message_surfaces_candidate_experience_review` 失败:`inbox_message()` 不接受 `experience_candidates`。
+  - 两个 showcase E2E 失败:真实 `/inbox` 不含“经验候选”。
+- 修复后:
+  - `uv run pytest tests/unit/test_inbox.py tests/unit/test_pop_culture_memory_dream_showcase.py -q`
+    → 5 passed。
+  - `uv run pytest tests/unit/test_inbox.py tests/unit/test_orchestrator.py tests/unit/test_pop_culture_memory_dream_showcase.py tests/unit/test_memory.py -q`
+    → 101 passed。
+  - `uv run pytest -q` → 516 passed, 1 skipped。
+  - `uv run mypy src tests` → no issues。
+  - touched-file `ruff check` / `ruff format --check` → 通过。
+  - `git diff --check` → 通过。
+
+### 关键决策
+- 🔒 `/dream` 仍只产生 candidate experience,不会绕过老板确认直接变 active。
+- 🔒 candidate experience 必须进入老板恢复入口(`/inbox` / `/morning`),否则就是隐藏后台状态,不符合 absence-first。
+- 🔒 “不同意”复用现有 `/experience archive <id>` 生命周期,不新增重复的 reject 状态。
+
+### 留给下一轮
+- 可继续把候选经验确认做成更短的 inline action 风格,例如 `/experience accept <id> as <role>` / `/experience reject <id>`,但前提是保持 `promote/archive` 生命周期兼容。
+- 如果要上真实 IM 体验,优先验证 `/inbox` 气泡里 promote/archive 两个动作是否足够可读。
+
+## Round 191 — 2026-07-15 — Codex
+
+### 输入
+- 人类明确要求修复 Telegram 输出格式,核心是“表格要用 Telegram 支持的表格形式”,
+  并要求使用已登录的 Web Telegram 做端到端浏览器验证。
+- 桌面 Telegram app 启动就退出;能安全修就说明原因,不能则使用 Web Telegram 兜底。
+- 继续遵守“不用焦点抢占式桌面自动化”,优先使用可编程 DOM、payload、runtime 日志和 Bot API 证据。
+
+### 思考与讨论
+- 候选 A:让 core renderer 新增 Telegram 专用 table block 类型 → ❌ 否决。当前 core 已经生成对齐等宽行,
+  为一个 Channel 扩展跨平台 IR 会放大改动面。
+- 候选 B:把所有 code span 都转为 `<pre>` → ❌ 否决。这会把 `/view`、task id 和其他行内命令误放大。
+- 候选 C:Telegram Channel 只合并“至少两个、连续、完整行、仅差一个换行”的 code spans → ✅ 选定。
+  这与 Telegram 的 `<pre>` 块语义一致,且不会污染其他 Channel。
+
+### 产出
+- 新增设计和执行文档:
+  - `docs/superpowers/specs/2026-07-15-telegram-pre-table-design.md`;
+  - `docs/superpowers/plans/2026-07-15-telegram-pre-table.md`。
+- `src/aico/channel/telegram.py`:
+  - `_html_text()` 在逐 span 转换前识别连续整行 code run;
+  - `_preformatted_run()` 确认 run 至少有两行,并且严格以单个换行相邻;
+  - `_is_full_line()` 防止行内 code 被误合并;
+  - 匹配的 run 生成一个 escaped `<pre>...</pre>`,其他 span 保持旧映射。
+- `tests/unit/test_telegram_channel.py`:
+  - 小表、宽表和 native `<pre>` Markdown table fallback 都断言恰好一个 `<pre>`;
+  - 断言不再出现表首行 `<code>Option...`;
+  - 断言 `/view` 仍是块外行内 `<code>`;
+  - 新增普通行内 code 不被转为 `<pre>` 的回归。
+- 项目记录:
+  - `STATUS.md` 更新为 Round 191;
+  - `PITFALLS.md` 新增 P-049,更新 P-041 / P-046;
+  - `BLOCKERS.md` 关闭 B-007 的 UI tooling 阻塞,新增 B-008 Codex CLI/model 兼容性;
+  - `CHANGELOG.md` 记录 Telegram 单 `<pre>` 表格块修复。
+
+### Telegram Desktop 诊断
+- 当前只安装 `/Applications/Telegram.app`,版本 12.8(build 282010),universal binary。
+- `open -n` 和直接执行都能启动进程,但约 0.1 秒后主动 exit 0;macOS 无 crash report,不是可归因的崩溃。
+- Telegram 自身 technical log 显示 account database 成功打开且开始网络握手,但没有 fatal / exception。
+- `codesign --verify --deep --strict` 报 `CSSMERR_TP_NOT_TRUSTED`,但没有证据证明这就是主动 exit 0 的原因。
+- 为避免损坏登录和历史数据,本轮未删除 group container、未重置账号、未重装 app,改用 Web Telegram。
+
+### 端到端执行与结果
+1. 启动真实 `aico-phase1` runtime,使用已登录 Telegram Web 进入 `@ai_co_telegram_bot`。
+2. 通过页面可见 DOM 中的 `div[contenteditable=true]` 发送真实 `/ask reviewer ...`:
+   - runtime 收到 update 221999561 / message 1412;
+   - Orchestrator 解析 `command=ask`,创建 reviewer task `ca470bc4-...`,Telegram 返回 accepted;
+   - Codex Adapter 失败原因明确为 `codex-cli 0.142.4` 不支持全局配置的 `gpt-5.6-sol`,已单独记录 B-008。
+3. 使用同一生产出站链路 `agent_output_message -> TelegramChannel -> sendMessage` 发送确定性表格样例:
+   - Bot API 返回 message id 1415;
+   - Telegram Web 最新气泡显示独立标题、单个等宽表格块、对齐列、复制控件和块外 `/view`;
+   - 只读 DOM 证据明确为一个 `PRE > CODE`,文本包含表头、分隔行和两行数据。
+4. 验收后停止 runtime,并将 Telegram Web 保留在最新验收气泡位置。
+
+### 验证结果
+- TDD 红灯:
+  - 宽表和 native fallback 的 payload 断言 `<pre>` 失败,旧实现实际输出 3 个 `<code>` 行。
+- 修复后 targeted:
+  - Telegram Channel:`19 passed`;
+  - renderer / native / channel / UX:`51 passed`。
+- 全量:
+  - `uv run pytest -q` → `517 passed, 1 skipped`;
+  - `uv run ruff check .` → passed;
+  - `uv run mypy src` → no issues in 84 source files;
+  - `git diff --check` → passed。
+- 真实客户端:
+  - Bot API send succeeded;
+  - Telegram Web DOM = one `PRE > CODE`;
+  - 视觉样本列对齐、可复制、宽表截断且保留 `/view` 懒加载入口。
+
+### 关键决策
+- 🔒 Telegram 表格的可商用出站形态是单个 `<pre>` 块,不是多个逐行 `<code>`。
+- 🔒 Core 保持平台中立对齐内容,Telegram Channel 负责平台原生 HTML 块,不新增 Telegram 专用 core 模型。
+- 🔒 无 crash report 且 exit 0 时不能宣称“已修复桌面 app 崩溃”;未确定根因时用 Web 兜底,不删登录数据。
+- 🔒 真实 E2E 必须分开“Channel 格式”和“Provider 执行”;本轮表格已通过,但 B-008 仍需后续处理。
+
+### 留给下一轮
+- 人类需决定 B-008 采用“升级全局 Codex CLI”还是“AICO 项目级 model override”;未决定前不应擅改全局配置。
+- 如继续做 Telegram 商用化,下一个格式切片应是精简 provider raw error 的 IM 呈现,不是再改表格策略。
+
+## Round 192 — 2026-07-17 — Codex
+
+### 输入
+- 人类要求先修复本轮遇到的问题,再继续 Telegram 表格修复和真实浏览器端到端验证。
+- 已登录 Web Telegram `@ai_co_telegram_bot`;允许发送真实验收消息。
+
+### 思考与讨论
+- 候选 A:通过修改全局模型绕过旧 CLI → ❌ 否决。模型配置本身有效,错误明确要求升级 CLI;改模型会隐藏真实兼容问题。
+- 候选 B:把表格额外列 `补充1` 直接隐藏 → ❌ 否决。真正的行列不齐仍需要补充列,只能分离已闭合表格后的粘连正文。
+- 候选 C:按表头列数识别行尾闭合 pipe,把其后的无 pipe 文本拆出并对 `/view` 提示去重 → ✅ 选定。
+- 候选 D:对所有 Telegram timeout 重试 → ❌ 否决。read/write timeout 时请求可能已送达,盲目重试会产生重复消息。
+- 候选 E:仅对 `httpx.ConnectTimeout` 重试一次 → ✅ 选定。该错误发生在连接建立阶段,覆盖本轮 TLS 握手抖动且边界明确。
+
+### 产出
+- 环境修复:
+  - PATH 中 `@openai/codex` 从 `0.142.4` 升级到稳定版 `0.144.5`;
+  - 相同全局 `gpt-5.6-sol` 最小调用成功返回 `AICO_CODEX_OK`,B-008 关闭。
+- `src/aico/core/risk.py`:
+  - 去掉宽泛的 `命令` marker,改为显式运行命令语义;
+  - “输出详情命令”保持 read-only,但中文 `执行` 和显式“运行命令/脚本/测试”仍判为 shell execution。
+- `src/aico/core/message_rendering.py`:
+  - 按表头列数分离完整表格末行后粘连的可识别 `/view` 详情提示;
+  - 模型输出的 `详情命令: /view` 与 renderer 自动 lazy-detail 提示等价时去重;
+  - 真正的额外业务列无论是否省略末尾 pipe,仍保留 `补充1/补充2` 兼容行为。
+- `src/aico/channel/telegram.py`:
+  - JSON 消息和附件请求共用一次 `ConnectTimeout` 重试;
+  - Telegram API 业务错误和 read/write timeout 不在该重试范围。
+- 新增风险识别、表格粘连和 TLS 建连重试回归测试。
+
+### 端到端执行与结果
+1. 第一次真实重试发现风险识别把展示文案“详情命令”误判成 `shell_exec`,补 TDD 后修复。
+2. 第二次真实 `/ask reviewer`:
+   - Codex Adapter return code 0,证明 CLI/model 兼容问题已解决;
+   - 最新表格却出现虚假第 5 列 `补充1`,DOM 文本显示末行的详情提示被当成列,据此补 TDD 修 renderer。
+3. 第三次重试在 Telegram ack 阶段出现 `httpx.ConnectTimeout`,adapter 已完成但 handler 中断;
+   这是本轮第二次同类 TLS 超时,补 TDD 后加入一次连接重试。
+4. 最终 `ROUND192C` 真实 E2E:
+   - 入站 update `221999565`,message `1420`;
+   - reviewer task `d7ac4939-f49b-418b-8558-9d75523da152` accepted;
+   - Codex return code 0,6 段流式输出完成,`stream finished` 和 `handler finished`;
+   - Telegram Web 最新气泡为四列单 `<pre>` 表格,无 `补充1`,块外仅一条 `/view`;
+   - 视觉检查确认表头、两行数据、截断、复制控件和气泡宽度均正常。
+5. 验收后停止 AICO runtime,Telegram Web 留在最新验收结果。
+
+### 验证结果
+- TDD 红灯均先复现:
+  - 展示型“详情命令”误判 shell;
+  - 表格末行粘连生成 `补充1`;
+  - 首次 `ConnectTimeout` 直接中断发送。
+- 修复后专项 gate:`53 passed`。
+- 全量:`522 passed, 1 skipped`。
+- `ruff check .`、`mypy src`(84 个 source files)、`git diff --check` 通过。
+- 本轮 touched files 的 `ruff format --check` 通过;全仓 format check 仍报告既有未提交文件
+  `projects/data-agent-v1/src/data_agent_v1/engine.py`,本轮未越界改动。
+
+### 关键决策
+- 🔒 表头之外的列不能一概删除;只有“预期闭合 pipe 后可识别的 `/view` 详情提示”才视为粘连正文。
+- 🔒 Telegram 出站只重试连接建立失败,不以可靠性为名扩大重复发送风险。
+- 🔒 真实端到端验收必须使用真实 role agent 正文;确定性样例只用于先隔离 Channel 格式问题。
+- 🔒 CLI/model 兼容应先用同模型最小调用定位,不能把 provider 400 混记成 Telegram 格式失败。
+
+### 留给下一轮
+- Telegram 表格主链路已闭环,后续除非出现新的真实坏签名,不要继续改表格策略。
+- CLI 快速演进仍需在真实 dogfood 前做版本和同模型最小调用;只有频繁漂移时再评估项目级 model override。
+
+## Round 193 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造在 human-absent / boss-absent 前提下可用于个人公司商业运营的 multi-agent 系统。
+- 当前证据显示 Data-Agent Telegram baseline 的最高价值未关闭缺口是 P-044:短格式验收会被协作链放大,
+  `/ask lead` 的实际岗位路由不透明,并引发不必要的 provider session 争用。
+
+### 思考与讨论
+- 候选 A:只在 provider prompt 中追加“不要协作” → ❌ 否决。模型仍可能输出 `@role`,旧 stream parser 仍会创建 child task。
+- 候选 B:全局关闭 `/ask` 协作 → ❌ 否决。正常项目任务需要跨角色协作,不能为了格式 smoke 砍掉核心壁垒。
+- 候选 C:显式 `/ask --exact` + 明确自然语言识别 + task metadata 执行契约 → ✅ 选定。
+  约束随 task 进入执行和 stream 层,既能阻止自动工作流扩展,也能阻止 provider 输出意外触发 child task。
+- `lead/default` 继续作为当前 lead role 别名,但解析结果必须在 IM 显示;不改变既有 appointment 语义。
+
+### 产出
+- `src/aico/core/collaboration.py`:
+  - 新增 exact-output 意图识别;
+  - exact task 追加最小 prompt 约束并写 `aico.collaboration_mode=disabled`;
+  - 提供 stream 层可读的 collaboration-disabled 判定。
+- `src/aico/core/project_commands.py`:
+  - 支持 `/ask --exact <role> <task>` 和 `/ask <role> --exact <task>`;
+  - 明确“只输出本条/不要请求协作/do not delegate”等自然语言自动进入 exact-output。
+- `src/aico/core/orchestrator.py`:
+  - exact-output 跳过 lead decision 和自动 Goal Brief;
+  - disabled task 不解析 `@role` 协作指令;
+  - `lead/default` 映射到实际岗位时发送可读 Routing 提示。
+- 更新 `/help`、daily ops、CHANGELOG、STATUS 和 P-044。
+
+### 验证结果
+- TDD 红灯先复现 3 个签名:
+  - `/ask --exact` 被当成 role,零任务提交;
+  - 自然语言“不要请求协作”仍产生 parent + child 两个任务;
+  - exact lead 无法提交,且旧路径会进入多角色 decision workflow。
+- 修复后:
+  - orchestration / command / collaboration / assignment 相关回归:`112 passed`;
+  - full pytest:`526 passed, 1 skipped`;
+  - `uv run ruff check .`:通过;
+  - `uv run mypy src tests`:147 个 source files 无问题;
+  - touched-file `ruff format --check`、`git diff --check`:通过;
+  - 本轮 touched production 结构无 class >=500 行或 function >=100 行。
+- 全仓结构扫描仍发现 HEAD 已存在的 `build_phase1_runtime` 为 108 行,本轮未改该方法,没有把无关重构混入 P-044。
+- Chrome 只读检查确认 Telegram Web 有登录态,但当前页是私人会话而非 AICO bot;没有针对发送外部测试消息的明确授权,
+  因此未发送真实 IM 样本,不把登录态冒充端到端证据。
+
+### 关键决策
+- 🔒 exact-output 是 task 执行契约,不是一句易漂移的 prompt 文案。
+- 🔒 正常 `/ask` 仍保留多 Agent 协作;只有显式 flag 或明确同义约束关闭 delegation。
+- 🔒 `lead/default` 是别名而不是独立岗位;实际 role / agent 必须对老板可见。
+- 🔒 实端发送需要目标明确的外部动作授权;机器 Gate 通过不等于真实 Telegram 已复验。
+
+### 留给下一轮
+- 收口 P-044 剩余项:把 provider session busy 原始错误翻译为老板可执行提示,并保留 `/task` / logs 诊断细节。
+- 获得针对 AICO bot 的发送授权后,跑 1 条 `/ask --exact reviewer ...` 真实样本,核对单 task、零 collaboration audit。
+
+## Round 194 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造在 human-absent / boss-absent 前提下可用于个人公司商业运营的 multi-agent 系统。
+- Round 193 已关闭短验收协作放大,本轮收口 P-044 最后一项:provider session 并发时不能把
+  `Session ID ... is already in use` 原样暴露给老板,同时不能牺牲诊断证据。
+
+### 思考与讨论
+- 候选 A:Adapter 捕获后只返回友好错误 → ❌ 否决。TaskBus snapshot/audit 会丢失原始 provider 证据,
+  `/task` 和后续排障无法还原根因。
+- 候选 B:检测 busy 后自动新建 provider session → ❌ 否决。新 session 会静默切断岗位连续上下文,
+  不符合 boss-absent 场景的可预测性。
+- 候选 C:TaskBus 保留原始错误,在老板展示层做签名分类和恢复指引 → ✅ 选定。
+  已知 busy 签名转为可执行提示,未知错误仍原样可见。
+
+### 产出
+- `src/aico/core/command_messages.py`:
+  - 新增 provider session busy 分类、即时错误消息和摘要;
+  - `/tasks`、`/audit` 等老板列表使用安全摘要,显式 `/task` 保留原始 reason。
+- `src/aico/core/orchestrator.py`:
+  - task stream 的已知 busy 错误返回 role busy、`/tasks`、等待或 `/interrupt`、重试和详情入口;
+  - 未知 provider 错误继续显示原始 `ERROR`。
+- `src/aico/core/inbox.py`、`morning.py`、`project_messages.py`:
+  - 老板恢复面统一使用同一错误摘要,不再泄漏 provider session id。
+- `src/aico/view/snapshot.py`、`view/app.py`:
+  - Boss Brief、Timeline、task 描述统一脱敏;read-only 可视化不再成为旁路泄漏点。
+- 更新 daily ops、CHANGELOG、STATUS 与 P-044。
+
+### 验证结果
+- TDD 红灯先复现:
+  - 即时 IM 原样显示 `Session ID ... is already in use`;
+  - `/tasks`、`/audit`、`/inbox`、`/morning` 仍能从 snapshot/audit 二次泄漏;
+  - project blocker 与 aico-view Boss Brief / Timeline 仍能旁路泄漏。
+- 修复后:
+  - 相关 orchestration / recovery / project / view 回归:`122 passed`;
+  - full pytest:`531 passed, 1 skipped`;
+  - `uv run ruff check .`:通过;
+  - `uv run mypy src tests`:147 个 source files 无问题;
+  - `git diff --check`:通过。
+- 原始错误仍可从 TaskBus snapshot/audit 和显式 `/task` 读取;未知 provider 错误回归确认没有被误分类。
+- 本轮没有针对 AICO bot 的外部发送授权,因此未发送真实 Telegram 样本,不把机器 Gate 冒充真实 IM 证据。
+
+### 关键决策
+- 🔒 原始 provider 错误属于执行证据,必须保存在 TaskBus 与显式诊断入口;老板摘要只改变展示,不改事实。
+- 🔒 session busy 的默认恢复策略是“查运行任务 → 等待或中断 → 重试”,不自动创建新 session。
+- 🔒 错误分类必须窄匹配已知签名;未知错误保持可见,避免友好文案掩盖新故障。
+- 🔒 同一安全摘要必须覆盖即时输出、恢复面、project 消息和 aico-view,不能只修单一 Telegram 气泡。
+
+### 留给下一轮
+- P-044 功能项已关闭;没有新真实坏签名时不要继续扩大 session 策略。
+- 获得针对 AICO bot 的发送授权后,可用 1 条 exact-output 和 1 条受控 session-busy 样本补真实 IM 证据。
+- 默认回到 `STATUS.md` 当前最高优:SME Agent Phase 1 真实 project office dogfood 与商业交付闭环。
+
+## Round 195 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造在 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 194 已关闭 AICO provider session busy 泄漏;本轮按状态最高优回到 SME Agent 商业交付闭环。
+- 选择不依赖外部登录/发布的高价值缺口:让商家能把自己的脱敏直播 CSV 放进真实本地工作台,而不是只能看内置样例。
+
+### 思考与讨论
+- 候选 A:继续扩 AICO 编排抽象 → ❌ 否决。当前更缺可付费产品交互和真实输入闭环。
+- 候选 B:先做云端 SaaS 上传 → ❌ 否决。认证、租户隔离、留存和部署尚未决策,会扩大数据风险。
+- 候选 C:localhost 同源、内存 intake + 受治理字段映射 + 缺字段追问 → ✅ 选定。
+  既能支撑 199 RMB 字段体检/轻诊断,又不跨越真实客户数据和平台语义授权边界。
+
+### 产出
+- 新增 `LiveCommerceCsvIntakeService`:严格 CSV 解析、大小/行数限制、重复表头拒绝、模板字段映射、证据 readiness 和补数问题。
+- 扩展 live-commerce diagnosis 的 text/row 入口,完整输入复用原确定性指标、finding、human checks 和 Markdown 报告。
+- 本地工作台新增两份 CSV 的文件选择/文本粘贴、`/api/live-commerce/intake`、隐私提示与证据不足状态。
+- 缺字段或只有表头时不返回 metrics/findings/report;完整证据才展示诊断。
+- 新增 Goal Brief、单测、P-003,并同步 SME README、dogfood runbook、STATUS、ROUNDS 和 handoff。
+
+### 验证结果
+- TDD 红灯先复现缺失 intake 模块/HTTP payload;后续红灯修正样例行数假设、sandbox socket 限制和隐私文案契约。
+- intake/workbench 定向:`11 passed`;SME full:`44 passed`。
+- SME Ruff check、format check、strict mypy(34 source files)通过。
+- Chrome 渲染验收:
+  - 缺字段样例返回一级类目、店铺 ID、支付金额等明确问题,不展示付费报告;
+  - 完整样例返回支付 GMV 500、退款率 0.10、GPM 500.00 及受治理报告;
+  - 390 x 844 视口无横向溢出;Console 仅有 Grammarly 扩展噪声,没有工作台错误。
+- 完整 AICO pytest:`538 passed, 1 skipped`;root Ruff check、mypy(147 source files)、SME touched-file format 和 `git diff --check` 通过。
+- full-root Ruff format check 仍报告一个本轮未触碰的既有文件:`projects/data-agent-v1/src/data_agent_v1/engine.py`;为避免扩大 SME slice,未顺手改该文件。
+- touched production 结构扫描无 class >=500 行或 function >=100 行。
+
+### 关键决策
+- 🔒 缺少证据不能解释为经营指标为零;readiness 必须先于诊断。
+- 🔒 自助入口当前只承诺 localhost 内存处理,不假装已有 SaaS 的认证、租户和留存能力。
+- 🔒 字段别名来自受治理 domain template;不通过 LLM 猜列语义或补缺失金额。
+- 🔒 真实商家数据、平台口径确认和外部发布仍由人类授权;本轮没有扩张权限。
+
+### 留给下一轮
+- 由商家老板主观验收补字段问题和完整报告是否值得 199 RMB 入门报价。
+- 下一本地产品切片:live-commerce customer workspace runner,把 mapping、questions、evidence manifest、redaction checklist 和 delivery draft 固化为可交付证据。
+- 小红书首评/第二帖继续停在明确的人类外部动作边界。
+
+## Round 196 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造在 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 195 已让商家自己的 CSV 进入本地工作台;本轮继续补真实商业闭环,把临时 intake 变成可审计、可交接、不会覆盖历史的客户交付 run。
+
+### 思考与讨论
+- 候选 A:直接让 workbench 把 CSV 写入客户目录 → ❌ 否决。缺 authorization trace、隐私 gate 和 immutable run,会把方便路径变成数据留存风险。
+- 候选 B:沿用 generic ecommerce runner 的单一 draft 路径 → ❌ 否决。重试会覆盖旧决策证据,boss absent 时无法还原。
+- 候选 C:customer/run-id 不可变目录 + authorization reference + derived-by-default + privacy-gated raw opt-in → ✅ 选定。
+- 这是第二个具体交付垂类,按 Rule of Three 不引入通用 workflow framework/database runner 抽象。
+
+### 产出
+- 新增 `LiveCommerceDeliveryRunner` 和 `sme-agent-live-commerce-deliver` CLI。
+- 每个 accepted run 都写 field mapping、missing-field questions、redaction checklist、evidence manifest 和 delivery status;只有 ready run 写 diagnosis draft。
+- EvidenceItem 向后兼容增加 SHA-256、row count、retention state、workspace path;旧 ecommerce runner 继续复用既有 contract。
+- 同 run ID 写入前失败;authorization reference 不能为空;raw CSV 默认不复制,blocked run 即使 opt-in 也不复制。
+- 新增 Goal Brief、6 条 delivery tests、operator runbook、ADR-0003、P-004,同步 SME/parent continuity docs。
+
+### 验证结果
+- TDD 红灯先复现 `live_commerce_delivery` 模块不存在。
+- targeted delivery:`6 passed`;SME full:`50 passed`;parent full:`544 passed, 1 skipped`。
+- root Ruff check、SME format、SME strict mypy(37 source files)、root mypy(147 source files)、touched production structure scan 和 `git diff --check` 通过。
+- full-root Ruff format 仍仅报告本轮未触碰的 `projects/data-agent-v1/src/data_agent_v1/engine.py`,未扩大范围修改。
+- 真实 `uv run --project projects/sme-agent sme-agent-live-commerce-deliver` 样本成功创建 `/tmp/sme-live-delivery.OlIryj/.../round20-cli-001`:
+  - 7 个 derived/customer artifacts 齐全;
+  - manifest 记录 live sessions 2 行、orders 7 行及 SHA-256;
+  - status 为 `ready_for_human_review`;
+  - raw 未保留(`RAW_NOT_RETAINED`)。
+
+### 关键决策
+- 🔒 customer delivery 是 immutable run,不是一个可被重试覆盖的最新文件。
+- 🔒 authorization reference 是可追溯 claim,不是系统自动证明其法律充分性。
+- 🔒 blocked 是可交接商业状态,必须有 artifact;缺证据/隐私风险不能只变成终端异常。
+- 🔒 原始客户数据默认不持久化;显式 opt-in 也不能越过 readiness/redaction gate。
+
+### 留给下一轮
+- 由商家老板验收一份 workbench intake + immutable evidence workspace,判断 199 RMB 交付是否看得懂、是否可信。
+- 验收后再把 workbench 和 runner 通过显式 operator action 连接;必须填写 authorization reference,raw retention 默认关闭。
+- 小红书首评/第二帖和真实商家数据继续停在人类授权边界。
+
+## Round 197 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造在 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- `STATUS.md` 的非人类可执行缺口要求把 `/view` 第一屏从后台观测页改成老板接管页:审批、阻塞、昨夜产出和第一行动优先。
+- 实现前检查还发现同一 SQLite/audit truth 下,项目标题并没有阻止其它项目任务或事件进入附件。
+
+### 思考与讨论
+- 候选 A:让 LLM 总结全部 Timeline → ❌ 否决。不可重复、可能漏掉审批,还扩大敏感数据输入面。
+- 候选 B:新增可写 dashboard/server → ❌ 否决。破坏“IM 自包含 attachment、写回 IM”的 ADR-0036 边界。
+- 候选 C:project-scoped disposable projection + 确定性 attention priority → ✅ 选定。它直接回答老板回来后的四个问题,又不新增权威状态。
+
+### 产出
+- Boss Brief 第一屏新增审批/阻塞/运行中/夜间托管计数、唯一 First action、Approval needed / Blockers / Overnight results 三类卡片。
+- First action 优先级固定为 approval → blocker → running → overnight → quiet;所有动作仍是回 IM 的命令 deep link。
+- task record/snapshot、audit、memory 和 offline delegation 在 unified event 聚合前按目标 project 隔离。
+- recent tasks、Timeline、Trace、Memory 保留为下层证据面;provider session busy 继续使用安全摘要。
+- 新增产品化 spec、P-052 和 B-009,同步 operator/architecture/STATUS/CHANGELOG。
+
+### 验证结果
+- TDD 红灯先证明旧 HTML 没有 First action/attention cards,随后 7 条 snapshot tests 全绿。
+- snapshot/view/offline-delegation 定向回归:`22 passed`;touched Ruff check 与 mypy 通过。
+- 代表性 `/tmp/aico-view-round197.html` 已生成;Browser 插件因 URL policy 拒绝本地 `file://` attachment。
+- 按安全策略未用临时 localhost、data URL 或其它浏览器绕过;desktop/mobile screenshot/overflow/interaction 不冒充通过,记录为 B-009。
+- 完整 root pytest:`546 passed, 1 skipped`;root Ruff check、mypy(147 source files)、touched-file format、structure scan 和 `git diff --check` 通过。
+- full-root Ruff format 仍只报告本轮未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`,未扩大范围顺手修改。
+
+### 关键决策
+- 🔒 project id 是多源 read model 的数据边界,不是标题参数。
+- 🔒 Boss Brief 先给决策与恢复动作,原始事件和记忆统计下沉为证据。
+- 🔒 HTML attachment 只读;审批/拒绝/中断等写操作继续回 IM 二次执行。
+- 🔒 浏览器安全策略失败不是视觉验收成功;没有 screenshot 就不声称视觉已验证。
+
+### 留给下一轮
+- 用策略允许的真实 Telegram attachment 下载页补 B-009 的 desktop/mobile 视觉证据;不要为截图把 `/view` 产品化成本地 Web 服务。
+- 根据真实手机第一屏体感决定是否需要压缩卡片文案;没有样本前不再凭空改 CSS。
+- 默认回到 `STATUS.md` 最高优的 SME Agent 商业交付闭环。
+
+## Round 198 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造在 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 196 已有不可变交付 runner,但真实老板还缺少一个不制造持久状态、能判断 `199 RMB` 入口产品是否成立的验收面。
+
+### 思考与讨论
+- 候选 A:立即在浏览器加“创建客户 workspace” → ❌ 否决。老板尚未接受产品,UI 也不能制造 authorization reference。
+- 候选 B:只展示一段交付说明 → ❌ 否决。无法证明 UI 与 runner 状态一致,也暴露了 direct PII 仍可出报告的真实风险。
+- 候选 C:复用 delivery assessment 的只读 artifact preview + page-local checklist → ✅ 选定。可验收产品价值,但不跨越持久化和授权边界。
+
+### 产出
+- 新增 `LiveCommerceDeliveryPreview`,ready 时预览 6 个固定治理 artifact 和条件式 diagnosis draft,blocked 时明确省略诊断。
+- workbench 增加不可变交付包预览、安全边界说明和 5 项 `199 RMB` 老板验收清单。
+- 修复 direct-personal-data 输入仍显示/复制报告的漂移:`blocked_redaction` 统一压制指标、finding、报告和商业控件。
+- 新增 preview/privacy/UI tests、Goal Brief、SME P-005、root P-053,并更新 README、runbook、CHANGELOG、两级状态与 handoff。
+
+### 验证结果
+- SME full gate:`53 passed`;Ruff check、37 files format check、strict mypy(27 source files)通过。
+- root full pytest:`549 passed, 1 skipped`;Ruff check、mypy(147 source files)、structure scan、`git diff --check` 通过。
+- full-root Ruff format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`,未扩大范围顺手修改。
+- 真实 localhost Browser QA 覆盖 desktop/390px mobile ready 与 `手机号` redaction-blocked 两态;无横向溢出,console 为空。
+- 验收交互从 `0 / 5` 变为 `1 / 5`,但“愿意支付 199”保持未选,不冒充真实老板决策。
+
+### 关键决策
+- 🔒 preview 不是 authorization,不创建客户目录、不保留 raw CSV、不写验收决定。
+- 🔒 商业输出面与持久化 runner 必须共享 readiness/redaction status;提示文案不能替代硬门禁。
+- 🔒 机器 QA 证明“可以判断”,不能证明“老板愿意付费”。
+
+### 留给下一轮
+- 由真实商家老板完成 5 项验收并给出 `199 RMB` 主观判断。
+- 只有明确接受后,才增加 operator-only create-delivery action;authorization reference 必填,raw retention 默认关闭。
+- 真实商家数据、小红书首评/第二帖和其它外部动作继续停在人类授权边界。
+
+## Round 199 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- 真实 SME Telegram project-office 样本仍受运行态/凭据和浏览器策略约束,不能把机器检查冒充真实 IM 闭环。
+- 选择 Future F-1 的最小安全切片:让 lead 在老板沉默、项目空闲时提出下一步,但不获得自我授权。
+
+### 思考与讨论
+- 候选 A:定时直接创建/执行 lead task → ❌ 否决。岗位职责不是 blanket authorization,会把 boss-absent 偷换成 boss-uncontrolled。
+- 候选 B:让 LLM 扫 STATUS/BLOCKERS 自由规划 → ❌ 否决。自由文本不是稳定授权契约,不可重复且容易读取陈旧状态。
+- 候选 C:显式 standing charter → 持久化 candidate → boss accept 后走正常任务链 → ✅ 选定。
+
+### 产出
+- 新增 `StandingCharterItem`、proposal domain/store/coordinator 与 SQLite schema v2;项目可配置 objective、role、验收证据、停止条件和 cooldown。
+- `/inbox`、`/morning`、定时 morning push 和 `/proposals` 在空闲且团队完整时刷新最多一个 candidate。
+- `/proposal accept <id>` 才创建带 proposal trace metadata 的正常项目任务;`reject` 只记录 reason/decision time,不创建任务。
+- SME 项目配置新增 `commercial-evidence-loop`,明确禁止外部发布/消息、真实商家数据/支付以及代老板接受 199 RMB 报价。
+- 新增 Goal Brief、ADR-0037、P-054、operator runbook 和两级连续性记录。
+
+### 验证结果
+- Red-green 覆盖生成/幂等/cooldown、SQLite 重启/reset、parser、accept/reject、inbox/morning 优先级和 orchestrator 定时推送。
+- 真实 `projects/sme-agent/aico-project.json` + 临时 SQLite machine dogfood 生成一个候选,跨 store restart 可恢复,task factory/runner 均未被调用。
+- full pytest:`559 passed, 1 skipped`;Ruff check、mypy、touched format、结构扫描与 `git diff --check` 通过。
+- full-root format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`。
+
+### 关键决策
+- 🔒 提议权不等于执行权;candidate 永远不能自动 accept。
+- 🔒 接受后不增加权限,继续复用 project role、TaskBus、risk、approval、audit、memory 和 interrupt。
+- 🔒 第一切片不解析 Markdown、不做 LLM 自主规划、不把 charter 当外部动作/付款/客户数据授权。
+
+### 留给下一轮
+- 由人类 Telegram 客户端完成 SME `/inbox` → `/proposal accept|reject` → `/morning` 的一条真实手机样本,验证候选价值与可读性。
+- 根据真实样本调整 charter/cooldown,不要先扩成后台自治或 Team Karpathy Loop。
+- 继续等待真实商家老板完成 199 RMB 主观验收;机器 Gate 不能代替支付意愿。
+
+## Round 200 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 199 已让 lead 在老板缺席时生成 reviewable proposal,但本地 runtime 仍主要依赖手动 terminal;这与“老板离开电脑”承诺不一致。
+- 本轮只做 durable local runtime,不扩成云部署、跨平台 service manager 或自动安装。
+
+### 思考与讨论
+- 候选 A:把 `aico-phase1` 长期放在 terminal/tmux → ❌ 否决。依赖操作员会话,没有统一 install/doctor/restart/recovery 契约。
+- 候选 B:直接上 Docker/云服务器 → ❌ 否决。会提前引入 secret、网络暴露、部署和成本边界,偏离当前 local-first 商用验证。
+- 候选 C:macOS user LaunchAgent + secret-free heartbeat + operator CLI → ✅ 选定。它是当前用户可恢复、可诊断、最小的 boss-absent 运行底座。
+- 实现前审计发现一个更基础的事实:`Phase1Runtime.start()` 在 non-blocking Channel 返回后通过 `finally` 立刻 stop morning scheduler,定时早报并未真正常驻。
+
+### 产出
+- 修复 scheduler 生命周期:start 返回后保持运行,仅在 runtime stop 或 channel 启动失败时清理。
+- 新增 `RuntimeHeartbeat`,以原子 JSON 记录 running/stopped、PID 和时间;健康判定区分 missing/invalid/stale/fresh,不读取或复制 secret。
+- 新增 `aico-service render|install|restart|status|doctor|uninstall` 和 console entrypoint。
+- LaunchAgent 使用 absolute venv/repo/log path、RunAtLoad、crash-only KeepAlive、ThrottleInterval 和 Background process type;EnvironmentVariables 只有 PATH/PYTHONUNBUFFERED。
+- install/doctor 检查平台、repo、executable、`.env` 0600、必需变量名和占位值;替换 plist 留 `.previous`,uninstall 移入 Trash。
+- 新增 `.env.example`、Goal Brief、ADR-0038、quickstart/daily-ops/troubleshooting、P-055 和 B-010。
+
+### 验证结果
+- TDD 红灯先证明 heartbeat/service modules 缺失和 scheduler 生命周期错误;49 条定向 lifecycle/heartbeat/service/settings 回归通过。
+- full root:`572 passed, 1 skipped`;SME:`53 passed`;`ruff check .`、`mypy src tests` 通过。
+- `uv run aico-service --repo . render | plutil -lint -` 返回 `<stdin>: OK`。
+- 真实 checkout `doctor` 如实返回 platform/repo/executable OK、`.env` FAIL、plist/launchctl/heartbeat WARN;没有打印 secret。
+- 本轮没有执行 `install`,没有修改真实 `~/Library/LaunchAgents` 或 launchctl domain,也没有伪造 terminal 关闭后的 IM 回包。
+- touched files format、结构硬约束和 `git diff --check` 通过;full-root format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`。
+
+### 关键决策
+- 🔒 runtime supervision 第一实现只支持 macOS user LaunchAgent;出现第二个平台需求前不抽象 service manager interface。
+- 🔒 plist 不复制 `.env` value;`.env` 必须 owner-only,doctor 只输出 key name 和健康状态。
+- 🔒 heartbeat 是 process liveness,不是 Telegram/Feishu/provider health。
+- 🔒 install/restart/uninstall 是 operator 明确动作;自动化和 agent 不隐式改变真实系统 service 状态。
+
+### 留给下一轮
+- owner 创建真实 `.env`、`chmod 600 .env`,跑 doctor 后显式 install。
+- 关闭启动 terminal 后复查 loaded + fresh,再从可信 IM 发 `/inbox` 或 `/morning`,完成 B-010。
+- 常驻样本稳定后再回到 SME proposal 质量/199 RMB 主观验收;不要先做云化或 Team Karpathy Loop。
+
+## Round 201 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 200 已解决“没有 supervisor”和 scheduler 立即停止,但 heartbeat 仍只证明 Python process 活着。
+- 审计目标是验证是否存在 process fresh、Telegram polling/scheduler 已死或默认 Adapter 离线的假健康。
+
+### 思考与讨论
+- 候选 A:继续把 fresh heartbeat 解释成 runtime healthy → ❌ 否决。它与业务主路径没有因果关系。
+- 候选 B:任一 health check 失败就退出进程让 launchd 重启 → ❌ 否决。外部网络/provider 故障可能形成 crash loop,也不会因重启必然恢复。
+- 候选 C:heartbeat v2 写 required/optional component snapshot,doctor 分级 → ✅ 选定。先建立事实和诊断,自动恢复留给有退避/阈值的后续证据。
+- active Channel、default Adapter、enabled scheduler 定义为 required;其它 Adapter 定义为 optional,避免告警全红。
+
+### 产出
+- 新增 `RuntimeHealthProbe`、`RuntimeComponentHealth`、`RuntimeHealthSnapshot`;复用现有 Channel/Adapter health protocol,并发且单组件 timeout。
+- heartbeat schema v2 新增 aggregate health、checked_at 和 kind/name/required/status components;不保存 exception、URL、command、target 或 secret。
+- Telegram active polling task 已 done/missing 时直接 FAILED;Telegram/scheduler stop 安全消费后台异常且日志只写异常类型。
+- morning scheduler 提供自身 task health;runtime 先启动 Channel/scheduler,成功后才启动 health heartbeat。
+- 审计继续发现 LaunchAgent 固定启动 `aico-phase1`,会让 Feishu 配置没有 webhook listener;现在按 `.env` Channel 选择 `aico-phase1` / `aico-feishu-webhook`,两条入口共用 `phase1_runtime_lifespan`。
+- readiness 在 launchctl mutation 前拒绝未知 Channel,避免无效配置启动后 crash loop。
+- doctor 对 fresh+required failure 返回 FAIL,对 optional degradation 或 legacy unknown 返回 WARN;process stale/invalid 仍 FAIL。
+- 新增 Goal Brief、ADR-0039、P-056,并更新 operator docs、absence playbook、architecture、CHANGELOG、STATUS/BLOCKERS。
+
+### 验证结果
+- Red-green 首先因 `runtime_health` 模块缺失、polling task 无健康契约和 doctor 把所有 WARN 强升 FAIL 而失败。
+- 相关 lifecycle/health/heartbeat/service/channel/webhook gate:`97 passed`。
+- full root:`588 passed, 1 skipped`;SME:`53 passed`;`ruff check .`、`mypy src tests` 通过。
+- 真实 checkout `aico-service render | plutil -lint -` 保持合法;doctor 仍如实报告 `.env` missing、plist/heartbeat pre-install,未修改真实 LaunchAgent。
+- touched format、结构硬约束和 `git diff --check` 通过;full-root format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`。
+
+### 关键决策
+- 🔒 process liveness、readiness、component synthetic health 和真实 IM/provider E2E 是不同证据层。
+- 🔒 plugin exception/timeout 只转 status,不把 detail 扩散进 heartbeat。
+- 🔒 optional Adapter failed 只能 degraded;Channel/default Adapter/enabled scheduler failed 才是 primary runtime failed。
+- 🔒 本轮不因外部依赖失败自动退出或重启,避免无退避 crash loop。
+
+### 留给下一轮
+- B-010 不变:owner `.env` → explicit install → close terminal → doctor required healthy → 真实 `/inbox` 或 `/morning`。
+- 真实安装稳定后,评估 out-of-band notification/secondary Channel;不要用已失败的同一 Channel 做唯一告警路径。
+- 继续保持 provider login 和真实 task E2E 为独立样本,不要把 executable health 冒充登录成功。
+
+## Round 202 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 200-201 已有 LaunchAgent 和 component health,但审计 SQLite 恢复路径时发现旧 `RUNNING` 会被新进程原样展示。
+- 本轮只做 crash restart task reconciliation,不新增自动 retry、多 runtime lease 或 SME 产品代码。
+
+### 思考与讨论
+- 候选 A:保留 `RUNNING`,等待旧任务完成 → ❌ 否决。新 runtime 没有旧 stdout/interrupt ownership,状态不会自然收口。
+- 候选 B:startup 自动重新 dispatch → ❌ 否决。无法证明旧任务没有产生部分或完整外部副作用,可能重复写文件、消息、发布、付款或数据修改。
+- 候选 C:`RUNNING → INTERRUPTED` + 一次恢复审计 + 人工核对副作用 → ✅ 选定。它只陈述“控制权丢失”,不伪称底层进程一定停止。
+- `WAITING_APPROVAL` 尚未 dispatch,所以继续 pending;terminal states 已有确定事实,所以保持不变。
+
+### 产出
+- `TaskStateRepository` 在加载持久化 task/snapshot/approval/Adapter 后立即对账旧 `RUNNING`,以确定性 reason 写回 `INTERRUPTED`。
+- `TaskBus` 为每个本轮对账任务记录 `TASK_INTERRUPTED`,保留 task record、Adapter、risk、metadata、created time 和 trace 来源。
+- `/inbox`、`/morning` 回归证明恢复项进入 recover/blocked,不再进入 running。
+- JSONL sink 回归证明第二次 restart 不重复写 reconciliation audit;pending approval 仍可由授权 reviewer approve,terminal snapshot 不变。
+- 新增 Goal Brief、ADR-0040、P-058,并更新 daily ops、troubleshooting、absence playbook、architecture、CHANGELOG、STATUS/BLOCKERS。
+
+### 验证结果
+- Red-green 首先因缺少 `RUNTIME_RESTART_INTERRUPTED_REASON` 失败;实现后 TaskBus 相关单测 `26 passed`,扩展相关 gate `177 passed`。
+- full root:`590 passed, 1 skipped`;SME:`53 passed`;`ruff check .`、`mypy src tests` 通过。
+- 临时真实 SQLite + JSONL dogfood:首次 owner 得到 `interrupted` + 1 条 `task_interrupted`,第二次 owner 仍是 `interrupted` 且 audit count 保持 1。
+- touched format、结构硬约束和 `git diff --check` 通过;full-root format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`。
+- 本轮未读取/写入真实 `.env`,未 install/restart LaunchAgent,未发送真实 IM。
+
+### 关键决策
+- 🔒 persisted `RUNNING` 是最后已知状态,不是可恢复执行 ownership。
+- 🔒 recovery reason 要求先核对外部副作用;当前不提供 auto retry/replay。
+- 🔒 pending approval 不因 restart 失效;终态不因 restart 改写。
+- 🔒 当前 SQLite 是单 runtime owner;多 runtime 必须先设计 lease/leader election。
+
+### 留给下一轮
+- B-010 不变:owner `.env` → explicit install → close terminal → doctor required healthy → 真实 `/inbox` 或 `/morning`。
+- 真实 crash dogfood 时,确认旧 running task 在老板视图中变为 interrupted 且 JSONL 只有一条恢复审计;提交新任务前人工核对副作用。
+- 若继续做自动恢复,下一切片应先设计 runtime lease / durable reconciliation outbox 或具备 idempotency contract 的 operation,不要直接自动 replay。
+
+## Round 203 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 202 已将 orphan `RUNNING` 对账为 `INTERRUPTED`,但 snapshot commit 与 JSONL append 是顺序双写。
+- 本轮只关闭 recovery state/audit crash window,不重写三源存储、不做 task auto replay 或多 runtime。
+
+### 思考与讨论
+- 候选 A:接受 SQLite commit → JSONL append 的短窗口 → ❌ 否决。crash 恢复路径正是缺席运行最需要完整证据的地方。
+- 候选 B:把全部 audit 搬入 SQLite → ❌ 否决。会推翻 ADR-0008/0015/0028/0030,把局部一致性问题扩大为存储重写。
+- 候选 C:SQLite 专用 transactional outbox + stable event-id JSONL 幂等 → ✅ 选定。保持 SQLite/JSONL truth boundary,只协调 recovery event delivery。
+- 抽象审查按 Rule of Three 拒绝通用 broker/event-bus framework;直接在已有 `TaskStateStore` / `SQLiteTaskStateStore` 边界实现当前唯一用例。
+
+### 产出
+- SQLite schema v3 新增 `task_recovery_audit_outbox`;`BEGIN IMMEDIATE` 同 transaction 更新 snapshot 并插入完整 `AuditEvent`。
+- outbox payload 固定 event id、task/trace、actor、Adapter、risk、reason 和 timestamp;即使状态已 interrupted,后续仍能恢复 pending intent。
+- `TaskStateRepository` 加载/对账后返回 pending events;TaskBus 通过 `record_existing()` 投递,成功才 ack。
+- `InMemoryAuditLog` 对同 id+内容 no-op、同 id+不同内容 fail loud;built-in `JsonlAuditSink` startup 建 id index,append/去重 O(1)。
+- `aico-state` 展示 schema v3、新 outbox 表和 `pending_recovery_audits`,reset 覆盖该表。
+- 新增 Goal Brief、ADR-0041、P-059,更新 operator/troubleshooting/absence/architecture/CHANGELOG/STATUS/BLOCKERS。
+
+### 验证结果
+- Red-green 首先得到 7 个预期失败:store/outbox/audit APIs 与 schema v3 不存在。
+- transaction trigger 强制 outbox insert 失败时,snapshot 保持 `RUNNING` 且 pending=0;证明状态与 intent 一起 rollback。
+- failing sink 后 snapshot 已 interrupted、intent 仍 pending;下次 startup 投递同一事件后 pending=0。
+- Phase1 连续两次组装只产生一条 recovery JSONL;临时 append-before-ack dogfood 得到 status=interrupted、audit_count=1、pending=0、schema=3。
+- targeted:`77 passed`;full root:`598 passed, 1 skipped`;SME:`53 passed`;Ruff/mypy 通过。
+- touched format、结构硬约束和 `git diff --check` 通过;full-root format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`。
+- 本轮未读取/写入真实 `.env`,未 install/restart LaunchAgent,未发送真实 IM。
+
+### 关键决策
+- 🔒 outbox 是 delivery coordinator,不是 `/audit`、metrics 或 aico-view 的新 truth source。
+- 🔒 recovery event 必须完整持久化并复用同 event id;不能在 retry 时重新构造。
+- 🔒 sink 返回成功前不 ack;built-in JSONL 同 id 不同内容必须报错。
+- 🔒 outbox 不 dispatch/retry Adapter task,也不宣称 multi-runtime/distributed exactly-once。
+
+### 留给下一轮
+- B-010 不变:owner `.env` → explicit install → close terminal → doctor required healthy → 真实 `/inbox` 或 `/morning`。
+- 真实 install 后做一次可控 crash recovery,同时验 `/task` interrupted、JSONL 单事件、`pending_recovery_audits: 0` 和老板 `/inbox` 可读性。
+- 若继续内部加固,优先解决 single-runtime owner/lease,避免第二个 runtime 把仍在执行的任务误判为 orphan;不要直接扩成分布式调度。
+
+## Round 204 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 202/203 的 restart reconciliation/outbox 仍依赖“同一 SQLite 只有一个 runtime”的文档假设。
+- 本轮把该假设变成 local single-host 机器契约,不扩成 distributed lease、自动 kill 或多 runtime。
+
+### 思考与讨论
+- 候选 A:普通 PID file + `kill(pid, 0)` → ❌ 否决。crash stale、PID reuse,文件存在不等于 ownership。
+- 候选 B:SQLite TTL lease → ❌ 暂不采用。需要续租、时钟、fencing token 和失联策略,对当前 macOS Phase 1 过重。
+- 候选 C:同 state DB 派生 OS advisory lock,handle 持有 lifecycle → ✅ 选定。kernel 在 process death 自动释放,最符合 local single-process 部署。
+- 审计发现只在 `runtime.start()` 末尾加锁仍太晚:TaskBus constructor 已做 reconciliation;因此 recovery 必须显式延迟到持锁区间。
+
+### 产出
+- 新增 `RuntimeOwnerLock` / `RuntimeOwnerStatus` / `RuntimeOwnershipError`;canonical state DB → `<db>.owner.lock`,无 DB → checkout `.aico/runtime-owner.lock`。
+- metadata 仅保存 schema/state/PID/started/stopped/resource;active 事实来自 `flock`,不是文件内容。
+- TaskBus construction 不再自动对账;`recover_startup_state()` 由 Phase1 start 在 owner acquire 后调用。
+- Phase1 start 顺序:owner → recovery → bind → scheduler → Channel → heartbeat;stop 顺序:heartbeat → Channel/scheduler → owner。
+- startup/recovery/channel failure 均 release owner;duplicate owner 不触碰 state、不启动 Channel、不 kill 原进程。
+- Telegram CLI 与 Feishu FastAPI 继续复用 shared lifespan;Feishu TestClient 验证运行中 lock active、退出后 free。
+- `aico-service doctor` 新增 runtime owner,且要求 owner PID 与 launchctl `pid =` 一致;manual owner/launchd mismatch 为 FAIL。
+- 新增 Goal Brief、ADR-0042、P-060,更新 quickstart/daily ops/troubleshooting/absence/architecture/CHANGELOG/STATUS/BLOCKERS。
+
+### 验证结果
+- Red 首先因 `aico.app.runtime_owner` 不存在而 collection fail。
+- 相关 lifecycle/owner/recovery/service/Telegram-Feishu composition gate:`91 passed`。
+- multi-process machine dogfood:owner live 时 competitor rejected、snapshot 保持 running;SIGKILL 后 replacement acquire、snapshot 收口 interrupted、release 后 active=false。
+- full root:`604 passed, 1 skipped`;SME:`53 passed`;Ruff/mypy 通过。
+- touched format、结构硬约束和 `git diff --check` 通过;full-root format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`。
+- 本轮未读取/写入真实 `.env`,未 install/restart LaunchAgent,未发送真实 IM;清理了本轮早期测试写入的 stopped `.aico/runtime-owner.lock`。
+
+### 关键决策
+- 🔒 owner lock 必须早于任何 startup reconciliation 和 Channel/scheduler start。
+- 🔒 lock-file existence/PID metadata 不是 active truth;kernel lock 才是。
+- 🔒 duplicate runtime fail closed,不等待、不自动 kill、不修改 live task。
+- 🔒 doctor loaded+active 仍不够,owner PID 必须等于 launchd PID。
+- 🔒 本方案是 local single-host fencing,不宣称 distributed lease/leader election。
+
+### 留给下一轮
+- B-010 不变:owner `.env` → explicit install → close terminal → doctor owner/launchd PID match + heartbeat required healthy → 真实 `/inbox` 或 `/morning`。
+- 真实 install 后可控 kill LaunchAgent child,验证 lock auto-release、launchd replacement PID 取得 owner、old task interrupted/outbox 单审计。
+- 若继续内部加固,优先做 owner/heartbeat PID cross-check 的真实 launchd sample或 out-of-band failure notification;不要提前做云端 lease。
+
+## Round 205 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 201 能发现 Telegram polling/scheduler task 已死,Round 204 确保单 owner,但本地 task 死亡仍只能等待 operator。
+- 本轮只恢复当前进程明确拥有的 background task;不因外部网络/provider 失败重启,不 replay 业务 Task。
+
+### 思考与讨论
+- 候选 A:任一 required `HealthStatus.FAILED` 就退出进程交给 launchd → ❌ 否决。该状态也表示 Telegram API、网络和默认 provider failure,会形成 crash-loop 并放大限流。
+- 候选 B:继续只由 doctor 报错 → ❌ 否决。它能诊断但不能满足老板缺席时的安全恢复。
+- 候选 C:单 owner 在进程内只恢复直接 owned task,并加 timeout、稳定期、上限和 cooldown → ✅ 选定。repair authority 与 lifecycle owner 一致,外部 health 保持纯诊断。
+- 按 Rule of Three 没有扩展所有 Channel/Adapter protocol;app runtime 只显式组装当前两个真实 owned task,避免为未来插件提前抽象。
+
+### 产出
+- 新增 `BoundedOwnedTaskSupervisor`:单次 restart 最长 5 秒,task 存活 60 秒才稳定,连续 3 次未稳定后熔断 15 分钟,冷却后再开启下一轮。
+- Telegram polling 和 morning scheduler 新增 `owned_task_alive()` / `restart_owned_task()`;restart 会消费旧 task 异常,live task 不重复创建,shutdown 后不复活。
+- `RuntimeHeartbeat.start()` 先完成首轮 self-healing + component health 再进入服务,后续每个 refresh 固定先恢复、再检查 health。
+- heartbeat schema v3 新增 secret-free `self_healing` snapshot,只包含稳定 component name、healthy/recovering/open、attempts 和 checked_at。
+- `heartbeat_health()` / `aico-service doctor` 将 recovering 映射 WARN、open 映射 FAIL;generic Channel/Adapter failure 不进入 supervisor。
+- 新增 Goal Brief、ADR-0043、P-061;B-011 明确记录“熔断 machine-visible 但 primary Channel 失败时没有 out-of-band 通知”的剩余缺口。
+- 更新 quickstart、daily ops、troubleshooting、absence playbook、architecture、CHANGELOG、STATUS/BLOCKERS。
+
+### 验证结果
+- Red-green 先后证明 `runtime_self_healing` 模块、owned-task restart 方法、heartbeat schema/doctor 语义不存在;实现后相关 gate `71 passed`。
+- 回归覆盖单次恢复、60 秒稳定、三次熔断、15 分钟 cooldown、restart hang timeout、外部组件排除、异常脱敏、shutdown 不复活和 heartbeat 恢复先于 health。
+- full root:`616 passed, 1 skipped`;SME:`53 passed`;`ruff check .`、`mypy src tests` 通过。
+- touched-file format、生产代码 class/function 结构扫描和 `git diff --check` 通过;full-root format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`。
+- 当前 checkout `aico-service doctor` 仍如实报告 `.env` missing、plist/owner/heartbeat not installed;本轮未读取/写入真实凭据,未 install/restart LaunchAgent,未发送真实 IM。
+
+### 关键决策
+- 🔒 generic health status 只用于诊断,不能直接驱动自动恢复。
+- 🔒 repair authority 必须等于 lifecycle ownership;当前仅 Telegram polling 与 enabled morning scheduler。
+- 🔒 create_task 成功不是恢复成功,必须跨过稳定期;反复失败必须熔断而非 tight retry。
+- 🔒 runtime task 恢复绝不等于业务 Task 可安全 replay。
+- 🔒 heartbeat/alert 只允许稳定、脱敏 evidence,不得保存 exception、token、URL、target 或 command。
+
+### 留给下一轮
+- B-010 不变:owner `.env` → explicit install → close terminal → doctor owner/launchd PID match + heartbeat healthy → 真实 `/inbox` 或 `/morning`。
+- 若继续无需凭据的内部加固,优先处理 B-011:设计 durable、去重、secret-free 的 out-of-band open/resolved alert contract 与 secondary sink 插件;没有 owner 授权不发送真实通知。
+- 不要把 generic Channel/provider failure 全部升级成告警或自动重启;先定义事件边界、噪声控制和 sink failure retry。
+
+## Round 206 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 205 能有界恢复 owned task 并在熔断后写 heartbeat,但 primary Channel 失效时老板不会主动收到通知。
+- 本轮只建立 durable、secret-free、secondary notification 机器契约;没有 owner endpoint/credential,不做真实外发。
+
+### 思考与讨论
+- 候选 A:每个 heartbeat open 直接 POST webhook → ❌ 否决。重复 snapshot 会制造告警风暴,accepted-before-ack 无稳定幂等,resolved 可能越过 open。
+- 候选 B:通过当前 Telegram/Feishu 发告警 → ❌ 否决。primary Channel 是潜在故障对象,没有独立失效域。
+- 候选 C:owned incident state machine + SQLite outbox + secondary sink plugin → ✅ 选定。事实、身份、交付和外部系统分层,remote receiver 按 event id 幂等。
+- 候选 D:复用 Task recovery audit outbox → ❌ 否决。runtime incident 不是 business Task audit,不能污染 `/audit`、metrics 或 recovery truth boundary。
+
+### 产出
+- 新增 `RuntimeAlertEvent` / `RuntimeAlertSink` / `WebhookRuntimeAlertSink`;event 只含 schema、event/incident id/type、稳定 component、attempts 和 occurred_at。
+- `SQLiteRuntimeAlertStore` 新增 active incident 与 immutable outbox:first open 原子建 incident/opened event,recovering 保持,healthy 原子移除 incident并建同 incident resolved event。
+- duplicate open/healthy、coordinator rebuild 和 process restart 不重复建事件;resolution 后再次 open 生成新 incident。
+- `RuntimeAlertCoordinator` 按 rowid delivery;未到期/失败队首停止后续,成功返回才 ack。失败按持久化 1/5/15 分钟封顶退避。
+- HTTPS sink 使用稳定 event id 作为 `Idempotency-Key`;accept-before-ack 重投同一 payload/id,明确只承诺 at-least-once。
+- `Phase1Settings` 用 `SecretStr` 接 URL/bearer,强制 HTTPS + state DB + heartbeat；service readiness 只输出 key/状态。
+- heartbeat schema v4 新增 alerting disabled/healthy/pending/failed；doctor 对 disabled/pending WARN、internal failed FAIL。
+- SQLite schema v4、`aico-state` table counts/pending/reset 纳入 runtime alert tables；alert store 在 runtime owner acquire 后才初始化。
+- 新增 Goal Brief、ADR-0044、P-062；B-011 收窄为 owner endpoint/真实样本，B-012 记录整进程/整机失联的 external dead-man 缺口。
+- 更新 `.env.example`、quickstart、daily ops、troubleshooting、absence playbook、architecture、CHANGELOG、STATUS/BLOCKERS。
+
+### 验证结果
+- Red-green 先后证明 runtime-alert 模块、heartbeat alert probe/schema、settings gate 和 state CLI contract 不存在。
+- transaction trigger 强制 outbox insert 失败时 active incident/pending 均为 0；证明 incident/event 一起 rollback。
+- sink failure + coordinator rebuild 重试 exact event；recovering 不 resolved,open 未投递时 resolved 不越序。
+- HTTP accept-before-ack 模拟收到两次相同 `Idempotency-Key`;event JSON 不含 endpoint/token,日志不含 sink exception detail。
+- related runtime/heartbeat/settings/state/service gate:`96 passed`;full root:`631 passed, 1 skipped`;SME:`53 passed`。
+- `ruff check .`、mypy(163 source files)、touched format、生产 class/function 结构和 `git diff --check` 通过;full-root format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`。
+- 当前 checkout doctor 仍如实报告 `.env` missing、plist/owner/heartbeat not installed;未创建真实 endpoint/credential,未 install/restart LaunchAgent,未发送真实 IM/webhook。
+
+### 关键决策
+- 🔒 generic dependency health 不生成 runtime alert；事件源仅是 owned component first open / active incident healthy。
+- 🔒 runtime alert 与 Task audit/outbox 分表、分模型、分 truth boundary。
+- 🔒 remote delivery 是 at-least-once；稳定 event id + receiver idempotency 代替虚假 exactly-once。
+- 🔒 failed sink 必须持久化 backoff并保持 head-of-line,不能每 heartbeat hammer或让 resolved 越序。
+- 🔒 URL/token/exception/target/command/prompt 不进入 SQLite、event、heartbeat、doctor 或日志。
+- 🔒 alert store 初始化必须在 single-runtime owner acquisition 后,不能让竞争进程提前 mutation state DB。
+
+### 留给下一轮
+- B-010/B-011 需要 owner `.env`、独立 HTTPS receiver、explicit install 和真实 primary failure → open/resolved 收件样本；当前不猜 endpoint、不外发。
+- 若继续无需凭据的内部加固,优先 B-012:定义 external dead-man pulse/TTL/boot identity,覆盖 sender 整体死亡而无法自报的盲区。
+- dead-man 设计不得把每次 pulse 写成 durable outbox 历史；Mac sleep/网络分区/intentional stop 语义必须保守且可验证。
+
+## Round 207 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可商用的个人公司 multi-agent 系统。
+- Round 206 durable incident alert 仍要求 Python event loop 活着；event loop 卡死、LaunchAgent 持续启动失败或
+  Mac 离线时,sender 无法创建“自己已死”的告警。
+- 本轮冻结 external dead-man pulse/TTL/boot/restart/stop 机器契约；没有 owner receiver/credential,不做真实外发。
+
+### 思考与讨论
+- 候选 A:继续依赖本机 heartbeat/launchd → ❌ 否决。它们在同一失效域,只能重启或留下事后证据。
+- 候选 B:clean stop 自动发送 stopped/disarm → ❌ 否决。sender 无法区分正常 replacement 与永久卸载；一次
+  stop 后未成功重启会被错误静音。
+- 候选 C:每个 pulse 写 durable outbox → ❌ 否决。liveness 是可覆盖周期状态,无限历史会制造存储和重放噪声。
+- 候选 D:ephemeral pulse + independent receiver acceptance-time TTL → ✅ 采用。sender 只证明最近交付,
+  receiver 独立判 missing pulse并持有 open/resolved truth。
+- 当前 HTTPS transport 是第二个窄用例,按 Rule of Three 保留独立 `RuntimeLivenessSink` 实现,不提前抽象
+  generic webhook framework。
+
+### 产出
+- 新增 strict `RuntimeLivenessPulse`:schema/event type、safe runtime id、fresh per-process boot id、sequence、
+  aware sent_at、interval 和至少三倍 interval 的 TTL；extra/unsafe identity fail closed。
+- `WebhookRuntimeLivenessSink` 强制 HTTPS,以 runtime/boot/sequence 组成稳定 `Idempotency-Key`;URL/token 只在进程内。
+- `RuntimeLivenessPublisher` startup 立即发送 sequence 1；failed send 保留同一内存 pulse并至多每 60 秒/interval
+  重试,成功后才推进 sequence。没有 pulse SQLite 表、incident event 或 durable history。
+- publisher 从未成功/本地 success TTL 到期为 failed,待重试但仍在 TTL 内为 degraded,成功为 healthy。
+- 新增 receiver reference tracker:owner 显式 arm/disarm；arm 后从未收到首 pulse或最后 acceptance-time TTL
+  到期只 open 一次,有效新 pulse只 resolved 一次；duplicate、out-of-order、明显更旧 replacement boot 不延期。
+- normal stop 不发 disarm；restart 用 fresh boot立即恢复。永久 uninstall 前必须在 receiver 显式 disarm；
+  Mac sleep/网络分区超过 TTL 保守视为 unavailable。
+- heartbeat 顺序升级为 recovery → incident alert → liveness → component health,schema v5 只写脱敏 publisher
+  disabled/healthy/degraded/failed；本机 heartbeat 不冒充 receiver truth。
+- `Phase1Settings` / doctor 增加 enable、SecretStr monitor id、interval/TTL gate并复用 owner-configured HTTPS
+  runtime transport；启用要求 heartbeat和 durable alert transport可用。
+- 新增 Goal Brief、ADR-0045、P-063；B-012 收窄为独立 receiver 部署、persistent monitor state 与真实 outage sample。
+- 更新 `.env.example`、quickstart、daily ops、troubleshooting、absence playbook、architecture、CHANGELOG、STATUS/BLOCKERS。
+
+### 验证结果
+- Red 首先因 `aico.app.runtime_liveness` 不存在而 collection fail；随后 heartbeat liveness probe/schema v5 和
+  settings/doctor gate 各自得到预期失败后转绿。
+- publisher 覆盖 immediate/due send、exact pending retry、首次失败、degraded/TTL failed、新 process boot；HTTP
+  两次发送同 pulse得到同一 idempotency key且 payload 不含 endpoint/token。
+- receiver 覆盖 never-start TTL、single open/resolved、duplicate/out-of-order、replacement/old boot、explicit
+  disarm；TTL 使用 receiver `received_at`,不使用 sender clock过期。
+- related runtime/heartbeat/settings/service/Feishu gate:`98 passed`;full root:`647 passed, 1 skipped`;SME:`53 passed`。
+- `ruff check .`、mypy(165 source files)、touched format、生产 class/function 结构和 `git diff --check` 通过；
+  full-root format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`。
+- 当前 checkout doctor 仍如实报告 `.env` missing、plist/owner/heartbeat not installed；未创建真实 receiver/
+  credential,未 install/restart LaunchAgent,未发送真实 IM/webhook。
+
+### 关键决策
+- 🔒 整进程/整机死亡只能由独立失效域根据 missing pulse判断；in-process sender不能自证自己已死。
+- 🔒 pulse 是 ephemeral covering state,不是 business/runtime incident history；本机至多保留一个 pending identity。
+- 🔒 receiver expiry 使用 acceptance time + configured TTL；sender timestamp只用于保守拒绝旧 replacement boot。
+- 🔒 clean stop/restart不自动 disarm；永久停用必须由 receiver owner显式声明,fail closed优先于静音。
+- 🔒 Mac sleep/网络分区超过 TTL就是 unavailable；不为笔记本体验伪造 availability。
+- 🔒 heartbeat/doctor 的 publisher healthy不等于独立 receiver healthy；真实商用 claim必须有外部 outage sample。
+
+### 留给下一轮
+- B-010/B-011 仍需 owner `.env`、explicit install、terminal 关闭后的真实 IM和 incident open/resolved 收件样本。
+- B-012 下一步必须在独立失效域部署可持久化 arm/current/open state 的 receiver,再做 kill process、持续 launch
+  failure、断网超过 TTL三类一次 open + 一次 resolved样本；不要把 receiver放在同一 Mac。
+- 永久 uninstall前先在 receiver显式 disarm；普通 restart/stop不得消音。
+
+## Round 208 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可个人公司商用的 multi-agent 系统。
+- Round 207 已冻结 sender pulse 与 reference TTL state machine,但 receiver 仍是进程内内存对象；receiver restart
+  会忘记 armed responsibility,也没有可独立部署的 auth、outbox、worker 或容器契约。
+- 本轮只把 receiver 机器化、持久化和可部署化；没有 owner 主机、域名、TLS、secret 或通知账号,不做外部变更。
+
+### 思考与讨论
+- 候选 A:继续把 tracker 嵌在 AICO runtime → ❌ 否决。observer 与被监控者仍在同一故障域,整机失联不可见。
+- 候选 B:receiver 首个 pulse 自动 arm → ❌ 否决。pulse credential 会获得 policy authority,误发/旧实例可静默开启监控。
+- 候选 C:复用 incident alert URL/token → ❌ 否决。两个 strict endpoint 的 event schema、authority 和 retry contract
+  不兼容；同为 HTTPS 不是 wire compatibility。
+- 候选 D:standalone FastAPI + dedicated SQLite + dual authority + durable notification outbox → ✅ 选定。部署单元、
+  monitoring truth 和 owner notification delivery 可独立恢复,同时保持 AICO Task state 边界不被污染。
+- remote notification 仍定义为 at-least-once；accept-before-local-ack 用稳定 event id重投,不宣传 exactly-once。
+
+### 产出
+- 新增 `dead_man_receiver_models/store/receiver/app`:专用 SQLite 保存 armed monitor、TTL、latest boot/sequence、
+  receiver acceptance time、active outage 与 immutable notification outbox。
+- `arm` 同 TTL 幂等且不延长首 pulse window；不同 TTL fail closed直到 explicit disarm。pulse 不能 arm/disarm/change
+  TTL,duplicate/out-of-order/older boot 不延长 expiry。
+- sweep 和 accept 共用 transaction 语义：missing-first/later pulse 只 open 一次；有效恢复只 resolved 同一 outage一次；
+  pulse 在 TTL 后但 sweep 前抵达时,原子按 row order 创建 open/resolved,不被 scheduler timing 擦除 outage evidence。
+- notification coordinator success-before-ack,稳定 event-id `Idempotency-Key`,失败持久化 1/5/15 分钟退避；未完成
+  opened 队首阻止 resolved 越序。transaction trigger tests 证明 monitor/outage 与 event intent 一起 rollback。
+- standalone FastAPI 提供 public generic health/readiness、admin-only arm/disarm/status 和 pulse-only strict endpoint；
+  tokens 至少 32 字符、必须不同且拒绝已知 placeholder,validation/error/log/payload 不回显 secret或 transport detail。
+- lifespan startup 立即 reconcile persisted expiry/pending delivery,后台 worker支持定时 sweep与 state-change wake。
+- AICO 新增专用 `AICO_RUNTIME_LIVENESS_WEBHOOK_URL` / bearer / timeout,不再依赖 alert state DB或复用 incident
+  endpoint；sender → strict receiver ASGI test 证明兼容,incident payload 发到 pulse route 会被 422 拒绝。
+- 新增 `aico-dead-man-receiver` CLI、non-root Dockerfile、persistent `/data` Compose、env template 和独立部署/
+  arm/status/disarm/outage runbook。
+- 新增 Goal Brief、ADR-0046、P-064；ADR-0045 的 transport reuse 明确被 supersede,B-012 收窄为外部部署证据。
+
+### 验证结果
+- receiver/store/app suites:`18 passed`;覆盖重建持久化、missing first、receiver-time expiry、duplicate/order、
+  late recovery、transaction rollback、arm/disarm、accept-before-ack、backoff、auth/validation、worker 和 sender integration。
+- full root:`667 passed, 1 skipped`;SME isolated:`53 passed`。
+- `ruff check .` 通过；`mypy src tests` 通过(171 source files)；Round 208 touched format、生产 class <500 / function
+  <100、`git diff --check` 通过。
+- packaged CLI `uv run aico-dead-man-receiver --help` 通过；Compose 使用 `.env.example` 的 `config -q` 通过；静态
+  container contract 测试覆盖 non-root、`/data`、read-only/cap-drop/no-new-privileges 和无 embedded secret。
+- full-root format 仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- Docker CLI 可用但 daemon 不可连接,因此未声称 live image build；没有部署主机、TLS、owner credential、真实
+  notification 或 outage sample。
+
+### 关键决策
+- 🔒 receiver 必须是独立部署单元和独立 SQLite truth boundary,不能嵌入 AICO runtime或复用 Task/runtime DB。
+- 🔒 admin policy authority 与 pulse refresh authority分离；首 pulse不自动 arm,stop/restart不自动 disarm。
+- 🔒 expiry 只由 receiver acceptance time决定；sender time只做 replacement boot保守排序。
+- 🔒 elapsed outage 必须留下 open edge；late recovery不能因 sweep 尚未运行而抹除它。
+- 🔒 incident alert 与 liveness pulse 使用专用 URL/token；相同 transport 不代表 schema/auth/idempotency兼容。
+- 🔒 remote delivery仅承诺 stable-id at-least-once；opened未交付前 resolved不能越序。
+- 🔒 本机/静态 Gate不冒充独立故障域证据；商用 claim需要外部 TLS部署和真实 outage sample。
+
+### 留给下一轮
+- B-012:owner 按 `deploy/dead-man-receiver/README.md` 部署到第二故障域,挂载 persistent `/data`,配置 TLS、互异
+  pulse/admin secret 和 owner notification endpoint,再显式 arm。
+- 采集 kill process后 launchd replacement、持续 launch failure、断网超过 TTL再恢复三类样本；每类核对一次
+  open + 一次 resolved、同 event id重投不重复通知。普通 stop/restart不消音,永久 uninstall前显式 disarm。
+- B-010/B-011 仍需 owner `.env`、LaunchAgent install、terminal关闭后的真实 IM和 incident open/resolved 收件样本。
+
+## Round 209 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可个人公司商用的 multi-agent 系统。
+- Round 208 已让 external dead-man receiver可部署、可持久恢复,但 completion audit发现 `/readyz` 只 ping SQLite；
+  expiry/delivery worker持续失败或不再调度时,observer仍会返回 200并逃过 container supervisor。
+- 当前 `.env` 仍不存在,`aico-service doctor` 如实报告 env FAIL、plist/owner/heartbeat未安装；本轮继续处理无需
+  owner credential的确定性 receiver自治缺口,不执行 LaunchAgent安装或外部部署。
+
+### 思考与讨论
+- 候选 A:保持 DB-only readiness → ❌ 否决。HTTP和SQLite存活不能证明核心 background loop正在推进。
+- 候选 B:任意 downstream notification failure立即 not-ready → ❌ 否决。delivery rejection已有 durable
+  pending/backoff,触发 container restart会把外部抖动放大为 restart storm。
+- 候选 C:把 worker health持久化进 receiver DB → ❌ 否决。process-local evidence跨 restart继承会让新进程借用旧
+  健康,并污染 monitor/outage truth boundary。
+- 候选 D:monotonic in-memory progress + fail-closed `/readyz` → ✅ 采用。新 process先完成 immediate pass,
+  supervisor可识别连续失败或停滞,成功后又能自动恢复。
+- 没有抽象 generic health framework；当前只有一个 concrete receiver-owned loop,按 Rule of Three保持局部模型。
+
+### 产出
+- 新增 process-local `ReceiverWorkerHealth`:记录 `last_success_at` 和 `consecutive_failures`,elapsed只用 monotonic
+  clock；允许两个连续内部失败,第三次 fail closed。
+- worker超过三个 configured sweep interval没有成功 pass也 fail closed；后续成功重置 failure并恢复 readiness。
+- receiver lifespan在创建 background task前先跑 immediate coordinator check；失败时只记录稳定 exception type并
+  阻止 app ready,新 process不能继承旧证据。
+- `/healthz` 保持 process/event-loop liveness；`/readyz` 同时验证 SQLite和 worker progress。DB/worker失败只返回
+  `503 {"detail":"not ready"}`,不泄露路径、exception、monitor、event、endpoint或secret。
+- coordinator已把 downstream rejection收敛为 immutable pending/backoff时,一次 check仍算 worker成功推进；测试
+  证明 notification outage不会误杀 receiver。
+- Compose继续用 `/readyz` healthcheck、`restart: unless-stopped`;静态 contract新增这两项断言。
+- 新增 Goal Brief、ADR-0047、P-065；更新 B-012、architecture、absence playbook、daily ops、troubleshooting、
+  deploy README、CHANGELOG和STATUS。
+
+### 验证结果
+- 先写测试时因 `ReceiverWorkerHealth` 不存在而 collection fail；实现后 receiver store/app suites `22 passed`。
+- 直接覆盖:healthz 200 + stale readyz 503、generic DB failure、连续 1/2/3 failure阈值、success recovery、
+  downstream backoff仍 ready、worker wake和Compose ready/restart contract。
+- full root:`671 passed, 1 skipped`;SME isolated:`53 passed`。
+- `ruff check .`、`mypy src tests`(171 source files)、Round 209 touched format、production class <500/function <100、
+  packaged CLI、Compose config和`git diff --check`通过。
+- full-root format仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`;没有扩大范围。
+- 当前仍没有 owner `.env`、LaunchAgent install、独立 receiver host/TLS/owner sink或真实 outage sample；相关
+  completion claim保持 pending。
+
+### 关键决策
+- 🔒 process liveness、storage readiness、owned-worker progress和downstream degradation是四个不同事实。
+- 🔒 readiness progress使用 monotonic time；wall-clock校时不能延长或缩短健康窗口。
+- 🔒 第三个连续内部 failure或三个 sweep interval无成功 pass才 fail closed,兼顾短暂抖动与静默停滞。
+- 🔒 durable downstream pending/backoff不是 worker death,不能驱动 restart loop。
+- 🔒 worker health只属于当前 process,不持久化、不进入 monitor/outage/event truth boundary。
+- 🔒 public health endpoint保持无细节；持续 not-ready交给外部 supervisor,本进程不自杀或自旋。
+
+### 留给下一轮
+- B-012外部证据不变:在第二故障域部署 receiver,配置 TLS、persistent `/data`、互异 admin/pulse secret和owner
+  notification sink,采集 kill/launch-failure/network三类 open/resolved样本并验证 receiver restart恢复。
+- B-010/B-011仍需 owner `.env`、explicit LaunchAgent install、terminal关闭后的真实 IM和secondary incident sample。
+- 若继续无凭据机器加固,下一步先审计“外部验收证据是否可机器导出/复核”,不要继续添加与真实部署无关的协议。
+
+## Round 210 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可个人公司商用的 multi-agent 系统。
+- Round 209将receiver自身worker纳入readiness,但B-012真实演练仍只能靠通知截图或登录独立主机直查SQLite；
+  前者不可机器复核,后者泄露部署路径/内部schema并让验收耦合存储实现。
+- 本轮只建立safe evidence projection与offline verifier；当前仍没有owner `.env`、独立host/TLS/credential,
+  不执行真实外部部署、fault action或消息发送。
+
+### 思考与讨论
+- 候选 A:只保存downstream截图 → ❌ 否决。无法严格证明event id、open/resolved顺序、retry和restart/disarm持久性。
+- 候选 B:验收脚本直接读receiver SQLite → ❌ 否决。暴露路径与table contract,不适合作为跨主机稳定接口。
+- 候选 C:public/pulse-readable evidence endpoint → ❌ 否决。monitor/outage history是admin运维证据,pulse authority
+  只能刷新liveness,不能读取组织运行历史。
+- 候选 D:admin-only versioned bundle + offline strict verifier → ✅ 采用。receiver输出bounded machine truth,
+  verifier无需credential或network即可复核invariants。
+- 候选 E:给bundle做SHA-256就称来源可信 → ❌ 否决。hash只有与先前可信digest比较时能检测字节变化,不是
+  origin signature,更不证明host/TLS或物理fault。
+
+### 产出
+- 新增strict `DeadManEvidenceBundle` / outage / event模型:versioned safe runtime、generated time、optional current
+  monitor、opened + optional resolved、local delivered、delivery attempts和pending next-attempt。
+- model validator拒绝extra字段、naive/逆序timestamp、duplicate outage/event、resolved-before-opened和resolved
+  delivery越过pending opened；generated_at不能早于detection。
+- `SQLiteDeadManReceiverStore.export_evidence()`按最近N个outage group选择并按event row order返回,不会因raw event
+  limit把resolved与opened切开；store reconstruction和explicit disarm后immutable evidence仍可导出。
+- admin-only `GET /v1/monitors/{runtime_id}/evidence`:export前先按receiver time evaluate expiry；missing/pulse authority
+  401,既无monitor也无event时404,limit固定1..100。
+- 新增offline `aico-dead-man-evidence`:strict parse本地JSON,可要求expected runtime、minimum completed outages、
+  all delivered；输出compact summary和exact input bytes SHA-256,不联网、不读取token、不改变receiver。
+- CLI main path测试实际写入本地artifact、读取并验证完整参数；不是只测helper或`--help`。
+- 更新package entrypoint、deploy runbook、daily ops、troubleshooting、absence playbook、architecture、CHANGELOG。
+- 新增Goal Brief、ADR-0048、P-066；B-012加入bundle+digest验收步骤但保持external pending。
+
+### 验证结果
+- Red首先因`aico.app.dead_man_evidence_cli`不存在而collection fail；实现后receiver/evidence suites `29 passed`。
+- 覆盖restart persistence、pending retry metadata无exception、latest-N完整outage、disarm retention、strict order/extra、
+  admin/pulse authority、unknown 404、secret-free HTTP、minimum/all-delivered/hash和CLI main real-file path。
+- full root:`678 passed, 1 skipped`;SME isolated:`53 passed`。
+- `ruff check .`、`mypy src tests`(173 source files)、Round 210 touched format、production class <500/function <100、
+  receiver/evidence两条packaged CLI、Compose config和`git diff --check`通过。
+- full-root format仍只报告未触碰的既有 `projects/data-agent-v1/src/data_agent_v1/engine.py`;没有扩大范围。
+- 当前没有独立receiver host/TLS、owner notification receipt、kill/launch-failure/network exercise；valid local bundle
+  不被写成这些external事实。
+
+### 关键决策
+- 🔒 evidence export属于admin read authority；pulse/public authority不能读取outage history。
+- 🔒 response按完整outage group bounded截断,不能输出缺opened的resolved窗口。
+- 🔒 bundle只投影stable machine facts,不保存transport、secret、path、exception、request或arbitrary operator note。
+- 🔒 offline verifier不联网、不接credential、不触发arm/disarm/fault；它只验证artifact内部truth。
+- 🔒 exact-byte SHA-256不是origin signature；B-012仍需独立host/TLS/fault operation和downstream receipt证据。
+- 🔒 immutable evidence在disarm后保留；永久停用monitor不能抹除已发生outage事实。
+
+### 留给下一轮
+- B-012当前真正剩余动作已收敛:owner在第二故障域部署receiver并配置TLS/persistent `/data`/secrets/sink,
+  依次采集kill、持续launch failure、network isolation三类样本；每类保存host/fault日志、bundle与verifier SHA-256。
+- B-010/B-011仍需owner `.env`、explicit LaunchAgent install、terminal关闭后的真实IM和secondary incident sample。
+- 若没有owner授权/credential,不要继续在dead-man协议上堆功能；下一步回到其它可机器证明的absence-first商用缺口。
+
+## Round 211 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可个人公司商用的 multi-agent 系统。
+- Round 210已把dead-man evidence收口到external deployment，但completion audit发现主`AICO_STATE_DB_PATH`
+  虽能跨restart恢复，daily ops的backup/restore仍只是三行空注释。
+- 本轮只实现主SQLite本机恢复原语；没有owner选择的off-device storage/credential，不扩成云备份、自动restore
+  或全资产DR，也不对真实生产state执行破坏性演练。
+
+### 思考与讨论
+- 候选A:直接`cp state.db`，必要时连`-wal/-shm`一起复制 → ❌ 否决。WAL下无法稳定证明transaction-consistent
+  standalone artifact，复制时点和sidecar组合容易产生不可恢复快照。
+- 候选B:要求停runtime后才能backup → ❌ 否决。安全但破坏boss-absent持续运行，SQLite online backup已有一致性原语。
+- 候选C:online backup + read-only verify + exact-byte SHA → ✅ 采用。live source可读，artifact身份可由operator记录。
+- 候选D:restore只检查服务status或lock文件存在性 → ❌ 否决。status可能stale，文件存在不是ownership；必须竞争同一
+  kernel advisory lock。
+- 候选E:取得owner lock后直接覆盖target → ❌ 否决。operator误选artifact后没有本机回退点；必须先完成verified
+  pre-restore safety backup。
+- 候选F:本轮同时做云同步、加密、retention、scheduler和自动restore → ❌ 否决。需要owner data policy和credential，
+  自动restore还是高风险破坏性动作；先建立可验证local primitive并把external gap登记B-013。
+
+### 产出
+- 新增`aico.app.state_backup`:online backup、immutable read-only integrity/schema/count/SHA verify、owner-fenced
+  restore、timestamped safety artifact、same-directory temp/fsync/atomic replace和fenced WAL/SHM cleanup。
+- 扩展`aico-state backup|verify|restore`；backup/verify/restore输出compact JSON，错误不含payload/secret/raw exception/
+  source absolute path。restore需要expected SHA与`--yes`。
+- `aico-state reset --yes`改为先取得canonical runtime owner lock；active runtime返回3且不初始化/修改数据库。
+- 新增6条backup primitive测试和CLI闭环测试，覆盖live owner point-in-time、`0600`、read-only verify、corrupt/
+  wrong schema/hash、existing output、active owner、safety backup、round trip、sidecar cleanup和summary redaction。
+- 新增Goal Brief、ADR-0049、P-067、B-013；更新architecture、absence playbook、quickstart、daily ops、
+  troubleshooting、CHANGELOG和STATUS。
+
+### 验证结果
+- Red首先因`aico.app.state_backup`不存在而collection fail；实现后targeted backup/CLI suite `9 passed`。
+- full root:`685 passed, 1 skipped`;SME isolated:`53 passed`。
+- `ruff check .`、`mypy src tests`(175 source files)、4个touched Python format、production class <500/function <100、
+  packaged `aico-state --help`与真实temp DB backup/verify、Compose config和`git diff --check`通过。
+- Compose首次static gate因repo未配置真实`.env`而fail；改用仓库`.env.example`显式作为config-only env file后通过，
+  没有伪造真实receiver deployment。
+- 当前仍无owner`.env`、LaunchAgent install、独立receiver、off-device artifact/credential或disposable restore drill。
+
+### 关键决策
+- 🔒 live SQLite backup只允许database-native online backup，不把raw file copy写入runbook。
+- 🔒 verify完全只读且只接受current schema；跨版本恢复必须走未来显式migration，不静默改artifact。
+- 🔒 restore/reset与runtime复用同一kernel owner fence；active runtime时fail closed，不kill、不等待、不绕过。
+- 🔒 restore必须先完成artifact/hash/integrity/schema和current-target safety backup，再atomic replace。
+- 🔒 automatic backup可在未来评估；automatic restore不属于absence-first自治默认动作，必须owner显式确认。
+- 🔒 local artifact/round trip不是commercial disaster recovery；B-013未完成前不提升口径。
+
+### 留给下一轮
+- B-013:owner选择off-device加密存储、RPO/RTO/cadence/retention，补齐SQLite之外资产清单，并从off-device
+  artifact在disposable target做一次真实restore drill。
+- B-010/B-011仍需owner`.env`、explicit LaunchAgent install、terminal关闭后的真实IM和secondary incident sample。
+- B-012仍需第二故障域receiver、TLS/secrets/sink和kill/launch-failure/network三类真实outage证据。
+- 没有owner policy/credential时，不要擅自接入云存储或调度真实backup；继续寻找可本机证明的commercial gap。
+
+### 状态变化
+- 主SQLite backup/verify/restore从“daily ops空注释”变为completed local primitive。
+- destructive reset从“未检查active owner”变为owner-fenced。
+- 新增B-013，明确off-device DR仍为DEFERRED；没有把machine tests冒充外部演练。
+
+## Round 212 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可个人公司商用的 multi-agent 系统。
+- Round 211已能backup/verify/restore主SQLite，但B-013仍要求restore drill；completion audit发现verify没有执行
+  production restore path，不能作为materialization evidence。
+- 同时审计更激进的standing-charter auto execution，但当前morning target没有可信boss requester identity，且
+  provider broad permission不能由一句read-only prompt约束，不能为追求“无人”而绕过授权事实。
+
+### 思考与讨论
+- 候选A:给existing standing charter加auto-accept → ❌ 否决。proposal target/chat id不是审批requester identity；
+  Claude bypass权限下，task文本看似read-only也不能证明工具调用只读，会把absence-first变成uncontrolled execution。
+- 候选B:继续只运行`verify`并称drill通过 → ❌ 否决。没有调用owner lock、materialization、atomic replace和sidecar
+  cleanup，证据没有覆盖production restore implementation。
+- 候选C:定期对live state做真实restore → ❌ 否决。破坏性高且与runtime owner冲突，自动Gate不应触碰生产truth。
+- 候选D:private disposable target +复用production restore + read-only parity + bounded report → ✅ 采用。它扩大
+  recovery证据范围，同时不要求外部credential或live downtime。
+- 候选E:保留materialized DB供人工查看 → ❌ 否决。扩大payload retention；机器报告足够时应自动清理临时DB。
+
+### 产出
+- 新增`StateDrillSummary`与`drill_state_backup()`：verify artifact/expected SHA，创建`aico-state-drill-*` private
+  temp，调用`restore_state_backup()`物化，再read-only verify schema和known-table count parity。
+- success/failure都由temporary-directory lifetime清理DB、owner lock、WAL/SHM和partial artifact。
+- optional report通过same-directory temp、`0600`、file/directory fsync与atomic hard-link no-overwrite发布；静态
+  existing和publish race均保留原文件。
+- 扩展`aico-state drill --backup --expected-sha256 [--workspace] [--report]`；drill分支完全不读取全局`--db`。
+- 新增3条primitive测试并扩展packaged CLI闭环，覆盖live owner/source不变、actual materialization、report equality/
+  redaction、wrong hash/corrupt/missing workspace/report=backup/existing/race、injected failure cleanup和missing live DB。
+- 新增Goal Brief、ADR-0050、P-068；收窄B-013并更新architecture、playbook、operator docs、CHANGELOG和STATUS。
+
+### 验证结果
+- targeted state backup/CLI:`12 passed`；full root:`688 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、`mypy src tests`(175 source files)、4个touched Python format和production结构Gate通过。
+- packaged CLI在`/tmp`真实创建backup，使用不存在的live`--db`完成drill/report；live path保持missing，workspace清空，
+  report mode `600`且随后verify SHA一致。
+- Compose config和`git diff --check`通过；未读取真实`.env`、未restore真实state、未进行off-device upload。
+
+### 关键决策
+- 🔒 verify、local materialization drill、off-device business restore是三层证据，不能互相冒充。
+- 🔒 drill必须调用production restore primitive，不维护第二套“测试restore”。
+- 🔒 drill不接触live `--db`；自动化Gate永远使用disposable target并清理payload-bearing artifacts。
+- 🔒 evidence report只含bounded machine facts，new-path且不可覆盖；hash不是origin/off-device证明。
+- 🔒 standing charter auto-execution继续不实现，直到有显式owner preauthorization、可信requester identity、
+  enforceable tool permission和cost/run budget contract。
+
+### 留给下一轮
+- B-013:owner选择off-device encrypted storage、RPO/RTO/cadence/retention；从该位置取artifact先跑drill，再在
+  隔离checkout验`/tasks`/`/inbox`、approval/outbox、JSONL/config/secret reinjection和代表性IM。
+- B-010/B-011仍需owner`.env`、LaunchAgent install、terminal关闭后的真实IM和secondary incident receipt。
+- B-012仍需第二故障域receiver、TLS/secrets/sink和三类真实outage evidence。
+- 若继续human-absent自治，先写preauthorization/requester/tool-enforcement/budget契约，不得直接把candidate自动accept。
+
+### 状态变化
+- 主SQLite recovery evidence从artifact verify/round-trip提升为可归档的non-invasive production-path drill。
+- B-013从“缺disposable materialization工具”收窄为真正external/full-asset/business restore exercise。
+- goal保持active；没有把local report或机器Gate写成commercial DR完成。
+
+## Round 213 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造 human-absent / boss-absent 前提下可个人公司商用的 multi-agent 系统。
+- Round 212明确 standing charter 不能直接 auto-accept：morning target不是owner identity，prompt read-only不是工具权限，
+  broad provider没有有界损失合同。
+- 本轮目标是在不创建真实授权、不调用provider的前提下，建立可证明的 owner-bound、hard-read-only、scheduled-only
+  standing execution 最小闭环。
+
+### 思考与讨论
+- 候选A:任何 standing candidate 到点自动accept → ❌ 否决。project intent可被工作Agent修改，且无owner事实。
+- 候选B:chat id或scheduler配置等同owner授权 → ❌ 否决。destination与requester authority是不同维度。
+- 候选C:所有Adapter只要prompt写read-only就可加入 → ❌ 否决。Claude bypass、Cursor或wrapper的工具权限不能由
+  TaskBus从文本证明。
+- 候选D:external owner-only exact grant + Adapter-owned fixed sandbox + persistent budget → ✅ 采用。它在不扩大动作
+  类型的情况下，让一次standing inspection可跨老板缺席窗口前进。
+- 候选E:用签名/远程policy service一次性解决同用户恶意进程 → ❌ 本轮不做。当前威胁模型先阻断repo self-edit和
+  常见误配；更强owner authenticity明确登记B-014，不能藏在`0600`口径里。
+
+### 产出
+- 新增`standing_autonomy` strict loader/coordinator：绝对external path、regular non-symlink、current uid、`0600`、
+  bounded size、placeholder/duplicate/naive-expiry拒绝，以及exact morning target/project/charter/Adapter startup validation。
+- 新增`preauthorized_execution` Task metadata与runtime-checkable Adapter protocol；TaskBus在dispatch前检查read-only
+  risk、no collaboration、no provider session和Adapter hard boundary，forged metadata同样受Gate。
+- Codex Adapter为preauthorized task构造独立固定command，忽略配置中的danger-full-access/search/bypass参数，强制
+  read-only sandbox、ignore user config/rules、ephemeral、strict config和explicit network disabled；非codex executable拒绝。
+- scheduled `send_morning_handoff`发送早报后最多消费一个exact grant；interactive `/inbox`、`/morning`、`/proposals`
+  保持只读。decision在dispatch前持久化，run budget跨SQLite restart；timeout interrupt/cancel有界收口。
+- standing proposal schema向后兼容新增manual/preauthorized decision mode和authorization id；SME/config example charter
+  校准到Codex reviewer只读inspection。
+- 净增24条测试，覆盖loader、misbinding、restart budget、manual no-run、
+  fixed command、broad Adapter refusal、phase wiring、timeout与secret-safe readiness。
+- 新增Goal Brief、ADR-0051、P-069、B-014；更新operator docs、architecture、absence playbook、CHANGELOG和STATUS。
+
+### 验证结果
+- 聚焦standing/Codex/phase/orchestrator/service/SME suite:`178 passed`；full root:`712 passed, 1 skipped`；
+  SME isolated:`53 passed`。
+- `ruff check .`、`mypy src tests`(178 source files)、17个Round 213 Python文件format check、AICO `src`
+  structure、3份JSON、Compose config和`git diff --check`通过。
+- fixed Codex command仅执行`--help`解析成功；没有provider/model调用。真实`aico-service doctor`如实显示`.env`
+  missing、plist未安装、owner/heartbeat missing，没有伪造部署完成。
+- AICO production所有类<500行、方法<100行，TaskBus从505行收回497行。额外全项目审计仍发现两项**非本轮**
+  偏差：`projects/data-agent-v1/.../engine.py`待format，SME两段既存样例函数105/121行；本轮未扩大范围修改它们。
+
+### 关键决策
+- 🔒 charter是intent，target是routing，grant是authorization，Adapter sandbox是enforcement；四者不能互相替代。
+- 🔒 only scheduled morning consumes；任何human-facing read command都不能因查看而花预算/启动Agent。
+- 🔒 at-most-once优先：先持久化扣run再dispatch，失败或timeout不自动返还，避免crash重复成本。
+- 🔒 当前preauthorized capability只属于真实Codex executable的固定hard-safe command，不允许配置wrapper自证安全。
+- 🔒 external`0600`保护repo self-edit/误提交，不冒充密码学owner signature或独立OS trust boundary。
+
+### 留给下一轮
+- B-014:owner创建真实external grant，精确配置scheduled morning/Codex/SQLite，先doctor再显式安装runtime；用
+  `max_runs=1`完成一次定时provider+IM样本，并验证restart exhausted与timeout interrupt。
+- B-010/B-011仍需真实`.env`、LaunchAgent和secondary incident sample；B-012/B-013仍需第二故障域与off-device DR。
+- 若商业威胁模型包含同一user恶意进程，再设计detached signature/Keychain/managed policy/独立OS identity；不要
+  在没有owner决定和credential时自动生成或续期grant。
+
+### 状态变化
+- standing charter从“只能提议”扩展为“可选、显式owner授权、硬只读、有预算的一次scheduled inspection”。
+- 默认部署事实不变：没有grant即完全禁用，交互入口不自执行，所有写/网/外部动作仍需人工链路。
+- 新增B-014；goal保持active，没有把机器Gate冒充真实商用自治部署。
+
+## Round 214 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 213已实现owner-bound hard-read-only standing execution，但completion audit发现`aico-service doctor`只验证
+  grant文件；target漂移、charter缺失或Codex wrapper仍会在install前误报OK。
+- 本轮只关闭本地deployment preflight假阳性，不创建真实grant、不安装LaunchAgent、不调用provider。
+
+### 思考与讨论
+- 候选A:保留file lint，依赖runtime启动时报错 → ❌ 否决。后台失败发生得太晚，doctor claim范围不真实。
+- 候选B:doctor构造/启动完整runtime做smoke → ❌ 否决。可能创建state、占lock、写log或联网，诊断本身有副作用。
+- 候选C:在service CLI复制project/Adapter判断 → ❌ 否决。authorization shadow policy会与production漂移。
+- 候选D:Phase 1 non-mutating preflight复用production validator → ✅ 采用。它证明真实routing eligibility，同时保持
+  deterministic、offline、no-state。
+- 候选E:doctor直接调用一次Codex → ❌ 否决。消耗provider且不能作为每次install前的安全Gate。
+
+### 产出
+- 新增`preflight_standing_autonomy(settings)`：复用`_build_adapters`、persona/agent/project directory和
+  `_standing_autonomy_grants`，将非安全parser/routing异常统一映射为脱敏config error。
+- service doctor只投影standing相关`.env`字段；relative project/persona/workspace paths按`--repo`解析。
+- configured grant set必须non-empty；valid结果改为`owner-bound runtime binding verified`。
+- empty、target mismatch、Codex disabled、wrapper、invalid setting、malformed/unknown project、missing charter/seat/persona
+  均在install前fail closed，输出不含owner/target/path/command/raw input。
+- 同一valid Phase 1 fixture同时通过preflight与`build_phase1_runtime`，证明doctor没有维护更松的eligibility路径。
+- 新增Goal Brief、ADR-0052、P-070；更新B-014、operator docs、absence playbook、architecture、CHANGELOG和STATUS。
+
+### 验证结果
+- red阶段旧doctor对valid以外6类invalid binding均误报OK；实现后standing focused`10 passed`，phase/service`76 passed`。
+- preflight后`.aico`不存在，测试未调用Adapter/Channel/provider/network。
+- full root:`722 passed, 1 skipped`；SME isolated:`53 passed`；`ruff check .`、`mypy src tests`(178 source files)、
+  4个Round 214 Python format、AICO production structure、3份JSON、Compose config和`git diff --check`通过。
+- 真实`aico-service doctor`仍如实返回2：`.env` missing、plist未安装、owner/heartbeat missing；没有创建`.env`、
+  grant、state或调用provider。全项目既存format/SME样例函数偏差仍按Round 213边界未扩大处理。
+
+### 关键决策
+- 🔒 readiness必须沿下一步真实启动的production validation graph，而不是只lint单个artifact。
+- 🔒 deployment preflight必须non-mutating、offline、repeatable；不能通过试启动来证明安全。
+- 🔒 successful binding preflight不证明provider login、scheduler execution或IM receipt。
+- 🔒 failure output优先安全分类，owner-controlled raw parser/input不进入doctor。
+
+### 留给下一轮
+- B-014现在只剩owner external grant、真实`.env`/LaunchAgent、scheduled Codex与IM evidence；先doctor OK再install。
+- B-010/B-011/B-012/B-013仍需owner credential、第二故障域与off-device外部证据。
+- 如果没有owner授权，不要自动创建grant或启动provider；继续从其它可本机证明的商用缺口推进。
+
+### 状态变化
+- standing autonomy readiness从“grant artifact安全”提升为“真实runtime binding静态可启动”。
+- B-014删除本地preflight工具缺口，仅保留真正external action/evidence。
+- goal保持active；没有把doctor OK冒充boss-absent生产上线。
+
+## Round 215 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 214关闭install前binding假阳性；completion audit继续发现owner回归时只能跨proposal/task/audit猜结果，且
+  accepted-before-submit crash window没有boss-facing evidence。
+- 本轮目标是补restart-safe result receipt，保持TaskBus单一事实源，不自动retry/refund，不调用真实provider。
+
+### 思考与讨论
+- 候选A:新增`standing_execution_receipts`表并在runner结束时双写 → ❌ 否决。会产生proposal/task/receipt三方漂移。
+- 候选B:把provider正文/LLM自评存进proposal判成功 → ❌ 否决。自然语言不是TaskStatus，还扩大敏感retention。
+- 候选C:accepted无task evidence时自动返还run或retry → ❌ 否决。crash前是否已产生provider成本未知，可能重复执行。
+- 候选D:从durable proposal + matching snapshot按需派生receipt → ✅ 采用。无migration、重启一致、可暴露metadata裂缝。
+- 候选E:继续只展示generic Done/Blocked → ❌ 否决。无法证明grant/proposal/task linkage，也隐藏at-most-once窗口。
+
+### 产出
+- 新增`StandingAutonomyReceipt/Status`与`standing_autonomy_receipts()`：只收accepted preauthorized proposal，按task id、
+  proposal metadata和grant metadata三重匹配snapshot。
+- 投影running/waiting/done/failed/interrupted/rejected；无task/snapshot、authorization或metadata mismatch统一
+  `evidence_missing`。terminal elapsed从decided_at到snapshot.updated_at非负计算，非terminal不声称完成耗时。
+- inbox/morning显示最近5条short refs/charter/status/elapsed；missing无task时引导`/proposals`，有task时`/task`。
+- generic failed/running仍保持原优先级，receipt missing成为显式恢复动作；done receipt不会把empty inbox伪装成待办。
+- SQLite restart test从原standing_proposals/task_snapshots重建完全相同receipt，不新增state table。
+- scheduled success/timeout第二tick分别显示done/interrupted且Adapter只接活一次。
+- 新receipt E2E暴露Round 213 runner错误：preauthorized path调用`_run_delegated_task`后被overnight handoff grader把
+  正常输出改成FAILED；现改为intent-specific `_run_bounded_preauthorized_task`直接复用普通TaskBus stream+timeout。
+- 新增Goal Brief、ADR-0053、P-071；更新B-014、operator docs、architecture、absence playbook、CHANGELOG和STATUS。
+
+### 验证结果
+- receipt projection/render/restart suite:`9 passed`；相关orchestrator/inbox/morning/TaskBus:`129 passed`。
+- red-green证明旧preauthorized normal completion终态为FAILED；修复后第二morning receipt为DONE，timeout为INTERRUPTED。
+- full root:`731 passed, 1 skipped`；SME isolated:`53 passed`；`ruff check .`、`mypy src tests`(179 source files)、
+  7个Round 215 Python format、AICO production structure、derived-only STATE_TABLES、3份JSON、Compose config和
+  `git diff --check`通过。
+- structure首次发现Orchestrator恰为500行，收紧同一runner局部后恢复`<500`；相关97条和full均重跑通过。
+- 真实doctor仍如实FAIL `.env` missing；没有创建grant/state、安装LaunchAgent或调用provider。
+
+### 关键决策
+- 🔒 receipt是projection，不是新ledger；TaskSnapshot仍是唯一执行终态事实。
+- 🔒 metadata mismatch与accepted-without-task必须显式missing，不能“猜测尚未刷新”或静默retry。
+- 🔒 LLM正文不决定DONE；只有TaskBus terminal state决定receipt status。
+- 🔒 runner复用必须分离mechanism与intent policy；overnight grader不能跨到standing inspection。
+- 🔒 receipt只证明local durable orchestration，不提升provider/IM/cost/business evidence等级。
+
+### 留给下一轮
+- B-014仍需owner真实external grant、`.env`/LaunchAgent、scheduled Codex与IM；验收新增下一tick receipt检查。
+- B-010/B-011/B-012/B-013仍需owner credential、第二故障域和off-device evidence。
+- 若继续本地推进，优先找cost/usage hard budget或result semantic acceptance等仍可机器证明的commercial gap；不得
+  在无provider usage contract时伪造token/cost。
+
+### 状态变化
+- standing autonomy从“可启动、可执行”提升为“执行后可跨重启归因与接手”。
+- 正常preauthorized output不再被错误的overnight policy污染终态。
+- goal保持active；receipt与机器Gate未被写成真实无人公司上线。
+
+## Round 216 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 215明确下一本地缺口是cost/usage budget；standing grant只有run次数和wall-clock，没有provider实测用量。
+- 本轮不得调用付费provider，也不得把完成后统计伪装成单次调用硬限额。
+
+### 思考与讨论
+- 候选A:grant直接加`max_tokens`并宣称硬预算 → ❌ 否决。Codex usage在terminal `turn.completed`才出现，本次已花费。
+- 候选B:按公开模型价格计算美元成本 → ❌ 否决。CLI事件不证明model/auth/tier/bill，价格也会漂移。
+- 候选C:读取Codex session rollout → ❌ 否决。standing任务是ephemeral，私有rollout不是稳定consumer contract。
+- 候选D:terminal usage进入TaskBus audit和proposal，下一run前累计熔断 → ✅ 采用。与可得证据时间一致。
+- 候选E:usage missing按0继续 → ❌ 否决。协议漂移或completion/persist crash会放大成无限无人调用。
+
+### 产出
+- 新增`TaskUsage`和optional `TaskUsageReportingAdapter`边界；Codex JSONL parser提取completed agent message与terminal
+  input/output/cached/cache-write/reasoning usage，忽略thread/tool/status事件。
+- preauthorized固定命令增加`--json`，原read-only/no-network/ephemeral/no-resume/no-collaboration边界不变。
+- TaskBus在DONE时先写`TASK_USAGE_RECORDED`再写`TASK_COMPLETED`；metrics detail复用既有字段并向后兼容新增细分。
+- accepted proposal持久化usage/recorded_at；receipt对terminal task要求usage并显示`tokens=N`，缺失变`evidence_missing`。
+- grant新增必填`token_stop_threshold`；同grant prior observed total达到阈值或任一prior usage缺失时下一次dispatch停授。
+- 新增Goal Brief、ADR-0054、P-072；更新B-014、quickstart/daily ops/troubleshooting、architecture、playbook、
+  example grant、CHANGELOG和STATUS。
+
+### 验证结果
+- related Codex/standing receipt/orchestrator suite:`122 passed`；service/phase/metrics:`81 passed`。
+- full root:`735 passed, 1 skipped`；SME isolated:`53 passed`；`ruff check .`、`mypy src tests`(179 source files)、
+  AICO class/function structure、3份JSON、Compose config和`git diff --check`通过。
+- fixed command只用本机Codex 0.144.5 `--help`确认`--json`存在；协议字段以OpenAI官方exec schema/SDK为依据，
+  没有发起付费调用。
+- 真实doctor仍如实exit 2：`.env` missing、plist未安装、owner/heartbeat missing；未创建grant/state或启动runtime。
+
+### 关键决策
+- 🔒 `token_stop_threshold`是post-run cumulative circuit breaker，不是per-run hard token cap。
+- 🔒 total按provider turn的input+output记录；cached/reasoning是细分，不重复计入total。
+- 🔒 usage missing必须停授，不能以0、估值或session私有文件补事实。
+- 🔒 cost_usd必须有provider billing evidence；token receipt本身不构成美元账单。
+- 🔒 proposal是grant consumption/usage truth，不新增第二份usage ledger表。
+
+### 留给下一轮
+- B-014需owner external grant、真实`.env`/LaunchAgent、scheduled paid Codex和IM；验收要核对JSONL usage audit、
+  durable proposal、`tokens=N` receipt和下一run threshold/usage-missing hold。
+- 若业务要求单次硬成本SLA，先找provider-native pre-run/max-token/spend contract；没有时保持当前诚实边界。
+- B-010/B-011/B-012/B-013仍需owner credential、第二故障域与off-device证据；不得由本地token fixture代替。
+
+### 状态变化
+- standing autonomy从只有次数/时长边界提升为provider-grounded post-run usage evidence与跨重启累计停授。
+- metrics的usage事件首次由真实Adapter contract产生，而非只存在fixture解析器。
+- goal保持active；没有把terminal accounting写成真实商用硬成本控制或生产部署。
+
+## Round 217 — 2026-07-21 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 216已经有transport terminal与provider usage，但一段空泛、blocked或引用虚假位置的输出仍会显示task done。
+- 本轮不得增加第二次LLM grader，不得把本地source位置验证冒充业务语义真值。
+
+### 思考与讨论
+- 候选A:继续以TaskStatus.DONE作为成功 → ❌ 否决。它只证明执行结束，不证明charter结果。
+- 候选B:再调用tester/grader LLM → ❌ 否决。增加无人调用成本与第二个不确定结果，也扩大standing边界。
+- 候选C:只加JSON Schema → ❌ 不足。shape不能验证charter数量/顺序、complete一致性或source存在。
+- 候选D:schema + deterministic charter/source validator + durable bounded receipt → ✅ 采用。
+- 候选E:invalid/blocked自动retry → ❌ 否决。结果不健康时继续消耗授权与成本。
+- 查阅OpenAI官方维护记录后确认可配置`model_max_output_tokens`已移除且暂无恢复计划；维持Round 216诚实边界，
+  不声称per-run hard token SLA。
+
+### 产出
+- 新增`standing-result-v1.schema.json`和`standing_result.py`，定义complete/blocked/invalid、criteria、stop
+  acknowledgement、repo-relative source与bounded receipt。
+- preauthorized Codex固定命令增加`--output-schema`；schema缺失时Adapter不声明支持preauthorized execution。
+- standing prompt将acceptance/stop稳定编号为`A1..An`/`S1..Sn`，要求JSON only、每项source path+line、
+  complete/gaps一致性。
+- 本地验证拒绝invalid JSON、条目错位/重复、stop drift、绝对/穿越/缺失路径、缺行和状态矛盾；只声明location存在。
+- proposal持久化result receipt；raw结构化正文保留给validator但不写老板IM。TaskBus terminal错误仍走既有可见路径。
+- receipt新增outcome与coverage；prior result missing/invalid/blocked在下一次dispatch前fail closed。
+- 新增Goal Brief、ADR-0055、P-073；更新B-014、operator docs、architecture、playbook、CHANGELOG和STATUS。
+
+### 验证结果
+- result contract、Codex、receipt、orchestrator相关回归`137 passed`；full root`749 passed, 1 skipped`；
+  SME isolated`53 passed`。
+- `ruff check .`、`mypy src tests`(181 source files)、106个AICO/touched format、AICO class/function structure、
+  19份JSON、Compose、wheel schema packaging和`git diff --check`通过。
+- 本机Codex 0.144.5 `exec --help`确认`--output-schema <FILE>`；wheel含schema与validator。
+- 真实doctor如实exit 2：`.env` missing、plist未安装、owner/heartbeat missing。
+- 本轮未创建真实owner grant、未安装LaunchAgent、未调用付费provider、未生成scheduled IM样本。
+
+### 关键决策
+- 🔒 transport status与result outcome是两层证据；`done`不能冒充`outcome=complete`。
+- 🔒 本地verifier只证明shape、charter coverage、result consistency与file/line location，不证明语义真值。
+- 🔒 missing/invalid/blocked均停止后续无人dispatch；不自动retry/refund。
+- 🔒 raw provider JSON不进入老板IM，也不新增独立outcome ledger；proposal仍是grant consumption/result truth。
+- 🔒 Codex缺provider-native max-output contract时，继续使用post-run cumulative threshold，不制造单run硬预算口径。
+
+### 留给下一轮
+- B-014仍需owner external grant、真实`.env`/LaunchAgent、scheduled paid Codex和IM；新增验收要核对
+  `outcome=complete criteria=N/N sources=N`并人工抽查引用语义。
+- 若真实Codex schema行为或final JSON协议漂移，必须显示invalid/missing并停授，不能降级为plain-text done。
+- 商用更高等级仍需provider-native单run成本边界、off-device故障域与owner credential，不能由本地fixture替代。
+
+### 状态变化
+- standing autonomy从“transport完成且有usage”提升为“结果合同也必须通过才允许后续run”。
+- 老板恢复面现在能区分task done与outcome complete/blocked/invalid/missing。
+- goal保持active；没有把本地结果合同写成真实业务验收或生产部署。
+
+## Round 218 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 217已有结构化结果合同，但schema/capture没有资源上限；超长或高基数输出仍可能放大无人runtime内存/state。
+- 本轮不得把本地接收上限冒充provider生成阶段token/cost cap，也不得持久化raw正文排障。
+
+### 思考与讨论
+- 候选A:只给JSON Schema加`maxLength/maxItems` → ❌ 不足。schema drift/忽略和测试Adapter仍可返回无界正文。
+- 候选B:owner grant配置result上限 → ❌ 否决。runtime安全不变量不应被单个授权放宽。
+- 候选C:超限截断后继续解析 → ❌ 否决。不完整JSON/证据不能成为业务结果。
+- 候选D:charter + schema/model + Adapter + capture + validator固定边界 → ✅ 采用。
+- 候选E:保存raw oversized result供人工看 → ❌ 否决。会把资源与敏感正文带入durable state/IM。
+
+### 产出
+- standing result固定32,768字符；Codex Adapter与Orchestrator capture最多保留32,769字符，稳定触发
+  `result_too_large`且不继续累计chunk。
+- 最多16 criteria、16 stops、每criterion 8 sources、各list 16项；正文2,000字符、path 512字符、id 8字符。
+- `StandingCharterItem`同步限制criteria/stop数量和item长度，配置阶段拒绝不可满足合同。
+- JSON parser拒绝duplicate key；语法、schema/field overflow和total overflow分成`invalid_json`、
+  `result_schema_invalid`、`result_too_large`。
+- schema/model limit有逐字段同步测试；oversized E2E确认raw marker不进sent/edited IM，proposal JSON保持小于5K。
+- 新增Goal Brief、ADR-0056、P-074；更新B-014、operator docs、architecture、playbook、CHANGELOG和STATUS。
+
+### 验证结果
+- red-green覆盖total/field/count/duplicate key、charter input、schema sync、Codex Adapter和Orchestrator oversized链。
+- 相关suite:`159 passed`；full root:`758 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、`mypy src tests`(181 source files)、105个AICO/touched format、AICO class/function structure、
+  19份JSON、Compose、wheel内bounded schema和`git diff --check`通过。
+- 真实doctor如实exit 2：`.env` missing、plist未安装、owner/heartbeat missing。
+- 本轮未创建owner grant、未安装runtime、未调用付费provider、未触发真实scheduled IM。
+
+### 关键决策
+- 🔒 32K是standing result产品安全不变量，不由grant放宽；未来大结果应走bounded artifact协议。
+- 🔒 Adapter与consumer都必须限流；provider output schema不能单独承担资源安全。
+- 🔒 超限必须invalid并停授，不能静默截断成complete/blocked。
+- 🔒 raw result不进入proposal/IM；老板只看到bounded failure enum与coverage。
+- 🔒 本地result envelope不是provider token/cost cap，Round 216口径不变。
+
+### 留给下一轮
+- B-014仍需owner external grant、真实`.env`/LaunchAgent、paid Codex与scheduled IM sample；真实样本要同时验证
+  normal complete和oversized/schema-invalid recovery文案，但不要故意花大token制造超限。
+- 若未来需要超过32K的证据，应设计content-addressed bounded artifact/manifest，不得直接放大IM正文和proposal payload。
+- provider生成期硬成本、off-device故障域与owner credential仍是外部商业缺口。
+
+### 状态变化
+- standing autonomy从“结果结构有合同”提升为“配置、接收、capture和持久化资源也有硬边界”。
+- schema ignored、duplicate key和oversized输出现在都有可恢复、可停授、不会泄漏raw正文的终态。
+- goal保持active；没有把本地资源保护写成真实生产自治或账单控制。
+
+## Round 219 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 218已经让standing result的结构与资源有界，但complete只证明结果产生时file/line存在；仓库随后变化时，老板
+  接手和下一次scheduled run仍可能使用过期证据。
+- 本轮不得保存source正文、在老板IM暴露path/hash、无界重hash全部历史，或把SHA-256冒充签名/业务语义真值。
+
+### 思考与讨论
+- 候选A:只在result完成时验证一次 → ❌ 否决。无法覆盖完成到接手之间的时间漂移。
+- 候选B:只保存aggregate hash → ❌ 否决。没有source manifest就无法从SQLite独立重算。
+- 候选C:保存引用行正文或只hash引用行 → ❌ 否决。前者扩大敏感持久化，后者低熵且不能保守检测文件变化。
+- 候选D:bounded full-file manifest + bounded handoff/dispatch revalidation → ✅ 采用。
+- 候选E:drift后自动再调用provider → ❌ 否决。新调用不能替代owner对证据变化的验收，还会继续消费授权成本。
+
+### 产出
+- complete receipt新增canonical repo-relative path、line、size、full-file SHA-256的source manifest及aggregate digest；
+  不保存source正文，SQLite round-trip后仍可重算。
+- 每个result最多16个distinct source、单文件256KiB，同文件多行只读取/hash一次；超限分别稳定分类并停授。
+- 下一次dispatch只复核同grant最近成功结果，老板inbox/morning只复核最近5份，最坏IO分别约4MiB/20MiB，
+  不随全部历史无界增长。
+- 内容或size变化显示`evidence/outcome=drifted`；文件/root/legacy manifest缺失显示`missing`。两者都停止下一次
+  scheduled dispatch，invalid/blocked和usage gate优先级保持可测试。
+- 老板IM只显示current/drifted/missing，不显示path、hash或raw source；owner检查后需生成新验收，不自动重跑。
+- 新增Goal Brief、ADR-0057、P-075；更新B-014、quickstart/daily/troubleshooting、architecture、playbook、
+  CHANGELOG和STATUS。
+
+### 验证结果
+- red-green覆盖current/drifted/missing、oversized file、source总数、manifest aggregate、SQLite restart、最近5份窗口、
+  IM不泄漏private path，以及scheduled drift/missing均不dispatch。
+- 相关suite:`167 passed`；full root:`766 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、`mypy src tests`(181 source files)、181个`src/aico + tests` format、101个AICO生产文件
+  class/function structure、9份repo JSON、Compose、wheel contract和`git diff --check`通过。
+- wheel含`standing_result.py`的新manifest/revalidation实现及bounded standing schema；真实doctor如实exit 2：`.env`
+  missing、plist未安装、owner/heartbeat missing。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 本轮未创建owner grant、未安装LaunchAgent、未调用付费provider、未触发真实scheduled IM。
+
+### 关键决策
+- 🔒 point-in-time location validation与handoff-time integrity是两层证据；complete不能永久冻结可变文件。
+- 🔒 source manifest与revalidation都必须有文件数量、单文件大小和历史窗口上限。
+- 🔒 full-file SHA-256只做保守字节漂移锚点，不是签名、Git attestation、来源认证或业务语义证明。
+- 🔒 drift/missing停授并要求owner核对；不得自动retry、refund、修改旧proposal或把path/hash发进IM。
+- 🔒 proposal仍是result truth，不新增第二份evidence ledger；老板面只做bounded derived projection。
+
+### 留给下一轮
+- B-014仍需owner external grant、真实`.env`/LaunchAgent、paid Codex和scheduled IM sample；真实样本须同时看到
+  `outcome=complete`、`evidence=current`、criteria/source coverage与provider token receipt，并人工抽查引用语义。
+- 真实样本后可在owner控制下改变一个无副作用证据文件，确认下一次tick只返回drift hold；不要篡改生产关键文件或
+  通过大文件/大token故意制造失败。
+- 若商业要求来源真实性或跨主机证据，需设计签名/Git attestation/off-device artifact；不能放大本地hash口径。
+- provider单run硬成本、owner credential和第二故障域仍是外部商业缺口。
+
+### 状态变化
+- standing autonomy从“完成时引用位置存在”提升为“接手时可有界确认仍是同一份字节证据”。
+- 老板恢复面和下一次scheduled run不会在静默证据漂移上继续自治。
+- goal保持active；没有把本地fingerprint写成真实生产部署、来源签名或业务验收。
+
+## Round 220 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- 现有risk approval会无限期停留在`waiting_approval`；老板长期缺席后，旧上下文中的高风险操作仍可能被直接批准。
+- 本轮不得自动批准、自动重试、自动重提或把“拒绝旧票据”误写成外部credential已经撤销。
+
+### 思考与讨论
+- 候选A:审批永久有效，由老板自行判断新鲜度 → ❌ 否决。缺席模型不能把关键安全判断依赖于老板记忆。
+- 候选B:仅在`/approve`时拒绝过期票据 → ❌ 不足。老板inbox和task状态仍会长期展示错误的可批准状态。
+- 候选C:仅用进程内timer过期 → ❌ 否决。重启或停机期间会丢失deadline与审计闭环。
+- 候选D:每次按当前配置重新计算deadline → ❌ 否决。放大配置会追溯延长既有高风险授权票据。
+- 候选E:分别写approval、task和audit → ❌ 否决。任一步失败都会制造分裂状态或不可追责终态。
+- 候选F:创建时冻结deadline + lazy sweep + SQLite事务回收和outbox → ✅ 采用。
+
+### 产出
+- 新approval冻结aware `expires_at`；默认86,400秒，只允许300..604,800秒。后续配置变化只影响新票据。
+- startup、task snapshot(s)、pending query及approve/reject前执行lazy sweep；`now >= expires_at`时精确过期为
+  `approval=expired`、`task=rejected`，稳定理由为`approval lease expired; submit a new task for fresh review`。
+- SQLite在同一`BEGIN IMMEDIATE`事务内更新approval、task snapshot并写`APPROVAL_EXPIRED`到既有reconciliation
+  outbox；insert失败全部回滚，audit sink失败则保留pending，跨重启以稳定event id重投且不重复。
+- legacy无deadline记录按当前bounded policy推导；naive时间戳fail closed。短approval id、老板inbox和task查询均不能
+  绕过回收，过期任务不会dispatch。
+- `aico-service doctor`验证lease配置，拒绝非整数/越界值且不回显非法原值；时间与回收职责提取到
+  `ApprovalLeaseCoordinator`，`TaskBus`类体保持492行。
+- 新增Goal Brief、ADR-0058、P-076；更新B-010、quickstart/daily/troubleshooting、architecture、playbook、
+  CHANGELOG、`.env.example`和STATUS。
+
+### 验证结果
+- red-green覆盖精确边界、老板inbox不展示approve、无dispatch、配置放大不延长旧票据、SQLite原子回滚、audit
+  sink失败跨重启恢复及无重复、doctor非法配置不泄漏。
+- 相关suite:`235 passed`；full root:`775 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、`mypy src tests`(181 source files)、181个`src/aico + tests` format、101个AICO生产文件
+  class/function structure、9份repo JSON、Compose、wheel contract和`git diff --check`通过。
+- wheel包含approval lease常量、coordinator、expiry event和doctor readiness；真实doctor如实exit 2：`.env` missing、
+  plist未安装、owner/heartbeat missing。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 本轮未创建owner grant、未安装LaunchAgent、未调用付费provider、未触发真实scheduled IM。
+
+### 关键决策
+- 🔒 risk approval是bounded capability lease，不是永久待办；旧票据过期后必须提交新任务获得新上下文审查。
+- 🔒 deadline在创建时冻结；运维配置不得追溯延长既有票据，时钟异常/naive timestamp必须保守失败。
+- 🔒 approval、task终态与durable audit intent必须原子提交；audit delivery可以重试，但执行权限不能因此复活。
+- 🔒 过期只拒绝当前票据，不自动approve/retry/resubmit，也不代表外部credential、provider session或IM权限已撤销。
+- 🔒 复用recovery outbox基于同一task不能同时pending approval与running recovery；冲突或损坏记录必须fail closed。
+
+### 留给下一轮
+- B-010仍需owner创建真实`.env`、安装LaunchAgent，并从可信IM验证doctor、approval lease和常驻恢复路径。
+- 可在owner控制下创建一个无副作用的risk approval，等待真实lease到期后验证IM不再显示`/approve`；不得为验收执行
+  危险外部动作或缩短生产安全边界到不合理值。
+- 系统时钟大幅回拨仍可能延迟wall-clock lease；更高等级可研究持久化可信时间锚点，但不能用复杂度掩盖当前外部部署缺口。
+- 多人quorum、owner签名、credential撤销和跨主机审计属于后续商业安全层，不在本轮approval lease口径内。
+
+### 状态变化
+- 风险审批从“永久等待、随时可批准”提升为“创建时冻结、跨重启原子过期、可恢复审计”的bounded lease。
+- 老板长期缺席后，旧高风险上下文不会继续出现在可批准队列，也不会通过短id或重启绕过到期检查。
+- goal保持active；没有把本地lease写成真实生产部署、多人授权或外部credential安全。
+
+## Round 221 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- 源码审计发现Phase 1没有统一sender allowlist，而approval policy允许requester处理自己的风险任务；任何能触达Bot的
+  sender都可能查询状态、消耗provider，甚至提交并自批风险任务。
+- 本轮不得把Bot Token、私密链接或“没人知道地址”当授权，也不得只保护`/approve`而放过普通文本和状态命令。
+
+### 思考与讨论
+- 候选A:保持requester自审批并依赖Bot私密性 → ❌ 否决。Bot Token只认证AICO到平台，不认证来信者。
+- 候选B:只在approval handler检查reviewer → ❌ 否决。陌生sender仍可读取state、写memory和消耗provider。
+- 候选C:只加sender allowlist → ❌ 不足。合法owner在公共群发`/inbox`仍会把公司状态回复到不可信target。
+- 候选D:在每个command/Channel分别检查 → ❌ 否决。普通文本、callback和未来插件容易漏检或漂移。
+- 候选E:永久开放`/whoami`辅助配置 → ❌ 否决。会形成unauthenticated回复与spam放大面。
+- 候选F:统一pre-parse sender+target gate，加显式foreground-only discovery → ✅ 采用。
+
+### 产出
+- 新增可插拔`IngressAuthorizer`、`OwnerBoundIngressAuthorizer`与`IngressGuard`。正式Phase 1要求message/source
+  channel、owner sender、trusted target同时精确匹配；空集合deny all。
+- gate位于`Orchestrator.handle_incoming()`第一行业务逻辑前。陌生普通消息、callback和`/approve`不回复、不建task、
+  不capture memory、不改approval/audit、不调用Adapter；owner在错误target同样被拒绝。
+- `AICO_OWNER_SENDER_IDS`与`AICO_TRUSTED_TARGET_IDS`各最多16项、每项256字符，去重并拒绝placeholder、unknown、
+  whitespace/control字符。额外reviewer必须属于owner sender，enabled morning target必须属于trusted target。
+- 默认denial log只显示累计数并按1/2/4/8...记录，不含identity/content。显式
+  `AICO_INGRESS_DISCOVERY_LOG_IDENTITIES=true`仍deny all，只把escaped sender/target写本地日志；doctor/install拒绝
+  discovery常驻；Telegram transport层不再在guard之前记录raw sender。
+- 核心Orchestrator作为embedded/test组件保留显式allow-all默认，production wiring必须注入owner-bound policy；提取
+  memory capture helper后类体为497行。
+- 新增Goal Brief、ADR-0059、P-077；更新B-010/B-014、quickstart/daily/troubleshooting、architecture、playbook、
+  CHANGELOG、`.env.example`和STATUS。
+
+### 验证结果
+- red-green覆盖exact channel/sender/target、空binding、owner错误target、陌生普通消息、陌生`/approve`、owner后续批准、
+  reviewer/morning交叉配置、默认脱敏限流日志和显式discovery。
+- 相关suite:`260 passed`；full root:`791 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、`mypy src tests`(183 source files)、183个`src/aico + tests` format、102个AICO生产文件
+  class/function structure、9份repo JSON、Compose、109-file wheel contract和`git diff --check`通过。
+- wheel包含ingress policy/guard、Phase 1 production wiring和doctor readiness；真实doctor如实exit 2：`.env` missing、
+  plist未安装、owner/heartbeat missing。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 本轮未创建真实owner binding、未安装LaunchAgent、未调用付费provider、未触发真实Telegram/Feishu消息。
+
+### 关键决策
+- 🔒 requester/actor是业务归属，不是入口认证；所有外部IM消息必须在解析与任何业务副作用前统一授权。
+- 🔒 sender和reply target必须双重绑定；只校验其中一个都不能作为商用控制面边界。
+- 🔒 未授权消息silent drop，不给攻击者状态oracle，也不让公开Bot通过拒绝审计线性放大durable state/log。
+- 🔒 identity bootstrap必须显式、前台、仍deny业务并被install preflight拒绝，不能永久开放unauthenticated命令。
+- 🔒 IM sender ID依赖平台账号真实性，不是密码学owner signature；账号接管仍需平台撤销和未来二次授权层。
+
+### 留给下一轮
+- B-010仍需owner通过foreground discovery或平台工具取得真实sender/target，关闭discovery、`chmod 600 .env`、doctor
+  全绿后显式安装LaunchAgent，并从trusted chat验证`/inbox`；再从另一个sender/target确认silent drop。
+- B-014真实standing sample还必须证明scheduled target属于trusted allowlist，并保留paid usage、result/evidence receipt；
+  不能把本地authorizer回归写成真实IM/provider证据。
+- 商用更高等级可研究owner签名/passkey、按owner-target矩阵与细粒度RBAC，但必须先有真实单owner dogfood证据，不能
+  提前把个人公司控制面扩成复杂IAM系统。
+- wall-clock rollback对approval lease的剩余风险仍在ADR-0058；本轮身份门禁没有改变该时间边界。
+
+### 状态变化
+- AICO控制面从“能触达Bot即可进入编排”提升为“明确owner从明确trusted chat发来的消息才能进入业务路径”。
+- requester自审批不再对陌生sender构成自授权漏洞，合法owner也不能在错误群无意泄漏公司状态。
+- goal保持active；没有把平台sender ID、本地测试或identity discovery写成密码学身份、真实安装或生产IM证据。
+
+## Round 222 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- ADR-0058已记录剩余风险：approval与standing grant依赖wall clock，大幅回拨可能延长旧authorization。
+- 本轮不得依赖联网NTP、自动修改系统时间、复活旧task，或把owner-local时间锚点冒充TPM/签名/恶意主机防护。
+
+### 思考与讨论
+- 候选A:只增加`now < created_at`检查 → ❌ 不足。无法覆盖standing grant，也发现不了创建后已流逝但wall未前进的时间。
+- 候选B:只用进程内monotonic timer → ❌ 否决。restart会丢失锚点，正好违背长期缺席恢复模型。
+- 候选C:每次调用NTP/外部time API → ❌ 否决。给本地授权路径增加网络依赖，离线和服务故障时不可用。
+- 候选D:SQLite high-water + same-process monotonic elapsed + bounded correction tolerance → ✅ 采用。
+- 候选E:回拨后等时钟恢复并保留旧pending approval → ❌ 否决。旧上下文已经跨异常时间边界，必须失效重提。
+
+### 产出
+- 新增可插拔`AuthorizationClockGuard`/`AuthorizationClockStore`；主SQLite schema 5保存单行high-water，并进入
+  backup/verify/reset已知表集合。
+- 同进程用monotonic elapsed推导最低应到wall time，跨restart读取持久high-water；5秒以内校时容忍，超过即稳定拒绝。
+- rollback时全部pending approval通过既有SQLite事务/outbox变为`expired/rejected`；approve短ID、配置放大和restart
+  都不能复活。
+- 新risk approval、valid direct preauthorized task和scheduled standing grant都先检查同一fence；standing只发hold，
+  不accepted、不dispatch、不产生伪usage/result receipt。wall追平后只能创建新authorization。
+- 新增Goal Brief、ADR-0060、P-078；更新B-010/B-014、quickstart/daily/troubleshooting、architecture、playbook、
+  CHANGELOG和STATUS。
+
+### 验证结果
+- red-green覆盖monotonic elapsed、5秒容差、SQLite restart high-water、pending approval废止、新risk拒绝及scheduled
+  standing无dispatch。
+- 相关suite:`169 passed`；full root:`799 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root/SME mypy(185/37 source files)、185个`src/aico + tests` format、103个AICO生产文件
+  class/function structure、9份repo JSON、Compose、110-file wheel contract和`git diff --check`通过。
+- wheel包含authorization clock/store、schema 5与standing/approval wiring；全仓format check仍只报告未触碰的既有
+  `projects/data-agent-v1/src/data_agent_v1/engine.py`，没有顺手修改。
+- 真实doctor如实exit 2：`.env` missing、plist未安装、runtime owner/heartbeat missing；没有为本地Gate伪造配置。
+- 本轮未创建真实owner binding/grant、未安装LaunchAgent、未调用付费provider、未触发真实scheduled IM。
+
+### 关键决策
+- 🔒 aware wall-clock timestamp不等于monotonic或trusted time；所有延后消费的authorization必须有回拨策略。
+- 🔒 进程内monotonic与跨重启durable high-water必须同时存在；只做其中一层不能满足老板长期缺席恢复。
+- 🔒 明显回拨后旧pending approval主动失效；修好时间也不能复活旧上下文，只能提交新task。
+- 🔒 5秒容差是正常校时与严格熔断的显式取舍，不提供关闭fence的runtime开关。
+- 🔒 owner-local high-water不证明外部准确时间、硬件attestation或host compromise resistance。
+
+### 留给下一轮
+- B-010仍需真实`.env`、owner sender/trusted target、LaunchAgent和terminal关闭后的IM样本；真实操作前应确认系统时间正常。
+- B-014仍需真实external grant、paid Codex与scheduled IM receipt；可在安全测试环境受控回拨后验证只有hold，但不得在
+  生产Mac或有真实外部副作用任务时随意改系统时间。
+- 更高等级若要求恶意host/VM snapshot抵抗，需要hardware-backed counter、signed remote time或独立authority设计；
+  不能扩大本地SQLite口径。
+
+### 状态变化
+- approval与standing expiry从“wall clock正常时有界”提升为“明显回拨时跨重启fail closed”。
+- 老板缺席期间系统时间异常不会静默延长旧risk/preauthorized能力窗口。
+- goal保持active；没有把本地rollback fence写成真实生产部署或外部可信时间。
+
+## Round 223 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- 代码审计发现`JsonlAuditSink`只做普通append；合法JSON修改、整行删除/重排仍会被runtime、metrics和老板视图当作历史真相。
+- 本轮不得把本地hash称为签名/WORM，不得自动信任旧日志，也不得用改写历史的migration隐藏baseline不确定性。
+
+### 思考与讨论
+- 候选A:继续普通JSONL，仅依赖`0600` → ❌ 否决。权限减少误操作面，不证明内容、顺序或tail未变。
+- 候选B:每行独立checksum → ❌ 不足。能发现字段修改，不能发现整行删除、插入或重排。
+- 候选C:只做previous hash chain → ❌ 不足。删除末尾若干条后，剩余链仍自洽。
+- 候选D:迁入SQLite事务表 → ❌ 本轮否决。扩大既有truth source迁移，且单库仍不提供独立历史锚点。
+- 候选E:SHA-256 chain + owner-only checkpoint + file lock + explicit legacy seal → ✅ 采用。
+- 候选F:远端签名/WORM → ⏸ 后续。信任更强，但需要外部authority、密钥轮换和真实部署，不应冒充本地闭环已完成。
+
+### 产出
+- 新增`AuditLedger`：每条新event保留顶层业务字段并加入`_audit` schema/previous/head；canonical event payload按domain
+  separated SHA-256串链。checkpoint独立保存event count、byte size、head，检测tail truncation。
+- ledger/checkpoint/lock只接受current-user-owned regular non-symlink owner-only文件；process advisory lock串行化writer。
+  active sink在下一次append前校验file identity/checkpoint，外部同长度改写也不会静默覆盖。
+- 写路径先append+fsync event，再原子replace+fsync checkpoint。两步之间crash只留下可验证的checkpoint lag；restart
+  推进checkpoint，stable event id retry不重复。断链、半行、duplicate id、collision和反向checkpoint一律拒绝。
+- 新增`aico-audit verify|seal`。legacy未seal时runtime/doctor fail closed；owner seal只对核对后的当前字节建baseline、
+  收紧权限且不重写event。seal不存在路径会拒绝，避免拼错路径却生成伪证据。
+- Phase 1、metrics/glance和`aico-service doctor/install`统一走严格reader；损坏历史不会进入业务replay。同步更新旧test fixture。
+- 新增Goal Brief、ADR-0061、P-079；更新B-010/B-013、quickstart/daily/troubleshooting、absence playbook、architecture、
+  `.env.example`、CHANGELOG和STATUS。
+
+### 验证结果
+- red-green覆盖字段修改、同长度active rewrite、tail truncation、insert/reorder、torn tail、legacy seal不重写、缺失路径、
+  checkpoint crash recovery、两sink交错、duplicate event id、symlink、Phase 1拒绝和doctor安全输出。
+- 相关suite:`151 passed, 1 skipped`；full root:`815 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root/SME mypy(188/37 source files)、188个`src/aico + tests` format、105个AICO生产文件
+  class/function structure、9份repo JSON、Compose、112-file wheel + `aico-audit` entrypoint和`git diff --check`通过。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 真实doctor仍如实exit 2：`.env` missing、plist未安装、runtime owner/heartbeat missing；未创建本地配置或外部证据。
+
+### 关键决策
+- 🔒 append API不是append-only evidence；内容、顺序和tail完整性必须分别有验证机制。
+- 🔒 checkpoint lag只在“完整有效链已fsync、checkpoint尚未推进”时可自动收敛；其它不一致全部fail closed。
+- 🔒 legacy seal是owner对当前baseline的显式接受，不是历史修复、追溯证明或自动migration。
+- 🔒 audit JSONL与checkpoint是同一恢复资产；只复制其中一个、删除checkpoint后重seal都不能作为商用恢复流程。
+- 🔒 本地hash/checkpoint不能抵抗可同时改两者的同主机恶意进程；签名、TPM、WORM和远端anchor是更高信任层。
+
+### 留给下一轮
+- B-010仍需真实`.env`、owner sender/trusted target、LaunchAgent和terminal关闭后的IM样本；install前先verify/seal audit。
+- B-013需把audit JSONL + matching checkpoint纳入owner选择的off-device资产包，并在隔离checkout先verify再启动runtime。
+- B-014仍需真实owner grant、paid Codex、scheduled IM和result/usage/evidence receipt；本轮没有调用provider或发送IM。
+- 若商业威胁模型要求防同UID恶意修改，下一层应评估独立签名/WORM anchor，而不是继续叠加本地sidecar并扩大声明。
+
+### 状态变化
+- durable audit从“应用层追加、损坏时可能静默重放”提升为“历史链+tail锚点、crash可收敛、异常fail closed”。
+- 老板缺席期间，合法JSON篡改或截断不再悄悄进入恢复与晨间理解面。
+- goal保持active；没有把owner-local evidence写成真实部署、外部不可抵赖或商业DR完成。
+
+## Round 224 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 223要求audit JSONL与checkpoint成组恢复，但operator分别复制live文件仍可能跨过一次append/checkpoint推进，
+  得到彼此不匹配的两个“完整文件”。B-013明确缺少可移交、可离线验证的audit recovery asset。
+- 本轮不得把ZIP/manifest称为签名或off-device DR，不得只打包JSONL后重新seal，也不得自动执行destructive restore。
+
+### 思考与讨论
+- 候选A:daily ops继续写“同时复制两文件” → ❌ 否决。资产清单完整不等于同一point-in-time。
+- 候选B:只复制JSONL，恢复时重新seal → ❌ 否决。会丢掉tail anchor并把截断重新包装成可信baseline。
+- 候选C:先后复制到目录再校验 → ❌ 不足。校验能发现不匹配，但不能产生一致source snapshot，跨设备还容易漏文件。
+- 候选D:压缩ZIP → ❌ 当前否决。体积更小，但增加compression bomb与解码资源策略攻击面。
+- 候选E:writer-locked snapshot + fixed ZIP_STORED + manifest/member/ledger/outer分层验证 → ✅ 采用。
+- 候选F:一次构建state/audit/memory/config/secret/receiver全资产bundle → ⏸ 暂缓。跨truth-source RPO与secret边界未定义，
+  看似完整的包会制造更危险的DR假阳性。
+
+### 产出
+- `copy_audit_ledger_snapshot()`复用现有audit process lock；load时严格验证，合法checkpoint lag先推进，再复制ledger和
+  derived checkpoint。输出必须new-path/private且失败只清理自己成功创建的文件。
+- 新增`audit_backup.py`：`create_audit_backup()`将matching pair封装为owner-only固定三member ZIP_STORED，manifest包含
+  schema、aware timestamp、count/size/head和member size/hash，不包含live path或payload摘要之外的正文。
+- artifact publication使用同目录temp、hard-link no-overwrite、file/directory fsync；已有output或fsync失败不被覆盖、
+  不留下可误认成功的published file。
+- `verify_audit_backup()`先验证owner/regular/non-symlink与optional expected outer SHA，再拒绝extra/duplicate/encrypted/
+  compressed member，流式materialize到private temp，核对member hash并调用production `verify_audit_ledger()`。
+- `aico-audit`新增`backup --output`与`verify-backup --backup [--expected-sha256]`；后者不需要live audit path。
+- 新增Goal Brief、ADR-0062、P-080；更新B-013、operator/architecture/absence docs、`.env.example`、CHANGELOG和STATUS。
+
+### 验证结果
+- red-green覆盖有event/初始化空ledger、point-in-time后续live append、checkpoint crash lag收敛、member修改、攻击者同步
+  改manifest hash后chain复核、extra/compressed member、outer SHA mismatch、owner-only/symlink、missing/unsealed source、
+  existing output、same-path、directory fsync failure、manifest/summary隐私及删除live pair后的offline CLI verify。
+- 相关suite:`163 passed, 1 skipped`；full root:`827 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root/SME mypy(190/37 source files)、190个`src/aico + tests` format、106个AICO生产文件
+  class/function structure、9份repo JSON、Compose、113-file wheel + `aico-audit` entrypoint和`git diff --check`通过。
+- sandbox wheel首次因无法解析`pypi.org/hatchling`失败；按审批流程允许build dependency访问后同一`uv build --wheel`
+  成功，artifact内容合同随后离线验证通过。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 真实doctor仍如实exit 2：`.env` missing、plist未安装、runtime owner/heartbeat missing；未创建外部DR/IM/provider证据。
+
+### 关键决策
+- 🔒 多文件backup必须有source一致性barrier；manifest/事后hash不能追溯修复复制窗口。
+- 🔒 offline verifier必须实际materialize并走production reader，不能维护一套只看ZIP/manifest的弱验证逻辑。
+- 🔒 outer SHA只有保存在独立authority才提升传输/存储证据；与artifact同盘同权限不抵抗同主机重写。
+- 🔒 artifact含完整敏感正文，`0600`不是加密；off-device encryption/retention/access audit仍由owner选择。
+- 🔒 本轮不提供restore：未来必须先定义runtime owner fence、corrupt-live quarantine、pre-restore safety和双文件
+  replace crash window，不能因有backup就匆忙增加破坏性命令。
+
+### 留给下一轮
+- B-013下一内部缺口是owner-fenced audit restore/materialization drill：必须能从corrupt live安全隔离原字节、保留safety
+  artifact，并在双文件replace中途crash时fail closed/retry收敛；仍不可自动restore。
+- 之后再定义跨state/audit/memory/config的component RPO manifest，不能假装多个独立snapshot是全局事务。
+- owner仍需选择加密off-device storage、独立SHA记录、cadence/retention并完成隔离checkout业务恢复样本。
+- 大ledger snapshot锁持有成本需要未来rotation/增量设计；没有数据前不提前引入复杂log segment协议。
+
+### 状态变化
+- audit DR从“知道要复制两文件”提升为“能生成严格point-in-time、单文件、离线可物化验证的component recovery point”。
+- B-013的内部export缺口收窄，但restore、全资产、外部故障域和业务RTO/RPO证据仍未完成。
+- goal保持active；没有把本地artifact写成off-device、加密、不可抵赖或商业DR完成。
+
+## Round 225 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 224已能生成并离线验证audit recovery point，但还不能证明production materialization，也没有安全覆盖live的
+  owner fence、损坏现场留存和双文件replace中途崩溃语义。
+- 本轮不得自动选择/恢复artifact，不得删除corrupt live后再恢复，也不得把quarantine或local drill称为可信备份/商业DR。
+
+### 思考与讨论
+- 候选A:operator手工解压后依次覆盖 → ❌ 否决。active runtime、覆盖前证据和中途crash均无合同。
+- 候选B:只允许完整live恢复，损坏时拒绝 → ❌ 不足。真正事故无法运营，会诱导手工删除现场。
+- 候选C:先删两文件再复制 → ❌ 否决。扩大无证据窗口，失败不可回退。
+- 候选D:自动恢复最新artifact → ❌ 否决。破坏性选择必须由owner明确指定SHA并确认。
+- 候选E:state-bound owner fence + mandatory safety/quarantine + staged fail-closed pair replacement → ✅ 采用。
+- 候选F:尝试跨两文件“原子事务” → ❌ 不做虚假保证。可移植文件系统没有该primitive，选择中断可检测、启动拒绝、
+  同一可信备份重跑收敛。
+
+### 产出
+- 新增`audit_recovery.py`：raw snapshot在audit writer lock内只复制current-user-owned regular文件而不声称有效；verified
+  snapshot先完整stage，再按ledger/checkpoint顺序replace并分别directory fsync，最后复核source parity。
+- `materialize_audit_backup()`强制expected outer SHA，将固定artifact流式提取、核对member/manifest/chain/checkpoint并
+  调用production pair replacement；existing output和same-path拒绝。
+- 新增`audit_restore.py`与`aico-audit drill-backup`：private disposable workspace走production materializer并自动清理；
+  可选report是`0600`、atomic new-path、bounded JSON，不含payload或绝对路径。
+- `aico-audit restore`要求真实AICO state DB identity、expected SHA、new preservation output和`--yes`；取得从同一state
+  path派生的runtime owner lock，active runtime或任何前置校验失败均不修改live。
+- live严格可验证时先生成标准portable safety artifact；corrupt/unsealed时保留raw ledger/checkpoint到固定
+  `unverified_quarantine` ZIP，manifest仅含created time、kind、member name/size/hash，不能进入普通restore。
+- 新增Goal Brief、ADR-0063、P-081；更新B-013、operator/architecture/absence docs、`.env.example`、CHANGELOG和STATUS。
+
+### 验证结果
+- red-green覆盖disposable drill/cleanup/private report、bad SHA与report publication race、verified safety round trip、
+  corrupt-live raw quarantine、缺confirmation、非AICO state fence、active owner、SHA mismatch及checkpoint replace故障注入。
+- 故障注入在ledger已replace、checkpoint尚未replace时强制`verify_audit_ledger()`失败；恢复原语重跑后count/head/pair收敛。
+- 恢复相关suite:`94 passed`；full root:`836 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root/SME mypy(193/37 source files)、193个`src/aico + tests` format、108个AICO生产文件
+  class/function structure、9份repo JSON、Compose、115-file wheel + `aico-audit` entrypoint和`git diff --check`通过。
+- sandbox wheel首次因无法解析`pypi.org/hatchling`失败；按审批流程允许build dependency访问后构建成功并验证新module。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 真实doctor外部状态未改变：checkout仍无`.env`、LaunchAgent、owner binding/grant、paid provider或scheduled IM样本。
+
+### 关键决策
+- 🔒 artifact integrity、live mutation authorization与pair publication是三层合同，任一层都不能由另一层替代。
+- 🔒 restore必须绑定真实AICO state identity并取得runtime owner lock；lock文件存在与否本身不是owner状态。
+- 🔒 corrupt live只能标记为unverified quarantine并保留原字节，不能通过重写manifest、seal或命名包装成可信backup。
+- 🔒 两次replace不是原子事务；准确商用语义是中断后fail closed、严格startup拒绝、同一backup可重跑收敛。
+- 🔒 preservation output永不覆盖；中断重试复用可信backup但必须使用新的preservation路径，保存每次现场证据。
+- 🔒 backup/verify/drill可以被operator或未来scheduler调用，destructive restore永远需要owner显式选择和确认。
+
+### 留给下一轮
+- B-013内部下一缺口是跨state/audit/memory/config/secret/receiver的component RPO manifest；不能把独立snapshot误写成
+  全局事务。owner还需选择加密off-device storage、独立SHA authority、cadence/retention并完成隔离checkout业务演练。
+- 大ledger backup/restore的writer pause与容量需要真实数据后再决定rotation/segment/incremental，不提前引入协议。
+- B-010仍需真实`.env`、owner sender/trusted target、LaunchAgent和terminal关闭后IM样本；B-014仍需真实owner grant、
+  paid Codex、scheduled IM和usage/result/evidence receipt。
+
+### 状态变化
+- audit DR从“可生成/验证恢复点”提升为“可无侵入演练、可保留损坏现场、可owner-fenced恢复且中断可重跑”。
+- B-013的本机audit component restore缺口关闭，但off-device/full-asset/business RTO/RPO evidence仍未完成。
+- goal保持active；没有把local owner-triggered restore写成automatic recovery或commercial disaster recovery ready。
+
+## Round 226 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 225关闭audit component restore缺口后，B-013下一内部缺口是跨component RPO manifest：两个分别绿色的state/audit
+  artifact仍可能来自不同时间，且没有机器清单证明memory/config/secret/grant/receiver是否覆盖。
+- 本轮不得把多个独立snapshot写成global transaction，不得把`.env`/grant打入明文包，也不得增加combined automatic restore。
+
+### 思考与讨论
+- 候选A:靠同一日期文件名配对 → ❌ 否决。名字不绑定字节、采集窗口或缺失资产。
+- 候选B:独立JSON sidecar引用外部artifact路径 → ❌ 不足。跨设备容易漏件，路径替换后sidecar仍看似有效。
+- 候选C:停runtime后声称全局一致 → ❌ 否决。SQLite/audit/memory/receiver没有共享transaction coordinator，停机不创造
+  同一提交时刻。
+- 候选D:直接打包state/audit/memory/config/`.env` → ❌ 否决。memory尚无snapshot合同，secret不得因方便传输进入bundle。
+- 候选E:fixed outer artifact + bounded sequential window + immutable coverage ledger + deep verifier/drill → ✅ 采用。
+- 候选F:组合restore → ⏸ 暂缓。需要在同一owner fence下定义component顺序、失败回退和missing asset reinjection，不能由
+  transport bundle暗示授权。
+
+### 产出
+- 新增`recovery_set.py`：capture按state→audit复用既有online/writer-locked backup，生成owner-only、new-path、固定
+  `recovery-set.json`/`state.db`/`audit.zip`的ZIP_STORED。publication继续使用same-directory temp、hard-link no-overwrite
+  和file/directory fsync。
+- manifest记录overall start/end、component completion、inner artifact hash/size与state schema/table、audit count/head；
+  schema固定`core_state_and_audit_only`、`sequential_component_snapshots`、`global_transaction=false`和
+  `business_restore_ready=false`。
+- 固定asset ledger包含9类：state/audit captured；memory snapshot primitive missing；project/persona config从reviewed source
+  control恢复；runtime secret/standing grant重新注入；dead-man receiver state外部备份；lock/heartbeat等ephemeral排除。
+- `verify_recovery_set()`强制expected outer SHA，拒绝extra/duplicate/encrypted/compressed member，流式materialize后调用
+  production SQLite verifier与audit archive/chain verifier，并逐项比对inner summary。
+- `drill_recovery_set()`在private disposable workspace继续调用state production restore和audit production materializer，
+  清理全部临时文件并可发布`0600`、atomic new-path bounded report；不读取live source或提供destructive restore。
+- 新增`aico-recovery capture|verify|drill`，capture支持flag或runtime环境路径并与`AICO_STATE_DB_PATH=true`语义一致；
+  JSON/error不含source path、payload或artifact hash。
+- 新增Goal Brief、ADR-0064、P-082；更新B-013、operator/architecture/absence docs、`.env.example`、CHANGELOG和STATUS。
+
+### 验证结果
+- red-green覆盖fixed scope/window/coverage、offline deep verify、combined production drill、workspace cleanup/private report、
+  inner state改写+manifest/hash同步更新、false readiness、extra/compressed member、existing output、unsealed audit、live sidecar、
+  wrong SHA、权限/symlink、report race、CLI env/隐私与state=true normalization。
+- 恢复相关suite:`103 passed`；full root:`845 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root/SME mypy(196/37 source files)、196个`src/aico + tests` format、110个AICO生产文件
+  class/function structure、9份repo JSON、Compose、117-file wheel + `aico-recovery` entrypoint和`git diff --check`通过。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 真实doctor外部状态未改变：checkout仍无`.env`、LaunchAgent、owner binding/grant、paid provider或scheduled IM样本。
+
+### 关键决策
+- 🔒 component integrity、capture-time relationship、asset coverage是三类独立证据；两个绿色component不能自动推出DR绿色。
+- 🔒 capture completion只给出actual snapshot的上界；manifest只声称两个point落在bounded window，不声称精确共同时间。
+- 🔒 `global_transaction=false`与`business_restore_ready=false`是schema invariant，不是operator可切换的状态字段。
+- 🔒 coverage ledger必须列缺项；不存在于包内的asset不能靠沉默或README文字变成已保护。
+- 🔒 outer bundle解决传输漏件/错配，不改变inner component verifier、restore owner fence或external authority边界。
+- 🔒 verify/drill可自动化，combined destructive restore仍需后续独立设计与owner显式操作。
+
+### 留给下一轮
+- B-013下一内部缺口是memory JSONL：当前append/compact路径没有process writer barrier、tail anchor或consistent portable
+  recovery point；先定义memory snapshot/verify，不能直接把raw JSONL塞进core set并标captured。
+- 之后定义reviewed Git revision、secret/grant reinjection receipt与receiver DB独立backup contract，再升级recovery set schema；
+  不在schema v1中动态删掉未启用资产来制造readiness。
+- owner仍需选择encrypted off-device storage、独立SHA authority、cadence/retention，并从该位置完成隔离checkout full-business
+  restore/RPO/RTO/IM样本；B-010/B-014的真实runtime/provider证据也仍缺。
+
+### 状态变化
+- component DR从“分别生成state/audit artifact”提升为“同一bounded window绑定、固定缺口清单、deep verify与combined drill”。
+- B-013不再靠人工资产清单发现漏项；机器输出会持续阻止core set被宣称为full business restore ready。
+- goal保持active；没有把sequential local set写成global transaction、encrypted off-device backup或commercial DR完成。
+
+## Round 227 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 226明确memory JSONL是core recovery set下一内部缺口：旧store没有process writer barrier、tail anchor、portable
+  recovery point，且append在durable写前先修改进程索引。
+- 本轮不得用raw copy假装可信snapshot，不得破坏同`memory_id`多版本语义，也不得把本机memory恢复提升为full DR。
+
+### 思考与讨论
+- 候选A:直接把raw memory JSONL塞入recovery set → ❌ 否决。复制可能跨write，合法JSON篡改和tail截断仍不可见。
+- 候选B:把memory迁入主SQLite → ⏸ 暂缓。会扩大核心存储迁移、兼容与回滚范围，不是本缺口的最小闭环。
+- 候选C:只加file lock → ❌ 不足。能防writer交错，但无法发现历史修改或匹配恢复点。
+- 候选D:复用audit安全语义但保持memory独立domain/artifact → ✅ 采用。共享的是商用完整性边界，不耦合event模型。
+- 候选E:recovery-set v1把memory标captured但不升级schema → ❌ 否决。固定coverage contract变化必须显式版本化。
+
+### 产出
+- 新增`memory_ledger.py`：canonical record envelope加入独立memory SHA-256 chain；owner-only checkpoint锚定record count、
+  byte size和head。process lock串行writer，append+fsync先于checkpoint replace+fsync，合法lag可恢复，其它不一致fail closed。
+- `JsonlMemoryStore`改为durable append返回后才重建索引；每次append/read刷新ledger，peer writer可见；MemoryAtom同ID多版本
+  仍按最后记录生效，MemoryEdge顺序不变。legacy必须owner核对后显式seal。
+- 新增`memory_recovery.py`与`aico-memory`：backup/verify-backup固定三个member并深验chain/checkpoint和domain model；
+  drill走production materializer；restore要求expected SHA、真实AICO state DB owner fence、new preservation和`--yes`。
+- 有效live恢复前生成verified safety artifact；损坏/unsealed live原字节进入unverified quarantine。ledger/checkpoint替换中断
+  保持strict reader fail closed，同一可信artifact可用新preservation路径重跑。
+- recovery set升级schema v2，capture顺序改为state→audit→memory，fixed four members与scope
+  `core_state_audit_memory`；verify/drill运行三套production primitive，coverage ledger将memory改为captured。
+- 新增Goal Brief、ADR-0065、P-083；更新B-013、operator/architecture/absence docs、`.env.example`、CHANGELOG和STATUS。
+
+### 验证结果
+- red-green覆盖tamper/truncation/unsealed legacy、peer writer/version semantics、append phantom、checkpoint lag、private portable
+  backup、member与inner chain篡改、disposable drill、owner fence、verified safety、corrupt-live quarantine、CLI env/隐私及
+  recovery-set v2 capture/deep verify/three-component drill。
+- 恢复相关suite:`127 passed`；full root:`856 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root/SME mypy(201/37 source files)、201个`src/aico + tests` format、113个AICO生产文件
+  class/function structure、8份repo JSON、Compose、120-file wheel + `aico-memory`/`aico-recovery` entrypoint和
+  `git diff --check`通过。
+- sandbox wheel首次因无法解析`pypi.org/hatchling`失败；按审批流程允许build dependency访问后构建成功并核对新module/entrypoint。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 真实doctor外部状态未改变：checkout仍无`.env`、LaunchAgent、owner binding/grant、paid provider或scheduled IM样本。
+
+### 关键决策
+- 🔒 append-only是写入意图，不是完整性或恢复合同；会进入prompt的memory必须与audit一样具备writer barrier和tail anchor。
+- 🔒 durable truth先于进程索引；append失败不能留下只在当前进程可见的phantom memory。
+- 🔒 legacy自动加载不再等于自动信任；owner显式seal只为核对后的当前字节建立baseline，不能修复损坏。
+- 🔒 同ID多版本是memory业务语义，不能套用audit duplicate-id规则；hash chain只约束record序列。
+- 🔒 recovery-set schema升级只表示memory component已captured，不改变sequential window、missing assets或restore authority。
+- 🔒 destructive memory restore不得调度、不得自动选latest，必须保存当前live或原始损坏现场。
+
+### 留给下一轮
+- B-013下一内部缺口是reviewed Git revision/checkout contract、secret与standing grant reinjection receipt、独立receiver DB
+  backup/restore；然后才是在owner选择的encrypted off-device位置完成隔离checkout full-business RPO/RTO/IM样本。
+- Memory ledger全量refresh和snapshot锁时长需在真实数据规模测量后决定rotation/index snapshot；不提前引入segment协议。
+- B-010/B-014仍需真实`.env`、owner-bound IM、LaunchAgent、paid provider、scheduled standing run及receipt证据。
+
+### 状态变化
+- memory continuity从“普通append JSONL可重启加载”提升为“并发安全、可检测篡改、可移交、可演练和owner-fenced恢复”。
+- core recovery set从state/audit两组件升级为state/audit/memory三组件，required unresolved assets从六项降为五项。
+- goal保持active；没有把local sequential artifact写成global transaction、off-device backup或commercial DR完成。
+
+## Round 228 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 227把state/audit/memory都纳入可验证core recovery set，但config仍只靠文字写“从source control恢复”；事故时如果
+  回到错误commit、dirty tree或漂移后的active config，三份数据备份即使全绿也不能复现被审阅的runtime行为。
+- 本轮不能把source/config/secret塞进明文artifact，不能自动reset用户工作树，也不能把Git hash冒充平台review签名。
+
+### 思考与讨论
+- 候选A:把整个checkout与配置正文打进recovery set → ❌ 否决。扩大明文敏感面、体积与依赖供应链范围，也重复Git职责。
+- 候选B:capture自动读取当前HEAD并标记reviewed → ❌ 否决。被备份对象不能同时充当独立review authority。
+- 候选C:manifest只记commit SHA → ❌ 不足。无法发现dirty tracked/untracked文件或active config没有来自该commit。
+- 候选D:owner/CI独立提供完整expected commit，capture验证clean root/HEAD/tree/config blob与字节 → ✅ 采用。证据最小、可离线
+  移交，并保留Git与artifact职责边界。
+- 候选E:`verify-checkout`自动checkout/pull/reset到目标commit → ❌ 否决。恢复验证不应修改现场、依赖网络或覆盖用户数据。
+
+### 产出
+- 新增`config_revision.py`：支持SHA-1/SHA-256 Git object format，要求worktree root与clean porcelain状态，独立核对full
+  expected commit和tree；active Project/Persona JSON必须是checkout内regular non-symlink tracked file且等于commit bytes。
+- evidence只记录relative path、blob OID、size/hash和persona source，不嵌入配置正文、绝对路径或Git stderr；未传persona文件时
+  明确使用`built_in_at_revision`，避免伪造不存在的外部配置。
+- recovery-set升级schema v3和scope`core_state_audit_memory_config_revision`，capture顺序记录config→state→audit→memory；
+  project/persona配置保持`included=false`但新增`recovery_contract_ready=true`，required unresolved assets从五项减为三项。
+- 新增`aico-recovery verify-checkout`，先执行outer SHA、fixed members和三套component deep verifier，再验证恢复checkout的
+  exact revision/tree/config parity；wrong revision、dirty tree和config drift均fail closed。
+- capture要求输出位于checkout外；CLI支持`--checkout`/`AICO_CHECKOUT_PATH`、project/persona config及
+  `--expected-config-revision`/`AICO_REVIEWED_CONFIG_REVISION`，缺失或错误时不发布artifact且错误不泄露path/payload。
+- 新增Goal Brief、ADR-0066、P-084；ADR-0065标为被替代；更新B-013、operator/architecture/absence docs、`.env.example`、
+  CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖clean capture/verify、built-in persona、tracked/untracked dirty、wrong revision、config drift、外部/symlink/
+  untracked config、输出位于checkout内、manifest contract篡改、CLI env与隐私边界及offline verify绿色但checkout复核失败。
+- 配置/recovery-set定向:`18 passed`；full root:`865 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(203 source files)、203个`src/aico + tests` format、114个AICO生产文件class/function structure、
+  8份repo JSON、dead-man Compose、121-file wheel + recovery entrypoint/module和`git diff --check`通过。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 真实外部状态未改变：checkout仍无`.env`、LaunchAgent、owner binding/grant、paid provider或scheduled IM样本。
+
+### 关键决策
+- 🔒 当前HEAD是待验证事实，不是review authority；reviewed revision必须由owner/CI独立、显式、完整地提供。
+- 🔒 clean tree、exact commit/tree和active config blob/hash是同一恢复合同的不同证据，缺一项都不能宣称配置可复现。
+- 🔒 `included=false`与`recovery_contract_ready=true`可以同时成立：Git负责内容可得性，recovery artifact负责精确绑定。
+- 🔒 commit/hash不证明平台review、签名、remote仍可访问或依赖供应链安全；这些边界必须保留在manifest与operator文档。
+- 🔒 checkout verification保持只读；工具不得为通过Gate自动pull、checkout、reset或删除untracked文件。
+- 🔒 schema v3只关闭config recovery contract缺口，不改变sequential window、明文artifact或business restore false。
+
+### 留给下一轮
+- B-013下一内部缺口是runtime secret与standing grant的可审计reinjection receipt，以及dead-man receiver SQLite独立
+  backup/verify/restore；任何secret正文都不能进入core recovery manifest。
+- owner仍需选择encrypted off-device storage与独立SHA authority，从副本完成`verify`、`verify-checkout`、`drill`、显式
+  component restore和代表性业务/IM RPO/RTO验收。
+- B-010/B-014仍需真实`.env`、owner-bound IM、LaunchAgent、paid provider、scheduled standing run及receipt证据。
+
+### 状态变化
+- source-controlled runtime configuration从“人工记得用同一版本”提升为“独立reviewed revision + clean checkout + active
+  config parity的机器合同”。
+- core recovery set required unresolved assets从五项降为三项，但仍固定`business_restore_ready=false`。
+- goal保持active；没有把Git commit写成review签名、remote backup或commercial DR完成。
+
+## Round 229 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 228已经能把业务数据恢复到exact reviewed checkout，但`.env` control-plane secret和standing grant仍只有
+  `reinject_required`文字，无法证明灾后当前runtime material与该recovery set存在可审计关系。
+- 本轮不得把secret/grant正文或普通hash写进artifact，不得要求轮换后的secret等于旧值，也不得把本地presence冒充
+  Claude/Codex远端认证成功。
+
+### 思考与讨论
+- 候选A:把`.env`和grant一起嵌入core set → ❌ 否决。扩大明文泄露与授权复制面，事故恢复会静默复活旧权限。
+- 候选B:manifest保存secret/grant普通SHA-256 → ❌ 否决。低熵值可离线猜测，stable hash泄露关联，且阻止合规轮换。
+- 候选C:恢复后只跑`aico-service doctor` → ❌ 不足。没有绑定set SHA/revision，不生成immutable evidence，也不区分presence/live auth。
+- 候选D:无值slot/mode合同 + production preflight + owner decision receipt → ✅ 采用。允许轮换与重新签发，同时保持可审计。
+- 候选E:receipt绿色后把所有runtime secret标为complete → ❌ 否决。AI CLI常用外部login/keychain，本地control-plane检查不能
+  证明远端provider可用，必须拆成独立asset。
+
+### 产出
+- 新增`runtime_reinjection.py`：checkout根`.env`必须owner-only、Git未跟踪、non-symlink、bounded、无duplicate key；复用
+  `aico-service` production checks验证channel、required key、alert/liveness、IM ingress、approval lease及standing autonomy。
+- capture合同只记录Telegram/Feishu及可选alert/liveness secret slot名称、channel和grant enabled mode；固定声明value/hash未记录、
+  post-restore receipt required、AI provider authentication out of scope。
+- standing grant启用时要求external owner-only nonempty file，并通过真实Project/Persona/Adapter/morning target hard-read-only
+  preflight；receipt只记count，不保存owner/target/grant ID/body。
+- 新增`recovery_reinjection.py`与CLI `reinjection-receipt`：先deep verify recovery set与exact clean checkout，再以safe
+  `owner-decision-ref`生成`0600`、atomic、new-path JSON，绑定set SHA、config revision、slot/grant count和aware time。
+- 新增`verify-reinjection`：强制独立receipt SHA并重新检查当前material；secret可在同slot内轮换，slot/channel/grant mode漂移、
+  伪造receipt、宽权限、symlink、existing output和publish failure均fail closed。
+- recovery set升级schema v4，capture order为configuration→reinjection requirements→state→audit→memory；
+  `control_plane_secrets`与`standing_grant`标为`reinject_and_attest`，`ai_provider_authentication`与receiver DB保持unresolved。
+- 新增Goal Brief、ADR-0067、P-085；ADR-0066标为被替代；更新B-013、operator/architecture/absence docs、`.env.example`、
+  CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖secret不进入manifest/receipt、同slot轮换、missing/placeholder/duplicate key、owner-only/symlink、Telegram↔Feishu
+  slot drift、standing grant重新签发/preflight/empty、owner decision placeholder、receipt external SHA/forge/new-path/race cleanup及CLI round trip。
+- production service/Phase1/standing/recovery交叉suite:`135 passed`；full root:`873 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(206 source files)、206个`src/aico + tests` format、116个AICO生产文件class/function structure、
+  8份repo JSON、dead-man Compose、123-file wheel + new modules/recovery entrypoint和`git diff --check`通过。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- sandbox wheel首次因无法解析`pypi.org/hatchling`失败；按审批流程允许build dependency访问后构建成功。
+- 真实外部状态未改变：checkout仍无`.env`、LaunchAgent、owner binding/grant、paid provider或scheduled IM样本。
+
+### 关键决策
+- 🔒 secret requirement、local materialization和remote authentication是三类证据；slot present不能推出provider accepted。
+- 🔒 普通secret hash既不是安全脱敏也不是rotation-friendly恢复合同；artifact不保存value/hash。
+- 🔒 同slot secret允许灾后轮换，standing grant允许owner重新签发；mode/slot变化必须重新capture，授权内容变化必须新receipt。
+- 🔒 owner decision reference提供审计关联，不是数字签名或owner身份密码学证明。
+- 🔒 receipt先绑定exact set/revision/checkout再验证runtime material；不能用一份绿色doctor输出跨recovery set复用。
+- 🔒 control-plane合同完成不删除AI provider与receiver缺口，`business_restore_ready=false`保持schema invariant。
+
+### 留给下一轮
+- B-013下一本地缺口是dead-man receiver SQLite独立backup/verify/owner-fenced restore及disposable drill；不能把AICO主DB
+  recovery工具直接套到receiver schema/worker语义上。
+- B-014仍需真实owner `.env`、LaunchAgent和Claude/Codex认证/定时standing run样本，借此关闭
+  `ai_provider_authentication` required unresolved asset。
+- owner仍需选择encrypted off-device storage与独立SHA authority，从副本完成全链路component restore、reinjection receipt、
+  provider/IM业务验收及RPO/RTO记录。
+
+### 状态变化
+- control-plane secret/grant恢复从“operator记得重新注入”提升为“无值requirements + explicit owner decision + repeatable receipt”。
+- core recovery set required unresolved assets从三项收敛为两项，并首次显式拆出AI provider远端认证。
+- goal保持active；没有把local presence、owner reference或receipt写成external authentication、digital signature或commercial DR完成。
+
+## Round 230 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 229后core coverage只剩AI provider认证和dead-man receiver DB两个required unresolved assets；本轮选择唯一可本地
+  闭环的receiver恢复合同，不触发真实部署、secret、provider或外部消息。
+- receiver位于第二故障域，必须保留AICO故障期间的monitor/outage/outbox证据；不能机械复用主SQLite工具或并入combined restore。
+
+### 思考与讨论
+- 候选A:把receiver DB作为core ZIP第五个member同步capture/restore → ❌ 否决。两个主机无共享事务，AICO恢复会回滚仍在工作的observer。
+- 候选B:直接让`aico-state`接受receiver路径 → ❌ 否决。主DB schema/count不验证armed monitor、outage order、payload或delivery语义。
+- 候选C:停receiver后普通`cp`/替换DB → ❌ 否决。WAL可能漏写，没有worker fence、deep verify或production drill证据。
+- 候选D:独立online backup + exact schema/domain verify + disposable drill + shared kernel fence restore → ✅ 采用。
+- 候选E:恢复时自动选latest或由AICO recovery触发 → ❌ 否决。恢复是receiver自身事故动作，时间最近不代表authority正确。
+
+### 产出
+- receiver DB增加schema version 1及future-version拒绝；store把live DB收紧为`0600`，service lifespan与恢复工具竞争同一
+  path-derived kernel owner lock，第二个worker/active-worker restore在业务写入前fail closed。
+- 新增`dead_man_receiver_recovery.py`：SQLite online backup生成standalone owner-only artifact；offline verifier检查integrity、
+  exact DDL/constraints、无trigger/view/user index、monitor checkpoint、event payload-column identity、outage/delivery order和aware time。
+- 新增`aico-dead-man-recovery backup|verify|drill|restore`；drill调用production restore并比较semantic counts，报告不含
+  runtime/event/payload/absolute path；restore强制expected SHA与`--yes`。
+- 有效live在替换前生成verified safety backup；无法验证的DB/WAL/SHM原字节进入owner-only随机quarantine目录；materialized
+  DB完成fsync/replace后清理stale sidecar，中断在替换前保持live字节不变。
+- recovery set升级schema v5；`dead_man_receiver_state`保持`included=false`并改为`external_component_recovery`合同就绪，
+  AI provider live authentication成为唯一required unresolved contract，`business_restore_ready=false`不变。
+- 新增Goal Brief、ADR-0068、P-086；ADR-0067只在recovery-set v4范围标为被替代；更新B-012/B-013、receiver deploy runbook、
+  quickstart/daily/troubleshooting、absence playbook、architecture、CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖在线一致backup、corrupt/wrong/future schema、executable schema、payload drift、owner-only/symlink、active worker、
+  wrong SHA、valid safety、corrupt-live DB/WAL quarantine、replace interruption、disposable cleanup/report privacy、CLI confirmation及双worker fence。
+- receiver/recovery定向:`43 passed`；full repo:`880 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(209 source files)、209个`src/aico + tests` format、118个AICO生产文件class/function structure、
+  8份repo JSON、dead-man Compose、125-file wheel + new entrypoint/modules和`git diff --check`通过。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- sandbox wheel首次因无法解析`pypi.org/hatchling`失败；按审批流程允许build dependency访问后构建成功并核对entrypoint/module。
+- live doctor外部状态未改变：checkout仍缺`.env`、plist/LaunchAgent、runtime owner/heartbeat；没有创建grant、调用provider或发送IM。
+
+### 关键决策
+- 🔒 第二故障域observer是独立恢复组件，不是主系统combined restore member；被观察者故障时observer必须继续保留证据。
+- 🔒 `included=false + recovery_contract_ready=true`只表示独立production合同存在，不表示receiver artifact已capture、off-device或同时间点。
+- 🔒 SQLite integrity和table count不足以恢复receiver；monitor/outage/outbox/payload/delivery必须作为domain semantics深验。
+- 🔒 online backup可与worker并行，destructive restore必须与worker竞争kernel lock；lock文件metadata不是ownership authority。
+- 🔒 valid safety和unverified quarantine是两种证据等级；quarantine保留字节但不证明可恢复。
+- 🔒 本地drill/outer SHA不证明独立host、TLS、artifact来源签名、RPO/RTO或commercial DR。
+
+### 留给下一轮
+- B-014/coverage唯一内部required缺口是AI provider live authentication；需要owner `.env`、Claude/Codex真实请求与
+  scheduled standing receipt，不能由本地presence或mock关闭。
+- owner在第二故障域部署receiver后，按独立cadence生成backup、保存外部SHA/加密副本并做drill；再采集kill、launch failure、
+  network isolation三类outage evidence。receiver restore只在receiver自身事故时执行。
+- owner仍需选择encrypted off-device storage，从副本完成core component restore、reinjection receipt、receiver drill、
+  provider/IM业务验收及RPO/RTO记录。
+
+### 状态变化
+- dead-man receiver从“persistent volume请自行备份”提升为domain-aware、可演练、worker-fenced的独立恢复组件。
+- core recovery set required unresolved contract从两项收敛为AI provider live authentication一项，但full-business证据仍未完成。
+- goal保持active；没有把contract-ready写成artifact captured、external deployment、provider auth或commercial DR完成。
+
+## Round 231 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 230后AI provider live authentication是coverage唯一缺少本地恢复方法的required asset；现有adapter health、CLI presence和
+  reinjection receipt都不能证明灾后credential被Claude/Codex远端接受。
+- 当前checkout没有`.env`、owner grant或真实runtime，本轮不能擅自消费付费provider；需要先完成可执行协议、隐私边界和fake gate。
+
+### 思考与讨论
+- 候选A:继续要求operator人工截图CLI成功 → ❌ 否决。不可重复、不能绑定set/reinjection SHA，也不适合boss-absent恢复。
+- 候选B:把`which`/`--version`/adapter health写成认证成功 → ❌ 否决。只证明本地binary存在，不联系远端。
+- 候选C:运行普通业务prompt并保存全文 → ❌ 否决。结果不可判定，可能加载规则/工具/session并泄露业务内容。
+- 候选D:随机exact challenge + 受限provider command + 短时secret-free receipt → ✅ 采用。
+- 候选E:对整条configured command做hash以检测漂移 → ❌ 否决。命令行若误带credential会形成stable hash；只绑定实际
+  probe executable，运行参数由probe重新构造。
+- 候选F:`recovery_contract_ready=true`后直接声明full restore ready → ❌ 否决。合同存在和本次post-restore evidence已交付是
+  两个状态，必须新增独立字段。
+
+### 产出
+- runtime reinjection contract/receipt升级schema v2，固定`claude-code`及所有enabled optional adapter的canonical provider集合；
+  flag非法或capture/verify间scope漂移fail closed。
+- 新增`ProviderAuthenticationProbe`插件边界和Claude/Codex内建实现。Claude使用safe-mode、无customization/tools/Chrome/session；
+  Codex使用ignore user config/rules、ephemeral、read-only sandbox和experimental network disabled。
+- probe只从配置取official executable，不继承runtime bypass/yolo参数；在private empty cwd、独立process group中运行，移除
+  `AICO_*` child env，90秒timeout、stdout/stderr各256 KiB，超限或超时终止整个process group。
+- 结果必须同时满足随机challenge exact response、terminal success和provider-reported usage。Cursor/CodeFlicker/Trae/Gemini
+  没有批准的safe structured protocol前由默认factory拒绝，不复用其yolo command。
+- 新增`provider_authentication.py`和CLI `provider-auth-receipt|verify-provider-auth`：receipt先深验set、exact checkout与reinjection
+  receipt，再绑定set/reinjection SHA、revision、owner decision、provider scope、probe executable hash和30分钟expiry。
+- 回执只存challenge SHA；固定声明challenge/prompt/provider output/error/credential value/hash/identity均未记录。
+  `verify-provider-auth`重验独立SHA、current binding与freshness，但明确`live_probe_executed=false`、`live_probe_replayed=false`。
+- recovery set升级schema v6；provider asset改为`post_restore_live_probe`合同就绪，并为全部asset增加
+  `requires_post_restore_evidence`。summary同时输出`unresolved_assets`与`post_restore_evidence_assets`，前者为空不改变
+  `business_restore_ready=false`。
+- 新增Goal Brief、ADR-0069、P-087；ADR-0068只在recovery-set v5范围标为被替代；更新B-013/B-014、operator/architecture/
+  absence docs、CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖Claude/Codex exact/usage parser、safe args、wrapper/unsupported拒绝、private cwd、AICO env剥离、process timeout/
+  output overflow、provider scope drift/非法flag、双provider receipt、failure no-publication、expiry、executable drift、secret/challenge/path
+  privacy及两条CLI round trip。
+- provider/recovery定向:`27 passed`；full repo:`889 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(212 source files)、212个`src/aico + tests` format、120个AICO生产文件class/function structure、
+  9份repo JSON、dead-man Compose、127-file wheel + provider modules/recovery entrypoint和`git diff --check`通过。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- sandbox wheel首次因无法解析`pypi.org/hatchling`失败；按审批流程允许build dependency访问后构建成功并核对entrypoint/module。
+- 真实外部状态未改变：checkout仍无`.env`、LaunchAgent/runtime owner、owner binding/grant；没有调用付费provider或发送IM。
+
+### 关键决策
+- 🔒 binary/config presence、remote authentication、业务质量和持续可用性是四种证据；live challenge只关闭第二类的时点事实。
+- 🔒 recovery probe使用随机、无业务数据、exact可判定响应；不能用“包含某字符串”或普通模型回答猜测成功。
+- 🔒 provider adapter可插拔不等于默认信任任意wrapper/yolo command；没有safe structured protocol时必须fail closed。
+- 🔒 receipt SHA和owner decision是外部authority binding/审计关联，不是数字签名、credential identity或binary provenance证明。
+- 🔒 executable hash只检测probe入口字符串漂移，不证明PATH解析内容、签名、供应链或账号余额。
+- 🔒 `unresolved_assets=()`只表示全部required asset已有恢复方法；必须继续读取`post_restore_evidence_assets`并保持
+  `business_restore_ready=false`，直到真实off-device/receiver/provider/IM/RPO/RTO证据完成。
+
+### 留给下一轮
+- owner创建真实`.env`与grant、完成doctor/install后，恢复场景依次运行reinjection receipt和provider auth receipt；在30分钟内
+  verify并把两份SHA保存到独立authority。随后采集scheduled standing result/usage/IM样本，关闭B-014外部证据。
+- owner仍需在第二故障域部署receiver，完成独立backup/outage证据；选择encrypted off-device storage，从副本执行隔离checkout
+  full-business restore，记录RPO/RTO和代表性IM，关闭B-012/B-013。
+- 若要支持Cursor/CodeFlicker/Trae/Gemini，先确认官方CLI是否提供tool-free、non-persistent、structured result/usage和network boundary；
+  缺任何一项都不要新增默认probe。
+
+### 状态变化
+- AI provider authentication从“presence之外仍需人工真实样本”提升为可绑定恢复链、短时、secret-free、fail-closed的live probe合同。
+- core coverage不再有缺少恢复方法的required asset，但所有外部post-restore证据和commercial DR仍未完成。
+- goal保持active；没有把fake gate、本地CLI help、合同就绪或空`unresolved_assets`写成真实provider、continuous health或business restore完成。
+
+## Round 232 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- live checkout仍无`.env`、LaunchAgent、owner grant或可授权外部样本；不能擅自安装、发送IM或消费provider。
+- 审计发现`MorningPushScheduler._safe_dispatch()`吞掉发送失败，`health_check()`只看task存活；scheduled handoff可静默消失却保持绿色。
+
+### 思考与讨论
+- 候选A:再做一个full-business恢复summary JSON → ❌ 否决。当前更直接的北极星断点是每天老板接手消息可能静默丢失。
+- 候选B:只让发送异常杀死scheduler、交给self-healing重启 → ❌ 否决。没有durable intent/receipt，重启仍不知道是否已被平台接受。
+- 候选C:失败时重新渲染最新晨报 → ❌ 否决。同一逻辑identity下内容漂移，无法证明重试的是同一报告。
+- 候选D:声称平台message id实现exactly-once → ❌ 否决。accept-before-ack和进程崩溃不在本地SQLite事务内。
+- 候选E:exact envelope先落盘、稳定daily id、有界at-least-once并显式duplicate possibility → ✅ 采用。
+- 候选F:把晨报ACK等到standing autonomy完成后一起确认 → ❌ 否决。自治失败会重发已送达晨报，混淆transport与business result。
+
+### 产出
+- 新增`MorningHandoffEnvelope`：消息正文带稳定`Delivery:`引用，content SHA和所含restart-safe standing receipt SHA在模型层深验。
+- 新增`SQLiteMorningDeliveryStore`和schema v6 table：PENDING/SENDING/RETRYING/DELIVERED/EXHAUSTED、attempt/time、
+  duplicate possibility、exact envelope与raw platform message id SHA跨重启保留。
+- scheduler按channel/target/thread/scope/project hash + local calendar day生成逻辑ID；同日`push_on_start`/restart只复用一份内容。
+  发送失败按1/5/15/15分钟、最多五次；中断SENDING在启动时reconcile为immediate retry并标歧义。
+- scheduler health现在把open delivery投影为DEGRADED、exhausted投影为FAILED；owned-task liveness保持独立。
+- Orchestrator拆出prepare/deliver/run-scheduled-autonomy三个接口；平台ACK先落DELIVERED，自治执行后置，避免业务异常重发已确认消息。
+- Phase1正式morning push强制主state DB，新增60秒可配置ACK timeout；`aico-state`输出最近secret-free receipt，
+  不显示target、正文或raw message id；ACK target必须精确匹配configured target，否则按失败重试。state backup/reset自动覆盖新表。
+- 新增Goal Brief、ADR-0070、P-088；更新B-010/B-014、architecture/operator/troubleshooting/absence docs、README、
+  `.env.example`、CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖同日dedupe、exact content restart retry、interrupted send歧义、五次耗尽、ACK/自治解耦、health、
+  platform identity privacy、Phase1 durable-state要求、state schema/backup/reset/CLI。
+- 定向相关测试:`221 passed`；full root:`897 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(213 source files)、213个`src/aico + tests` format、121个AICO生产文件class/function structure、
+  9份repo JSON、dead-man Compose、128-file wheel + morning modules/entrypoints和`git diff --check`通过。
+- 全仓format check仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 初次full Gate发现service doctor的standing preflight未投影新增state DB字段，以及新增transport methods把两个核心类推过500行；
+  已补齐preflight projection并把窄互操作方法移入小型mixin，最终full Gate全绿。
+- sandbox wheel首次因无法解析`pypi.org/hatchling`失败；按审批流程允许build dependency访问后构建成功并核对128个member。
+- 真实外部状态未改变：checkout仍无`.env`、LaunchAgent/runtime owner、owner binding/grant；没有调用provider或发送IM。
+
+### 关键决策
+- 🔒 scheduler task liveness、platform ACK、human read和standing business result是四种事实，不能互相替代。
+- 🔒 没有platform idempotency transaction时只声明bounded at-least-once；`duplicate_possible`和visible delivery id用于暴露歧义。
+- 🔒 retry identity先冻结exact content；同一delivery id重新渲染属于drift，store必须fail closed。
+- 🔒 platform ACK后立即确认transport，再运行standing autonomy；后者继续由proposal/task/result/usage receipts证明。
+- 🔒 state DB包含owner晨报正文以支持exact retry；operator summary保持secret-free，但off-device backup仍需owner加密。
+
+### 留给下一轮
+- owner按B-010/B-014创建`.env`、owner/trusted binding与外部grant，doctor/install后取得一条真实scheduled receipt；
+  用`aico-state`核对delivery id/status/content SHA，再核对聊天的同一`Delivery:`与standing result/usage，不能把ACK写成已读。
+- owner仍需第二故障域receiver、encrypted off-device策略、core/receiver恢复演练和RPO/RTO证据，关闭B-012/B-013。
+- 若自治执行在transport DELIVERED后出现非TaskBus捕获的基础设施异常，后续应单独设计standing-run durable intent；不能复用晨报重试。
+
+### 状态变化
+- scheduled morning从best-effort task loop提升为restart-safe、有界、可观测的platform delivery contract。
+- B-010/B-014的本地取证能力增强，但真实owner/IM/provider样本仍缺，blocker保持DEFERRED。
+- goal保持active；没有把mock ACK、content hash或SQLite记录写成真实平台送达、人类已读、standing语义正确或commercial readiness。
+
+## Round 233 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 232已持久化scheduled morning transport，但其“platform ACK先落盘、随后运行standing autonomy”仍有崩溃窗口。
+- live checkout仍无`.env`、LaunchAgent、owner binding/grant或可授权外部样本；不能安装、发送IM或消费provider。
+
+### 思考与讨论
+- 候选A:把自治完成并入晨报ACK → ❌ 否决。自治失败会重发已确认消息，再次混淆transport与business execution。
+- 候选B:重启后看到DELIVERED就无条件重跑自治 → ❌ 否决。provider可能已接受任务，会重复消费grant/执行inspection。
+- 候选C:只看TaskBus RUNNING/DONE决定 → ❌ 否决。hold/not-applicable没有task，且task本身缺少scheduled intent binding。
+- 候选D:独立durable autonomy intent；provider dispatch前固化accepted proposal/task evidence，恢复时证据式对账 → ✅ 采用。
+- notification发送后、intent SETTLED前仍无跨系统事务；接受同intent的有界notification重复，但禁止已有accepted证据时重跑provider。
+
+### 产出
+- 新增`ScheduledAutonomyIntent`与`SQLiteScheduledAutonomyStore`：stable delivery-derived ID、
+  PENDING/RUNNING/RETRYING/SETTLED/EXHAUSTED、1/5/15/15分钟最多五次、interrupt歧义与bounded run receipt。
+- scheduler在任何晨报外发attempt之前ensure intent；平台ACK后独立消费intent。startup先reconcile RUNNING：
+  matching accepted proposal/task存在即SETTLED，无证据才immediate bounded retry，已ACK晨报永不重发。
+- standing coordinator返回NOT_APPLICABLE/HELD/DISPATCH_RECORDED receipt；在provider dispatch前把同一intent写入
+  accepted proposal和task metadata，并提供restart-safe evidence lookup。provider异常后scheduler会立即查证据再决定settle/defer。
+- scheduler health把open intent投影为DEGRADED、EXHAUSTED投影为FAILED；delivery、dispatch、human read、result outcome保持独立。
+- 主state schema升级v7并纳入backup/reset。`aico-state`增加recent scheduled autonomy摘要，只输出intent/status/attempt/
+  duplicate/disposition及proposal/task ID SHA；索引列与payload漂移fail closed，不显示project/target/message/raw identity。
+- Phase1注入同一state DB的autonomy store；Orchestrator/registry contract显式传递intent并查询evidence。
+- 为保持结构硬约束，将morning互操作方法移入既有窄mixin，并把standing run的usage/result完成段拆为私有方法；行为不变。
+- 新增ADR-0071、Goal Brief、P-089；更新B-010/B-014、daily ops、quickstart、troubleshooting、absence playbook、
+  CHANGELOG、STATUS与ADR索引。
+
+### 验证结果
+- red-green覆盖：intent在任何外发前存在、自治失败只重试自治、不重发已ACK晨报、accepted后异常直接结算、
+  interrupted无证据重试、有证据不重跑、五次耗尽health失败、state reset、CLI identity privacy/index drift。
+- full root:`902 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(214 source files)、214个`src/aico + tests` format、122个AICO生产文件class/function structure、
+  9份repo JSON、dead-man Compose、129-member wheel及`git diff --check`通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 首次SME附加命令错误地把根`test_sme_agent_project.py`放入SME隔离环境，因该环境不安装AICO而collection失败；
+  根测试已在full gate覆盖，修正为只跑SME自身tests后53项通过。
+- wheel首次在sandbox因PyPI DNS失败；按审批流程允许`uv build`解析声明的hatchling backend后构建成功并深验入口。
+- 结构扫描首次发现新增方法令registry class达到512行、`run_once`正好100行；完成职责拆分后122个生产文件全部通过硬限制。
+- 当前外部状态复核：`.env`缺失，`launchctl`无`com.aico.phase1`；没有调用provider或发送真实IM。
+
+### 关键决策
+- 🔒 每个“platform ACK后再做X”都需要自己的durable intent；不能依赖上一段transport状态推断X已触发。
+- 🔒 accepted proposal + task + exact intent binding是dispatch decision已持久化的恢复证据，不是provider ACK；存在时严禁
+  自动重跑，若未形成TaskBus/result证据则继续显式显示`evidence_missing`。
+- 🔒 没有accepted证据才允许bounded retry；notification可能重复与provider重复是两种风险，不能混为一个flag。
+- 🔒 platform ACK、autonomy dispatch receipt、human read和standing result outcome是四种事实，任何一项都不能升级其它项。
+- 🔒 operator summary可显示稳定intent和identity SHA，但raw proposal/task/project/target/message继续留在owner-only state。
+
+### 留给下一轮
+- owner按B-010/B-014创建`.env`与外部grant，doctor/install后取得真实scheduled样本；用`aico-state`分别核对
+  delivery=delivered、autonomy=settled/dispatch_recorded，再核对IM、task usage、result outcome/evidence，不能把settled写成complete。
+- 做一次受控runtime kill：ACK后恢复时若已有accepted evidence，确认同intent不出现第二个provider task；若仅notification重复，
+  用visible intent核对并保存样本。该外部fault injection必须在owner授权的真实环境进行。
+- owner仍需第二故障域receiver、encrypted off-device策略、core/receiver恢复演练和RPO/RTO证据，关闭B-012/B-013。
+
+### 状态变化
+- scheduled standing autonomy从ACK后的best-effort函数调用提升为restart-safe、证据式对账、有界恢复的独立状态机。
+- B-010/B-014本地机器合同增强，真实owner/runtime/IM/provider证据仍缺，blocker保持DEFERRED。
+- goal保持active；没有把mock transport、SQLite settled、identity hash或unit test写成真实platform delivery、human read、
+  provider exactly-once、business outcome或commercial readiness。
+
+## Round 234 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- B-013已有完整core recovery primitive，但capture仍依赖operator手动触发；boss长期缺席时RPO没有机器约束。
+- live checkout仍无`.env`、LaunchAgent、owner storage/binding/grant或可授权外部样本；不能写真实目标、安装、发送IM或调用provider。
+
+### 思考与讨论
+- 候选A:继续只写operator runbook → ❌ 否决。命令可用不代表无人值守期间有人执行，RPO会静默增长。
+- 候选B:用普通cron直接运行capture → ❌ 否决。缺durable intent、crash reconciliation、bounded retry与runtime health。
+- 候选C:scheduler自动capture、retention和restore → ❌ 否决。delete/restore是独立破坏性权限，不能随备份隐式授权。
+- 候选D:默认关闭的durable capture + immediate verify；外部storage/retention/restore保持独立 → ✅ 采用。
+- 目标目录必须预先存在而不是自动mkdir；否则off-device mount消失时可能把artifact悄悄写到本机同名路径。
+
+### 产出
+- 新增`RecoveryBackupRecord/Receipt`、`SQLiteRecoveryBackupStore`与`RecoveryBackupScheduler`。每个窗口先写稳定intent，状态为
+  PENDING/RUNNING/RETRYING/VERIFIED/EXHAUSTED，失败按1/5/15/15分钟最多五次。
+- capture使用既有core recovery set，发布后立即production deep verify，再原子写owner-only receipt sidecar和SQLite receipt。
+  startup按artifact/sidecar存在矩阵复验收敛；receipt-only、digest drift、symlink/宽权限和overwrite全部fail closed。
+- scheduler进入Phase1 lifecycle、heartbeat required component和bounded owned-task self-healing；无verified为DEGRADED，
+  verified age超过max age或attempt耗尽为FAILED。
+- 主state schema升级v8；backup/reset覆盖新表。`aico-state`增加recent recovery backup摘要，只显示ID/status/attempt/
+  artifact SHA/receipt SHA/verified time，不显示output/config/project/provider/path。
+- 新增配置与service doctor preflight：目标必须已存在、absolute、owner-only、非symlink且位于checkout外；doctor明确
+  `storage class not attested`，不会把路径检查写成off-device/encryption证据。
+- scheduler永不调用restore、不会删除旧artifact，也不创建missing mount。recovery schema v6和
+  `global_transaction=false`/`business_restore_ready=false`不变。
+- 新增ADR-0072、Goal Brief、P-090；更新B-013、daily ops、troubleshooting、architecture、`.env.example`、CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖intent-before-capture、artifact-only和artifact+receipt crash恢复、receipt-only拒绝、interrupted RUNNING、
+  五次耗尽、RPO stale health、路径权限、Phase1 lifecycle、heartbeat/self-healing、doctor privacy和state CLI index drift/privacy。
+- full root:`917 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(217 source files)、217个`src/aico + tests` format、124个AICO生产文件class/function structure、
+  9份repo JSON、dead-man Compose、131-member wheel及关键recovery modules/entrypoints、`git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- wheel首次在sandbox因PyPI DNS失败；按审批流程允许`uv build`解析声明的hatchling backend后构建成功。
+- 当前外部状态复核：`.env`缺失，`launchctl`无`com.aico.phase1`；没有创建真实storage artifact、调用provider或发送IM。
+
+### 关键决策
+- 🔒 backup primitive存在、scheduled intent结算、artifact deep verify、off-device storage和business restore是五种不同事实。
+- 🔒 missing destination必须fail closed；自动mkdir可能掩盖mount loss，不能为了“自动成功”放宽。
+- 🔒 capture scheduler只获得create+verify权限；retention deletion和restore必须独立设计、独立授权、显式选择artifact。
+- 🔒 state artifact先于本次success receipt capture，因此不含自己的最终VERIFIED行；这不应被描述成global transaction。
+- 🔒 本机owner-only目录和SHA receipt不证明加密、第二故障域、外部authority、retention、RPO/RTO或commercial DR。
+
+### 留给下一轮
+- owner选择真实加密off-device目标、独立SHA authority、cadence/retention/RPO/RTO后，再配置scheduler并保存一条真实verified样本；
+  先证明mount-loss fail closed，再做隔离checkout drill，B-013才可能继续收窄。
+- retention需要独立non-destructive design与证据；在此之前operator管理旧artifact，不能给scheduler自动delete权限。
+- B-010/B-014仍需owner `.env`、LaunchAgent、trusted IM、external grant和paid provider真实scheduled样本。
+
+### 状态变化
+- core recovery从“operator记得时可capture”提升为“可选durable schedule + immediate verify + RPO health”的本地机器合同。
+- B-013的本地调度缺口收窄，但真实storage/encryption/retention/off-device drill仍缺，保持DEFERRED。
+- goal保持active；没有把unit test、local receipt、路径在checkout外或doctor OK写成真实off-device backup、RPO/SLA或商业DR。
+
+## Round 235 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 234只证明artifact在创建时被deep verify；之后删除、篡改、目标盘掉线/目录替换仍可能在下一capture前false green。
+- live checkout仍无`.env`、真实storage、LaunchAgent、owner binding/grant或外部IM/provider样本；本轮继续只做机器合同。
+
+### 思考与讨论
+- 候选A:等下一次scheduled capture时发现 → ❌ 否决。最长一个backup interval内无法证明最近恢复点现在仍可读。
+- 候选B:heartbeat每30秒同步hash/deep verify → ❌ 否决。大artifact会阻塞event loop、放大I/O并触发health timeout。
+- 候选C:独立custody cadence后台deep verify，heartbeat只做cheap directory continuity → ✅ 采用。
+- 候选D:custody失败后自动restore/delete/rebind → ❌ 否决。检测能力不授权破坏性动作，也不能掩盖storage loss。
+- destination fingerprint只用于本机identity连续性；不能写成volume UUID、provider签名、加密或off-device evidence。
+
+### 产出
+- scheduled receipt升级schema v2，绑定device/filesystem/inode派生的secret-free destination fingerprint SHA；不保存raw
+  device、path或storage identity。同一output binding后续capture必须连续，改变backup cadence不会重置baseline。
+- `RecoveryBackupRecord`增加UNKNOWN/VERIFIED/FAILED custody、checked time与failure count；mark verified时形成初始custody receipt，
+  周期成功/失败继续durable更新。
+- scheduler新增独立custody interval/max age：在worker thread重开artifact/sidecar，验证regular/owner-only、receipt SHA、artifact
+  SHA并运行production recovery-set deep verifier。backup与custody next-work取最早时间，不阻塞heartbeat。
+- heartbeat每次cheap验证目标目录仍存在、owner-only、非symlink且identity连续；custody FAILED/stale、artifact missing/tamper、
+  receipt drift、permission widening或directory replacement全部投影为required health FAILED。
+- state schema升级v9；`aico-state`增加custody status/check time/failure count，仍不展示destination fingerprint/output/config/
+  project/provider/path。service/env增加独立custody cadence设置，doctor文案明确storage class未attest。
+- scheduler仍无restore/delete/mkdir/rebind路径。新增ADR-0073、Goal Brief、P-091；更新B-013、daily ops、troubleshooting、
+  architecture、`.env.example`、CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖正常周期复验、artifact删除、字节篡改、目录替换且下一capture不静默rebaseline、custody age超限、权限放宽、
+  cadence变化保持binding，以及state/doctor privacy。
+- full root:`925 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(217 source files)、217个`src/aico + tests` format、124个AICO生产文件class/function structure、
+  9份repo JSON、dead-man Compose、131-member wheel及关键recovery modules/entrypoints、`git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- wheel首次在sandbox因PyPI DNS失败；按审批流程允许`uv build`解析声明的hatchling backend后构建成功。
+- 当前外部状态复核：`.env`缺失，`launchctl`无`com.aico.phase1`；未创建真实storage artifact、调用provider或发送IM。
+
+### 关键决策
+- 🔒 created-at verify和continuous custody是两种事实；没有最近custody receipt不能声称当前恢复点仍可用。
+- 🔒 backup cadence只约束数据新鲜度，custody cadence约束artifact存活/完整性；两者必须独立。
+- 🔒 destination kernel fingerprint是continuity tripwire，不是volume UUID、物理介质或storage provider attestation。
+- 🔒 identity变化必须fail closed且禁止静默新capture；合法迁移使用新的明确output path并重新做owner/storage验收。
+- 🔒 custody failure只影响证据和health，不获得restore/delete/rebind权限。
+
+### 留给下一轮
+- owner选择真实加密off-device目标后，配置两种cadence并保存真实custody推进样本；受控unmount/permission/tamper必须触发
+  heartbeat failure，再恢复mount并从off-device副本完成隔离drill，才能继续收窄B-013。
+- retention仍需独立non-destructive inventory/eligibility与owner确认设计；不因custody实现而给scheduler delete权限。
+- B-010/B-014仍需owner `.env`、LaunchAgent、trusted IM、external grant和paid provider scheduled样本。
+
+### 状态变化
+- scheduled recovery从“生成时可信”提升为“无人值守期间持续证明latest artifact custody”的本地机器合同。
+- B-013的false-green custody缺口关闭，但真实storage/encryption/retention/off-device restore证据仍缺，保持DEFERRED。
+- goal保持active；没有把kernel fingerprint、local deep verify或green test写成真实off-device durability、RPO/RTO或商业DR。
+
+## Round 236 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 234/235已能按日capture并持续证明artifact custody，但旧scheduled pair永不清理；长期无人值守会无界占用目标盘，
+  最终阻断新的恢复点。本轮只关闭可由代码解决的本机retention合同，不假装真实storage policy已经配置。
+- live checkout仍无`.env`、真实storage artifact/policy、LaunchAgent、owner binding/grant或外部IM/provider样本。
+
+### 思考与讨论
+- 候选A:继续永不自动删除，交给operator定期清盘 → ❌ 否决。把关键容量运营重新依赖缺席的人，不满足目标。
+- 候选B:按目录mtime/文件数量直接轮转 → ❌ 否决。目录不是truth source，无法证明custody或解释半删除崩溃。
+- 候选C:默认关闭、owner显式授权的bounded crash-consistent state machine → ✅ 采用。
+- feature flag只控制新破坏性授权；PRUNING一旦持久化就必须继续恢复并保持FAILED health，不能通过关开关抹掉半事务。
+- 自动restore、删除FAILED/未知文件、mkdir missing mount和storage rebind继续不在retention授权内。
+
+### 产出
+- `RecoveryBackupStatus`增加PRUNING/PRUNED；record保存retention start、完整policy SHA和pruned time。SQLite先事务性落intent，
+  completion后仍永久保留receipt/artifact/destination/policy SHA与时间作为secret-free tombstone。主state schema升级v10。
+- retention默认关闭；策略要求age、至少两个最新VERIFIED代际、check cadence和单轮prune上限。候选只来自同一binding下
+  custody VERIFIED的scheduled receipt，先排除最新代际，再按最老优先处理；FAILED/未知记录永不候选。
+- 每次删除前重新验证owner-only pair、receipt SHA、artifact SHA与完整production recovery-set；之后固定执行
+  artifact unlink→directory fsync→sidecar unlink→directory fsync，最后才写PRUNED。
+- restart矩阵覆盖pair都在、sidecar-only、neither和artifact-only：前三者复验/收敛，artifact-only或任何漂移保留现场并失败。
+  即使owner关闭retention，既有PRUNING仍恢复；其health优先级高于较新的pending/retrying capture。
+- Phase1/service/env透传完整policy并拒绝“只开retention不开backup”或不足保留窗口。`aico-state`显示secret-free
+  PRUNING/PRUNED policy/time，不显示artifact name/path或raw destination identity。
+- 新增ADR-0074、Goal Brief、P-092；ADR-0072标记被新决策取代，更新B-013、daily ops、troubleshooting、architecture、
+  `.env.example`、CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖默认关闭、age/min-generation双门槛、最老优先、单轮上限、custody FAILED排除、删前tamper、四种crash矩阵、
+  关闭开关后恢复既有intent、PRUNING health优先级、配置组合和CLI tombstone privacy。
+- retention相关回归:`140 passed`；full root:`937 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(217 source files)、SME strict mypy(37 source files)、217个`src/aico + tests` format、
+  124个AICO生产文件class/function structure、9份repo JSON、dead-man Compose、131-member wheel及关键recovery member、
+  `git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- wheel首次在sandbox因PyPI DNS失败；按审批流程解析声明的hatchling backend后构建成功，最终又以offline cache重建验证。
+- external-state复核：无`.env`、`com.aico.phase1` LaunchAgent或真实recovery artifact；未调用provider、发送IM或删除真实文件。
+
+### 关键决策
+- 🔒 “永不自动删除”不是长期无人值守安全；资源会无界增长时，需要默认关闭、窄候选、可恢复、损失有上限的机器合同。
+- 🔒 durable state和verified custody是候选authority；文件名、mtime、目录扫描和“看起来很旧”都不能授权删除。
+- 🔒 破坏性动作必须intent-before-effect；开关可阻止新授权，不能取消已开始的事务或隐藏半删除健康失败。
+- 🔒 PRUNED只表示本机scheduled pair按该policy收口，不证明provider lifecycle、WORM、加密、第二故障域或restore成功。
+- 🔒 retention不扩权到restore、FAILED/未知文件、mount创建和storage rebind；`business_restore_ready=false`保持。
+
+### 留给下一轮
+- owner选择真实加密off-device目标后，先以retention关闭完成capture/custody和受控mount-loss验收，再明确容量/RPO/RTO、
+  开启bounded retention并保存跨多个真实窗口的VERIFIED→PRUNED样本；随后从保留的off-device代际完成隔离restore drill。
+- 外部storage provider lifecycle/WORM、独立SHA authority和访问审计仍需单独证据；不能用本地tombstone关闭B-013。
+- B-010/B-014仍需owner `.env`、LaunchAgent、trusted IM、external grant和paid provider真实scheduled样本。
+
+### 状态变化
+- scheduled recovery从“持续生成与保管，但容量无界”提升为“可选、bounded、crash-consistent、可审计的本地长期运营闭环”。
+- B-013的本机retention状态机缺口关闭，但真实storage policy和恢复演练缺口仍在，保持DEFERRED。
+- goal保持active；没有把unit tests、本机PRUNED tombstone或wheel green写成真实commercial DR、RPO/RTO或无人公司已上线。
+
+## Round 237 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 234-236已让core recovery set自动capture、持续custody并有界retention，但production materialization仍只在operator手工
+  运行`aico-recovery drill`时发生；长期无人值守可能让restore路径腐化而SHA持续绿色。
+- live checkout仍无`.env`、真实off-device artifact、LaunchAgent、owner binding/grant或外部IM/provider样本；继续只推进
+  可由代码关闭的本机机器合同。
+
+### 思考与讨论
+- 候选A:继续手工drill → ❌ 否决。命令存在不能证明无人值守期间cadence受控。
+- 候选B:定期自动restore live state → ❌ 否决。演练不授权替换truth source，runtime在线时更不能做破坏性切换。
+- 候选C:默认关闭、durable intent驱动的disposable production drill → ✅ 采用。
+- 每份daily backup都drill会放大I/O与临时容量；因此drill cadence/max age必须独立于backup/custody/retention。
+- drill失败现场与retention联动：open/latest exhausted目标必须受保护，且关闭drill不能让仍启用的retention遗忘durable历史。
+
+### 产出
+- 新增`RecoveryDrillRecord/Receipt`和`SQLiteRecoveryDrillStore`，状态为PENDING/RUNNING/RETRYING/VERIFIED/EXHAUSTED；
+  每个intent绑定backup、policy和schedule，先落SQLite再执行materialization，失败按1/5/15/15分钟最多五次。
+- scheduled drill选择latest VERIFIED + custody VERIFIED artifact，在worker thread调用既有`drill_recovery_set`；它使用private
+  disposable directory，实际走state/audit/memory production materializer，绝不调用live restore。
+- receipt绑定artifact/backup receipt/policy SHA、state schema/table count、audit/memory count+head、config revision和
+  unresolved/post-restore evidence计数，固定`global_transaction=false`、`business_restore_ready=false`。
+- RUNNING重启恢复为同一intent的immediate RETRYING并回退未完成attempt；drill无live副作用，可安全重演。due/open为DEGRADED，
+  EXHAUSTED或success receipt超过max age为FAILED。
+- open drill与当前latest exhausted drill目标进入retention保护集合；Phase1在drill或retention任一启用时加载drill store，覆盖
+  “失败后关闭drill但继续retention”的配置切换窗口。后续新drill成功后，旧历史失败不永久阻塞清理。
+- 可选workspace必须已存在、absolute、owner-only、非symlink且与checkout/output隔离；未配置时使用自动清理的系统private temp。
+- state schema升级v11；state backup/reset与`aico-state`覆盖drill table，CLI不显示artifact/workspace/config raw值。
+  service doctor区分capture/verify/custody与disposable drill配置，同时继续声明storage class未attest。
+- 将592行scheduler拆成456行`RecoveryBackupScheduler`与181行`RecoveryDrillCoordinator`，满足单类<500/单方法<100硬约束。
+- 新增ADR-0075、Goal Brief、P-093；更新B-013、daily ops、troubleshooting、architecture、`.env.example`、CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖默认关闭、intent-before-drill、latest-target cadence、evidence drift、五次耗尽、RUNNING crash恢复、due/stale health、
+  open target retention保护、跨drill-disable配置保护、workspace隔离、Phase/service接线和state CLI privacy/backup/reset。
+- recovery相关回归:`151 passed`；full root:`948 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(218 source files)、SME strict mypy(37 source files)、218个`src/aico + tests` format、
+  125个AICO生产文件class/function structure、9份repo JSON、dead-man Compose、132-member wheel及新增drill member、
+  `git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- final wheel使用offline cache构建成功，不依赖本轮新增网络访问。
+- external-state复核：无`.env`、`com.aico.phase1` LaunchAgent或真实recovery artifact；未调用provider、发送IM或执行live restore。
+
+### 关键决策
+- 🔒 verify/custody与production materialization drill是不同证据；字节没变不能证明restore helper仍可工作。
+- 🔒 scheduled drill只获得disposable non-destructive权限，不能扩成live restore、failover或truth-source替换。
+- 🔒 drill intent必须先于I/O，success receipt必须绑定原backup receipt和policy；日志或“跑过了”不能替代durable evidence。
+- 🔒 open drill是retention的保护引用；配置切换不能让当前关闭的功能抹掉历史保护关系。
+- 🔒 local component drill不证明off-device来源、checkout/reinjection/provider/receiver复原、代表性IM或商业RPO/RTO。
+
+### 留给下一轮
+- owner选择真实加密off-device目标后，先启用backup/custody，再按实际artifact大小选择独立drill workspace/cadence并保存一条
+  真实VERIFIED drill receipt；受控破坏materializer或临时容量应触发FAILED且保护目标。
+- 仍需从off-device副本完成隔离checkout、reinjection、provider live auth、receiver独立restore与代表性IM业务恢复，记录RPO/RTO；
+  scheduled local drill不能替代这条B-013验收链。
+- B-010/B-014仍需owner `.env`、LaunchAgent、trusted IM、external grant和paid provider真实scheduled样本。
+
+### 状态变化
+- recovery运营从“自动生成、保管和清理恢复点”提升为“持续实际演练captured components production materializer”的本地闭环。
+- B-013的本机scheduled drill缺口关闭，但真实off-device/full-business recovery证据仍缺，保持DEFERRED。
+- goal保持active；没有把unit tests、local drill receipt或green health写成真实DR、无人公司上线或老板已读。
+
+## Round 238 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 232/233已让morning delivery与后置autonomy dispatch拥有独立durable intent，但terminal outcome仍是一次直接IM调用；
+  发送失败或ACK前崩溃后，系统会为避免provider replay保守SETTLED，却只能等老板下一次主动查询才暴露结果/缺证。
+- 当前checkout仍无`.env`、owner grant、LaunchAgent或真实provider/IM样本；本轮只关闭可由代码证明的静默结果窗口。
+
+### 思考与讨论
+- 候选A:依赖下一次`/morning`/`/inbox`查询 → ❌ 否决。把结果交付重新依赖缺席的老板。
+- 候选B:结果通知失败就重跑provider → ❌ 否决。notification可重试不代表下游provider副作用可重演。
+- 候选C:捕获异常并继续写日志 → ❌ 否决。process存活仍会冒充老板收到终态。
+- 候选D:authoritative outcome projection + exact-envelope durable outbox → ✅ 采用。
+- provider dispatch的at-most-once边界保持：accepted后缺task evidence要主动通知`evidence_missing`，不能自动refund/retry。
+
+### 产出
+- 新增`StandingAutonomyOutcomeEnvelope`：只从既有proposal/task/result receipt投影source/outcome status、criteria/source、
+  evidence/failure，绑定run receipt与content SHA，不保存provider正文、target或raw platform identity。
+- 新增`SQLiteAutonomyOutcomeDeliveryStore`与PENDING/SENDING/RETRYING/DELIVERED/EXHAUSTED状态；发送前持久化稳定notification，
+  失败按1/5/15/15分钟最多五次，ACK仅保存message id SHA并要求exact trusted target。
+- Morning scheduler在新工作前修复SETTLED但缺outbox的crash window；SENDING重启复用同一record并标记
+  `duplicate_possible=true`。outbox open为DEGRADED，EXHAUSTED为required health FAILED。
+- outcome重试只重发冻结内容，不调用provider、创建第二task或再次消费grant；morning delivery、autonomy intent与outcome
+  delivery各自拥有独立事实和失败状态。
+- `StandingAutonomyCoordinator`不再直接发送result-contract终态，scheduled path统一走outbox；内部one-shot helper仍生成同一
+  envelope。started progress提示的普通发送异常被脱敏记录且不阻断TaskBus submit，取消/终止仍传播。
+- RUNNING/WAITING projection不创建terminal outbox，scheduler保持DEGRADED并最多60秒复核；若TaskBus dispatch后的IM
+  task-ACK/stream失败，bounded runner会interrupt仍为RUNNING的task，避免无人消费输出的本地zombie。
+- state schema升级v12；Phase1实例化outcome store，state backup/reset覆盖新表，`aico-state`只显示notification/intent/status、
+  attempts、duplicate、content SHA、source/outcome与delivered time，不显示正文/target/raw message id或raw proposal/task ID。
+- 新增ADR-0076、Goal Brief、P-094；更新B-010/B-014、daily ops、troubleshooting、absence playbook、architecture、
+  CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖outcome content/source drift、persist-before-send、失败跨重启exact retry、provider不重跑、wrong-target ACK、
+  SETTLED缺outbox修复、SENDING crash恢复、五次耗尽health、started/task-ACK异常边界、state CLI privacy/ACK、state backup与Phase1接线。
+- scheduled/Phase/orchestrator/state/service相关回归:`279 passed`；full root:`958 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(219 source files)、SME strict mypy(37 source files)、219个`src/aico + tests` format、
+  126个AICO生产文件class/function structure、9份repo JSON、dead-man Compose、133-member wheel及新增outbox member、
+  `git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 一次误用`mypy .`遇到仓内两个独立`conftest`同模块名；按repo权威gate改用`mypy src tests`后219 source files通过，
+  没有为该命令形态修改项目布局。
+- external-state复核：无真实`.env`、`com.aico.phase1` LaunchAgent或owner grant；未调用provider、发送IM或执行live restore。
+
+### 关键决策
+- 🔒 “provider不盲重跑”只关闭execution safety，不关闭老板结果交付；absence loop必须独立追踪terminal outcome transport。
+- 🔒 notification at-least-once与provider at-most-once是不同合同：前者可用stable ID/exact content有界重试，后者不能借此重演。
+- 🔒 DELIVERED只表示exact target的平台ACK，不表示human read、result语义正确或商业任务验收完成。
+- 🔒 progress hint不是安全门禁；非关键提示失败不得阻止已通过owner grant与adapter hard boundary的任务提交。
+- 🔒 outcome receipt只能投影authoritative state，不存provider正文、不从日志猜终态、不制造第二份业务truth。
+
+### 留给下一轮
+- owner提供真实grant/`.env`并安装runtime后，用`max_runs=1`跑一次scheduled read-only样本；同时保存morning DELIVERED、
+  autonomy SETTLED、outcome DELIVERED、task usage/result和人工source语义复核，才能继续收窄B-010/B-014。
+- 在受控channel断网/恢复样本中确认同content SHA有界重发、provider task只有一个；平台可能重复时用visible intent核对，
+  不把ACK冒充老板已读。
+- accepted-before-TaskBus的at-most-once窗口继续用`evidence_missing`暴露；除非未来provider提供可验证幂等dispatch token，
+  不自动恢复未知执行。
+
+### 状态变化
+- standing autonomy从“dispatch安全但终态可能等老板查询”提升为“dispatch与terminal delivery分别durable、可恢复、可观测”。
+- B-010/B-014的本机silent outcome缺口关闭，但真实owner grant、paid provider、LaunchAgent、platform ACK和human sample仍缺，
+  保持DEFERRED。
+- goal保持active；没有把unit tests、本机ACK SHA或outcome DELIVERED写成真实无人公司上线、provider exactly-once或老板已读。
+
+## Round 239 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 238已让scheduled autonomy terminal outcome持久投递并在耗尽时把morning scheduler health置FAILED；但审计发现现有
+  secondary runtime alert只观察owned-task recovery circuit。只要task/process仍活着，outcome exhausted、recovery artifact损坏、
+  default adapter持续失败等required component故障会保持dead-man pulse fresh，却不会主动通知缺席老板。
+- 当前checkout仍无`.env`、runtime alert endpoint、LaunchAgent或真实receiver；本轮只关闭可由代码证明的silent health窗口。
+
+### 思考与讨论
+- 候选A:所有non-OK health立即发告警 → ❌ 否决。optional adapter、DEGRADED和瞬时dependency波动会制造告警疲劳。
+- 候选B:generic health自动restart → ❌ 否决。P-061已证明health不是安全repair signal，restart还可能重放外部副作用。
+- 候选C:继续只写heartbeat，等老板运行doctor → ❌ 否决。把incident发现重新依赖缺席的人。
+- 候选D:required FAILED的durable confirmation edge复用既有incident/outbox → ✅ 采用。
+- ADR-0044的“generic health不参与incident”被ADR-0077收窄：它仍不参与自动repair，但稳定、required failure可以进入通知边界。
+
+### 产出
+- `RuntimeAlertCoordinator`现在同时观察self-healing与`RuntimeHealthSnapshot`；heartbeat顺序改为self-healing→health→alert→
+  liveness，alert能看到同轮authoritative component状态，dead-man pulse仍独立表达process可达性。
+- 新增`runtime_health_alert_observations`：仅required组件FAILED时记录连续次数/时间；第三份时间严格递增snapshot才open，
+  相同/倒退snapshot不增加，restart继续原计数。optional、DEGRADED和瞬时失败不open。
+- 第三次confirmation、active incident和immutable outbox event在同一SQLite transaction提交；outbox insert失败全回滚。
+  sink继续使用稳定event id、队首顺序、1/5/15分钟持久退避和`Idempotency-Key`，不引入第二套delivery机制。
+- FAILED后的DEGRADED保持incident open；OK或owner显式把组件改为optional才生成same-incident resolved。同名owned-task
+  OPEN/RECOVERING优先，scheduler health不再制造第二incident。
+- outbound component为`health:<kind>:<safe-name>`；unsafe plugin name只发送稳定hash。SQLite/CLI/webhook不保存异常、
+  endpoint、secret、target或业务正文。health incident只通知，不授权restart、provider replay、restore或grant消费。
+- state schema升级v13；state backup/reset与`aico-state`覆盖confirmation table，CLI只显示
+  `runtime_health_alert_candidates`数量。新增ADR-0077、Goal Brief、P-095；更新ADR-0044、B-011、quickstart、daily ops、
+  troubleshooting、absence playbook、architecture、CHANGELOG与STATUS。
+
+### 验证结果
+- red-green覆盖三次确认、transient/optional/DEGRADED、OK/optional resolved、跨restart计数、同时间snapshot重放、
+  confirmation/outbox事务回滚、unsafe name hash、owned-task重叠去重、heartbeat alive integration、state backup/reset/CLI。
+- required-component/heartbeat/Phase/state/recovery相关回归:`136 passed`；full root:`964 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(219 source files)、SME strict mypy(37 source files)、219个`src/aico + tests` format、
+  126个AICO生产文件/2519 definitions结构、9份repo JSON、dead-man Compose、133-member offline wheel及新增模块成员、
+  `git diff --check`全部通过。
+- 全仓`ruff format --check .`预期仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- external-state复核：无真实`.env`、`com.aico.phase1` LaunchAgent或runtime alert endpoint；未发送webhook/IM、调用provider、
+  自动restart或执行live restore。
+
+### 关键决策
+- 🔒 liveness、owned-task recovery、component health和业务E2E是四层事实；process/pulse fresh不能证明required业务组件可用。
+- 🔒 “generic health不能驱动repair”不等于“generic health永远不能通知”；notification必须限定required范围、稳定边沿和噪声预算。
+- 🔒 periodic snapshot变incident必须有durable confirmation、dedupe identity、同事务outbox和明确resolved条件。
+- 🔒 `health:*` delivered仍只表示secondary sink ACK，不表示老板已读、业务损失已确认或repair已授权。
+- 🔒 整机失联继续由独立dead-man receiver判定；进程内component incident不能自证sender整机可用。
+
+### 留给下一轮
+- owner配置独立runtime alert receiver后，分别制造owned-task circuit和process-alive required component持续FAILED，确认各只收到
+  一组open/resolved、第三份heartbeat才出现`health:*` open，并保存receiver ACK/idempotency证据。
+- 真实LaunchAgent/standing grant/provider/IM和off-device/full-business recovery验收仍分别由B-010/B-012/B-013/B-014跟踪；
+  component alert不能替代这些外部样本。
+- 继续从absence-first审计寻找“所有background loop仍alive却业务闭环静默停住”的机器侧断点，不扩大到无授权外部动作。
+
+### 状态变化
+- runtime alert从“仅后台task熔断”提升为“后台task熔断 + 经过稳定确认的required业务组件失败”，同时保持repair权限边界。
+- B-011的本地incident source缺口关闭，但真实owner endpoint、remote ACK和primary-path failure sample仍缺，保持DEFERRED。
+- goal保持active；没有把unit tests、本机SQLite incident、fresh pulse或fake webhook写成真实无人公司上线、远端送达或老板已读。
+
+## Round 240 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 239已能把required component稳定失败变成durable secondary incident；继续absence-first审计发现，若secondary alert sink
+  自身持续失败，runtime仍正常发送dead-man pulse，旧receiver会不断续租。老板可能同时失去primary业务路径与secondary告警，
+  independent observer却false green。
+- 当前checkout仍没有真实`.env`、alert endpoint、LaunchAgent或第二故障域receiver；本轮只实现和验证机器合同。
+
+### 思考与讨论
+- 候选A:让失败的runtime-alert sink再发“我失败了” → ❌ 否决。出口不能用同一出口证明自身失败。
+- 候选B:alert delivery非healthy就完全停止pulse → ❌ 否决。receiver会把alert-path故障混成runtime死亡，并丢失最新boot/sequence排序。
+- 候选C:新增第三个独立observer → ❌ 本轮否决。部署、secret和commercial成本增加，现有receiver outbox已经是独立通知路径。
+- 候选D:pulse携带bounded delivery signal，receiver接受排序但有条件续租 → ✅ 采用。
+- 为保持retry幂等，pending pulse在ACK前冻结exact payload；接受状态变化最迟在ACK后的下一interval传播，而不原地改写identity。
+
+### 产出
+- `RuntimeLivenessPulse` schema升级v2，新增`disabled/healthy/pending/failed`；heartbeat把alert coordinator同轮snapshot传给
+  liveness probe。disabled/healthy续租，pending/failed只排序。
+- reference tracker与SQLite receiver分离`last_pulse_received_at`和`last_received_at`。持续pending/failed跨TTL后只open一次
+  `alert_delivery_unhealthy`；没有该信号时仍为`pulse_expired`。healthy/disabled新pulse先补必要open再same-reason resolved。
+- receiver schema v2新增最近pulse、delivery status和outage reason；v1 DB迁移将历史续租复制为最近pulse，status置disabled，
+  active outage标pulse-expired。HTTP receipt增加renewed，monitor/evidence event输出reason。
+- evidence/verification schema v2与receiver recovery exact DDL/domain verifier同步；拒绝非法status、partial ordered/renewal checkpoint、
+  active outage reason不完整和open/resolved reason drift。
+- 新增持久化restart、v1 migration、publisher frozen retry、tracker/store open-resolved、Phase1透传等回归。
+  `SQLiteDeadManReceiverStore` schema初始化移到模块helper，类体由511行降到447行。
+- 新增ADR-0078、Goal Brief、P-096；更新ADR历史状态、B-011/B-012、daily ops、quickstart、troubleshooting、absence playbook、
+  architecture、receiver deployment README、CHANGELOG与STATUS。
+
+### 验证结果
+- 定向liveness/heartbeat/receiver/app/recovery/evidence/Phase回归:`121 passed`；full root:`968 passed, 1 skipped`；
+  SME isolated:`53 passed`。
+- `ruff check .`、root mypy(219 source files)、SME strict mypy(37 source files)、219个`src/aico + tests` format、
+  126个AICO生产文件/2529 definitions结构、9份repo JSON、dead-man Compose、133-member offline wheel及v2关键模块/entrypoint、
+  `git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- external-state保持未变：没有发送webhook/IM、调用provider、安装LaunchAgent、部署receiver或执行live restore。
+
+### 关键决策
+- 🔒 pulse arrival与absence notification path健康是两种事实；只有后者disabled或healthy时才允许receiver续租。
+- 🔒 pending/failed pulse仍必须排序，避免旧boot/duplicate恢复续租；但不能刷新last successful renewal。
+- 🔒 alert-path outage复用receiver独立outbox，不复用故障sink，也不授予restart、restore、provider replay或grant权限。
+- 🔒 protocol/schema升级必须覆盖publisher、HTTP、SQLite migration、evidence与offline recovery verifier，不提供silent v1 fallback。
+- 🔒 local reason/ACK只证明receiver记录与交付状态，不证明第二故障域、owner identity、human read或商业恢复。
+
+### 留给下一轮
+- owner先升级独立receiver到schema v2，再启动v2 publisher；只断开runtime-alert endpoint但保持pulse可达超过TTL，保存一组
+  `alert_delivery_unhealthy` open/resolved、owner sink ACK、evidence v2及exact SHA。
+- 继续完成B-012的kill/launch failure/network isolation三类`pulse_expired`真实样本，不能用本地test替代。
+- absence-first下一审计优先检查“observer自身outbox耗尽/receiver通知sink失败后谁提醒老板”，但不得在无owner选择时猜供应商。
+
+### 状态变化
+- dead-man从只判断runtime/pulse reachability提升为同时保守监督承诺的secondary alert delivery；alert sink持续失败不再被fresh pulse遮蔽。
+- B-011/B-012机器合同收窄，但真实endpoint、第二故障域和owner收件样本仍缺，保持DEFERRED。
+- goal保持active；没有把121个本地测试、schema v2或fake ACK写成真实无人公司上线、远端可用或老板已读。
+
+## Round 241 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 240让dead-man receiver在runtime alert delivery失败时停止续租；继续沿最终人类触点向下审计发现，receiver自己只有
+  一个owner notification webhook。该route长期失败时，receiver仍可形成outage、持久backoff并保持ready，缺席老板却永远收不到。
+- 当前没有真实receiver `.env`、provider或owner endpoint；本轮只关闭可由机器证明的单route SPOF合同。
+
+### 思考与讨论
+- 候选A:downstream失败就让`/readyz`失败并重启 → ❌ 否决。restart不创造新provider/credential，只会放大重试流量。
+- 候选B:只增加admin delivery status → ❌ 否决。依赖老板主动查询，违反absence-first。
+- 候选C:立即引入per-route SQLite registry/receipt/revision → ❌ 本轮否决。route-level成功/失败历史尚未达到Rule of Three；
+  但结算所需的当前与逐事件策略必须持久化，否则重启配置可静默改变owner合同。
+- 候选D:可选双different-origin route并发发送，按owner配置的ACK quorum结算既有outbox → ✅ 采用。
+- 默认1-of-2优化availability；2-of-2提供双ACK证据但降低availability，不能在故障时自动降级owner策略。
+
+### 产出
+- 新增`QuorumDeadManNotificationSink`，对两条`DeadManNotificationSink`并发发送同一event。达到minimum ACK即成功；不足时抛
+  通用quorum miss，由既有coordinator defer，不记录route exception内容。
+- `DeadManReceiverSettings`新增fallback URL/token与minimum acknowledgements。fallback必须不同HTTPS origin；route token互异且不
+  复用pulse/admin authority；quorum不得超过已配置route数。
+- 单route继续构造`WebhookDeadManNotificationSink`。双route默认1-of-2，owner可设2-of-2；所有route都会被尝试，event payload与
+  `Idempotency-Key`完全一致。
+- quorum miss继续使用现有SQLite event outbox、稳定event identity、队首顺序和1/5/15分钟backoff。
+- 最终adversarial审计发现：2-of-2 event保持pending后，若重启配置改成1-of-2，纯运行时策略会让旧event降级结算。因此
+  receiver schema升级v3：singleton保存当前route/quorum，event创建事务冻结逐事件策略，pending期间策略变化fail closed。
+- v1/v2保守迁移为1-of-1；evidence/recovery同步v3，验证当前策略、逐事件策略与pending一致性。已delivered历史event可保留
+  原策略，不被新配置改写。仍不引入per-route delivery ledger。
+- 新增primary fail/fallback ACK、2-of-2 pending→恢复、exact webhook payload/key、impossible quorum、同origin/token/authority复用等回归。
+- 新增ADR-0079、Goal Brief、P-097；更新B-012、quickstart、daily ops、troubleshooting、absence playbook、architecture、
+  receiver `.env.example`/README、CHANGELOG与STATUS。
+
+### 验证结果
+- receiver/evidence/recovery定向:`46 passed`；full root:`976 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(219 source files)、SME strict mypy(37 source files)、219个`src/aico + tests` format、
+  126个AICO生产文件/2546 definitions结构、9份repo JSON、dead-man Compose、133-member offline wheel及receiver entrypoint/module、
+  `git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- external-state保持未变：没有发送真实webhook/IM、调用provider、安装服务、部署receiver或执行live restore。
+
+### 关键决策
+- 🔒 independent fault detection与independent human notification是两份合同；receiver第二故障域不能自动证明下游route冗余。
+- 🔒 1-of-2与2-of-2分别优化availability与dual-ACK evidence；实现必须严格执行owner选择，不做静默降级。
+- 🔒 影响durable outbox结算的owner策略不能只存在于进程settings；必须按event冻结，pending期间变更必须fail closed。
+- 🔒 quorum达成前由原durable outbox保有事件；quorum达成后`delivered`只表示local policy，不表示每路成功或human read。
+- 🔒 notification credential不得复用pulse/admin control authority；different-origin只是静态下限，不是物理独立证明。
+- 🔒 不用restart loop修外部provider；不提前引入per-route receipt，但不能以避免抽象为由省略结算必需的策略事实。
+
+### 留给下一轮
+- owner在独立receiver配置两个真实provider/账号，按1-of-2制造primary断路、fallback ACK，再制造双路断路/恢复；保存stable event、
+  quorum、平台ACK与手机展示证据。若owner需要双ACK，再单独验收2-of-2。
+- B-012的process kill/launch failure/network isolation与Round 240 alert-path failure仍需第二故障域真实样本；不能用本轮fake webhook替代。
+- 若真实dogfood出现“fallback长期坏但primary一直成功而无可见退化”或route revision/replay需求，再收集三类场景后设计per-route ledger。
+
+### 状态变化
+- receiver notification从单route at-least-once提升为可选双origin ACK quorum，单provider/credential失效不再必然静默隔离老板。
+- B-012机器合同继续收窄，但真实receiver、provider/账号/网络独立和owner终端收件仍缺，保持DEFERRED。
+- goal保持active；没有把different-origin、30个本地测试或local quorum ACK写成commercial HA、all-route送达或老板已读。
+
+## Round 242 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 241增加双origin quorum与策略围栏；继续沿最终人类触点审计发现，1-of-2中primary ACK会让main delivered，即使fallback
+  已长期失败。旧SQLite/evidence/老板通知都看不到冗余降级，primary随后失效时才暴露两路全断。
+- 当前仍无真实receiver `.env`、第二故障域或provider样本；本轮只关闭event-driven route false green，不虚构continuous canary。
+
+### 思考与讨论
+- 候选A:只把aggregate status显示degraded → ❌ 否决。没有逐route持久事实、主动通知或restart恢复证据。
+- 候选B:任一路失败就让`/readyz` 503 → ❌ 否决。P-097已证明restart不能创造provider，只会放大外部抖动。
+- 候选C:直接对generic webhook定时发送canary → ❌ 本轮否决。没有silent probe协议会制造老板噪声，也可能被provider当真实事故。
+- 候选D:从真实outage event提取bounded ACK vector，事务性更新slot健康并通过尚存route发送durable边沿 → ✅ 采用。
+- per-route持久化现在满足三个稳定需求：证明本次quorum成员、主动报告冗余降级、跨restart解释恢复，因此不再属于过早抽象。
+
+### 产出
+- `WebhookDeadManNotificationSink`/`QuorumDeadManNotificationSink`返回1至2位ACK结果；quorum miss exception只带boolean vector，
+  不携带URL、token、response或异常正文。
+- main event结算、最后ACK mask/time、slot状态和新edge在同一`BEGIN IMMEDIATE`提交。unknown/healthy首次失败开degraded，
+  degraded后的真实ACK开recovered，stable edge id按slot/type/trigger event派生。
+- 新增独立route-health outbox；edge按any-route ACK和1/5/15分钟退避结算，即使main policy为2-of-2也能经尚存route告警。
+  main miss的同一sweep不重复外发；meta-alert不递归更新route健康，单route全断不创建不可送达的自我告警。
+- receiver/evidence/recovery schema升级v4：新增route state/health outbox与main ACK checkpoint。v3迁移把历史ACK保留unknown；
+  verifier验证exact DDL、route checkpoint、ACK/quorum、edge trigger/retry与pending policy fence。
+- 新增admin-only`/v1/notification-routes`；evidence bundle/CLI输出slot health与health edge，require-all-delivered覆盖两类event。
+- 新增ADR-0080、Goal Brief、P-098；更新ADR-0079、B-012、quickstart、daily ops、troubleshooting、absence playbook、
+  architecture、receiver deployment README、CHANGELOG与STATUS。
+
+### 验证结果
+- red先因`DeadManNotificationAttemptResult`不存在而collection fail；实现后partial ACK、双断恢复、edge policy fence、v3迁移、
+  ACK mask/route/edge tamper、retry后delivered恢复验证和admin redaction等targeted:`52 passed`。
+- full root:`982 passed, 1 skipped`；SME isolated:`53 passed`。`ruff check .`、root mypy(219 source files)、SME strict
+  mypy(37 source files)、219个AICO/tests format、126个生产文件/2585 definitions结构、9份repo JSON、dead-man Compose、
+  133-member offline wheel及关键receiver模块/entrypoint、`git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- external-state保持未变：没有发送真实webhook/IM、调用provider、安装服务、部署receiver或执行live restore。
+
+### 关键决策
+- 🔒 aggregate quorum success、member route health和human read是三份事实；main delivered不能抹掉partial failure。
+- 🔒 冗余降级必须durable且主动通知；dashboard/log/readiness都不能替代老板缺席时的surviving-route edge。
+- 🔒 route-health edge采用availability-first any-route ACK，与main业务event的owner 1-of-2/2-of-2策略分离。
+- 🔒 meta-alert不作为自身route probe；observer不能用自己的送达递归证明自己健康。
+- 🔒 event-driven observation不等于continuous canary；没有真实outbound event时，unknown/旧healthy必须如实保留。
+
+### 留给下一轮
+- owner在真实双provider部署中制造primary-only/fallback-only/双断恢复，核对outage与degraded/recovered edge的stable identity、
+  平台ACK、admin slot状态、evidence v4和手机展示；不得用fake sink替代B-012。
+- 若两个provider都能支持silent、idempotent、无老板噪声的probe event，再设计低频durable canary；否则优先接入provider-native
+  health/uptime authority，不能用普通outage消息假扮probe。
+- B-012的process kill/launch failure/network isolation与alert-path failure仍需真实第二故障域样本。
+
+### 状态变化
+- receiver notification从“aggregate quorum可用”提升为“partial failure有持久member事实和主动健康边沿”；fallback坏掉不再被
+  primary success静默掩盖。
+- continuous route health和真实provider/终端证据仍未完成，B-012保持DEFERRED。
+- goal保持active；没有把981个本地测试、ACK bitmask或degraded edge写成commercial HA、continuous probe或老板已读。
+
+## Round 243 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 242已让真实outage投递暴露坏fallback；继续absence-first审计发现，长期没有outage event时，route可能保持unknown或旧healthy，
+  真正需要fallback时才暴露失效。
+- 当前仍无真实receiver `.env`、第二故障域、双provider bridge或owner终端样本；本轮只关闭continuous observation的机器合同，
+  不发送外部probe、不虚构downstream silent兼容。
+
+### 思考与讨论
+- 候选A:定时HEAD真实通知URL → ❌ 否决。不验证POST payload、credential、幂等或bridge routing。
+- 候选B:配置独立probe URL/token → ❌ 否决。只能证明旁路，不能证明真正事故通知authority。
+- 候选C:定时发送普通outage event → ❌ 否决。会骚扰老板或污染incident自动化。
+- 候选D:provider-native health API → ⏸ 保留为provider插件补充，generic receiver无法据此证明owner notification bridge。
+- 候选E:显式opt-in、复用真实route的strict silent event，持久化intent并做confirmed failure → ✅ 采用。
+
+### 产出
+- 新增`notification_route_probe` schema v1与`silent-route-probe-v1`字面合同。默认disabled，仅双route可启用；复用真实URL、token、
+  POST与`Idempotency-Key`，payload不含monitor、业务正文、endpoint、provider或secret。
+- receiver schema升级v5：singleton保存contract/cadence/failure threshold/max age、pending exact event、next window、last completion和ACK mask。
+  due intent先落盘；send-before-record崩溃后重放同一identity，完成后按attempt time推进，不追赶遗漏窗口。
+- route checkpoint新增probe failure/attempt/ACK。一个失败窗口保持suspect并让delivery PENDING；连续达到2-10的持久阈值才degraded，
+  ACK清零并在degraded后生成recovered。probe-derived edge记录`silent_probe` source与bounded ACK vector。
+- probe observation不使用main quorum结算；全断时edge保留，恢复后先投递edge，再由后续probe证明route恢复。meta-alert不反向更新健康，
+  probe不触发restart、repair、restore、provider replay或grant消费。
+- probe/main/edge pending期间配置变化fail closed；disable→缩route、扩route→enable采用安全启动顺序。admin route endpoint增加secret-free
+  probe snapshot，evidence/CLI与backup/restore/drill summary同步v5。
+- v4迁移默认disabled，并重建route/health outbox为fresh v5 canonical DDL；offline verifier验证probe checkpoint、ACK mask、source-tagged
+  edge、route状态与pending policy。新增pending payload tamper、source/threshold/restart/fence及v4 canonical migration回归。
+- 新增ADR-0081、Goal Brief与P-099；更新ADR-0080状态、B-012、deploy env/README、quickstart、daily ops、troubleshooting、absence
+  playbook、architecture、CHANGELOG与STATUS。
+
+### 验证结果
+- probe/settings/store/evidence/recovery定向:`56 passed`；full root:`986 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(219 source files)、SME strict mypy(37 source files)、219个`src/aico + tests` format、
+  126个AICO生产文件/2610 definitions结构、19份repo JSON、dead-man Compose、133-member offline wheel及receiver/evidence/recovery
+  entrypoint imports、`git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 首次`uv build`因sandbox DNS无法取build isolation依赖；改用项目既有cached dependency执行`uv build --offline`成功，未请求网络权限。
+- external-state保持未变：没有发送真实webhook/IM/probe、调用provider、安装服务、部署receiver或执行live restore。
+
+### 关键决策
+- 🔒 continuous route health必须验证与生产通知相同的URL、credential、POST与bridge；HEAD、TCP、旁路URL/token不能冒充。
+- 🔒 silent是downstream bridge必须真实验收的协议承诺；sender单方面写event type不证明老板无噪声，无法证明就保持disabled。
+- 🔒 一个probe失败窗口必须显式suspect/PENDING，既不能false green，也不能单次抖动立刻刷老板；confirmed threshold跨restart持久。
+- 🔒 probe intent先于send，ACK歧义只允许重放exact event；不catch up遗漏窗口，避免receiver恢复后制造probe storm。
+- 🔒 outage delivery、silent probe、meta-alert delivery与human read是四份事实；source-tagged edge不能递归证明原route。
+- 🔒 local probe ACK只收窄transport/credential/bridge机器合同，不证明provider账号/网络/物理故障域、终端展示或商业恢复。
+
+### 留给下一轮
+- owner先升级两个真实bridge，确认`notification_route_probe`按stable key幂等ACK、绝不展示给老板且不触发incident automation；再备份v4、
+  升级receiver v5并低频opt-in。保存provider请求日志、admin/evidence v5、连续失败/恢复与手机无probe噪声样本。
+- 继续完成B-012的第二故障域process kill/launch failure/network isolation、Round 240 alert-path failure以及双provider真实partial/all-down样本；
+  unit fake ACK不能替代。
+- 若任一bridge不能实现silent v1，保持disabled并评估provider-native只读health authority插件；不得退回普通outage canary或旁路credential。
+
+### 状态变化
+- receiver route health从“只有真实outage时观察”提升为“可显式启用、低噪声、crash-safe的持续真实链路probe”；confirmation window、
+  degraded/recovered edge和evidence在restart后保持可解释。
+- continuous机器合同关闭，但真实bridge silent兼容、provider独立与owner终端无噪声仍无外部证据，B-012保持DEFERRED。
+- goal保持active；没有把986个本地测试、silent event type、different origin或fake ACK写成commercial HA、老板已读或无人公司已上线。
+
+## Round 244 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 243已覆盖通知route长期无事故时的continuous probe机器合同；继续审计部署入口发现，`aico-service install`只拒绝FAIL，
+  而runtime alerts、external liveness、recovery backup和standing autonomy关闭时都只是WARN。
+- 因此一个适合开发的`.env`可以成功安装成常驻服务，operator可能把“plist已安装”误读为“老板可以离开”。当前无真实`.env`或
+  外部基础设施，本轮只关闭配置准入false-green，不做真实安装/外发。
+
+### 思考与讨论
+- 候选A:把四类disabled WARN全改FAIL → ❌ 否决。会破坏最小开发dogfood，把外部receiver/storage强加给所有本地安装。
+- 候选B:保持现状，要求operator人工阅读WARN → ❌ 否决。生产准入继续依赖人类记忆，正违背boss-absent目标。
+- 候选C:另写一套commercial checker → ❌ 否决。会与真实readiness漂移，重演P-070的artifact lint/shadow policy问题。
+- 候选D:在同一readiness图增加默认optional、owner显式strict的聚合admission → ✅ 采用。
+- strict要求disposable drill，因为capture/custody配置本身不证明materializer会被周期性锻炼；retention具有删除authority，继续保持
+  独立opt-in，不作为安装准入。
+
+### 产出
+- 新增`AICO_ABSENCE_ADMISSION_MODE=optional|strict`。默认optional显示WARN且保持既有开发安装；非法值FAIL且不回显原值。
+- strict复用同一次`readiness_checks`里runtime alerts、runtime liveness、recovery backup和standing autonomy的结果，任一非OK均
+  汇总为固定合同名并阻止install调用launchctl。
+- strict额外要求`AICO_RECOVERY_DRILL_ENABLED=true`；不要求retention，也不自动修改配置、创建目录、签发grant、部署receiver或联网。
+- strict成功文案固定为`machine contracts configured; external evidence not attested`，不声称commercial ready、HA、off-device、
+  platform delivery、human read或business RPO/RTO。
+- 新增4个回归场景：默认optional可见、strict缺合同runner零调用、完整production preflight可通过、drill单独缺失和非法mode脱敏。
+- 新增ADR-0082、Goal Brief与P-100；更新`.env.example`、B-010、quickstart、daily ops、troubleshooting、absence playbook、
+  architecture、CHANGELOG与STATUS。
+
+### 验证结果
+- service targeted:`46 passed`；full root:`990 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(219 source files)、SME strict mypy(37 source files)、219个`src/aico + tests` format、
+  126个AICO生产文件/2611 definitions结构、repo JSON、dead-man Compose、133-member offline wheel、service entrypoint与
+  `git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- 初次JSON gate使用不存在的`python`命令、Compose未覆盖service内默认`.env`路径而失败；分别改用`/usr/bin/python3`和显式
+  `AICO_DEAD_MAN_ENV_FILE=.env.example`后通过。属于验证命令环境问题，无代码放宽。
+- external-state保持未变：没有创建`.env`、安装/restart LaunchAgent、发送webhook/IM、调用provider、创建真实backup或restore。
+
+### 关键决策
+- 🔒 process install、machine absence admission、external E2E和human read是四份事实；任一层成功都不能冒充下一层。
+- 🔒 可选开发能力不应全局升级为FAIL；由owner显式选择strict部署意图后，才把关键WARN提升为统一install gate。
+- 🔒 admission必须复用production preflight结果，不能维护第二套更松的commercial shadow checker。
+- 🔒 recovery drill是strict机器合同；retention具有删除副作用，不能为了“全绿”被隐式授权。
+- 🔒 strict OK必须自带证据边界；URL/path/grant通过本地验证不证明endpoint ACK、第二故障域、off-device或老板已读。
+
+### 留给下一轮
+- owner创建真实owner-only`.env`时，商用absence dogfood应显式设`strict`，先取得absence admission OK，再授权install；关闭terminal后
+  保存launchctl/owner/heartbeat和trusted IM回包证据。
+- B-011/B-012继续需要真实alert/liveness receiver、双provider route和手机样本；B-013继续需要off-device storage/RPO/RTO；
+  B-014继续需要真实standing grant/provider/结果样本。strict只让这些缺项无法被配置WARN静默吞掉。
+- 下一轮本机可继续审计“strict通过后仍可能只有配置、没有fresh external attestation”的边界，但不得用启动时联网探测扩大
+  service install副作用；优先寻找可验证、可缓存、可过期的外部receipt合同。
+
+### 状态变化
+- service部署从“没有FAIL即可安装”提升为“owner可显式要求关键absence机器合同全部OK才安装”；开发默认保持兼容。
+- 配置级false-green已关闭，真实deployment/external evidence仍未完成，B-010至B-014保持active/deferred。
+- goal保持active；没有把990个本地测试、strict配置或launchctl零调用写成commercial readiness、真实无人公司上线或老板已读。
+
+## Round 245 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 244增加strict install admission后继续审计真实supervisor路径：LaunchAgent后续异常重启直接执行`aico-phase1`或
+  `aico-feishu-webhook`，不会再次调用installer。
+- 代码证据显示`Phase1Settings(extra="ignore")`没有admission字段，因此dotenv strict会被runtime静默丢弃；安装后配置漂移可让关键
+  合同关闭而进程仍以optional语义接活。
+
+### 思考与讨论
+- 候选A:要求每次改`.env`后人工重跑install → ❌ 否决。supervisor restart与老板缺席不能依赖人工纪律。
+- 候选B:把strict写进plist参数 → ❌ 否决。制造双配置源，无法约束runtime真实读取的dotenv binding。
+- 候选C:runtime先启动、再用health FAILED表达 → ❌ 否决。缺失告警/死信号时无人观察，且Channel已可能接活。
+- 候选D:Phase1显式读取mode，在构造任何业务对象前复用同一contract和production preflight → ✅ 采用。
+- 定向dotenv测试首次发现Pydantic model validation error包含raw input中的Telegram token；生产入口不能直接打印该异常。
+
+### 产出
+- 新增pure `absence_admission.py`，固定strict合同名与secret-free gap aggregation；service CLI改为复用，不再维护本地常量。
+- Phase1Settings新增`absence_admission_mode: Literal[optional, strict]`。strict要求alert URL、liveness enabled、recovery backup + drill和
+  standing grant path；既有validator继续检查HTTPS/state/TTL/recovery完整性。
+- `build_phase1_runtime`第一步执行`preflight_absence_admission`，复用真实standing Adapter/persona/project/grant routing与recovery
+  destination preflight；外部文件/binding漂移时不构造Channel、state/audit或owner lock。
+- 新增dotenv真实加载回归，证明strict不再被extra-ignore；逐项关闭五个合同均FAIL，缺standing文件时state/audit保持不存在。
+- 新增`load_phase1_settings`，Telegram和Feishu entrypoint只把validation failure收敛为通用doctor指引，避免dotenv token进入stderr。
+- 新增ADR-0083、Goal Brief与P-101；更新`.env.example`、B-010、quickstart、daily ops、troubleshooting、absence playbook、
+  architecture、CHANGELOG与STATUS。
+
+### 验证结果
+- Phase/service/Feishu targeted:`113 passed`；full root:`993 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(220 source files)、SME strict mypy(37 source files)、220个`src/aico + tests` format、127个生产文件/
+  2615 definitions结构、repo JSON、dead-man Compose、134-member offline wheel及三个entrypoint/module、`git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- external-state保持未变：没有创建真实`.env`、安装/restart LaunchAgent、发送webhook/IM、调用provider或执行backup/restore。
+
+### 关键决策
+- 🔒 strict absence admission是runtime policy，不是一次性installer检查；所有supervisor/Channel入口必须持续执行。
+- 🔒 service与runtime共享合同名/gap函数，细节继续复用各自production validator/preflight，不维护更松的shadow policy。
+- 🔒 strict失败必须发生在Channel/state/audit构造前；不能“先接活再报红”。
+- 🔒 validation fail-closed不能以泄露dotenv为代价；framework raw error不得直接进入长期process stderr。
+- 🔒 runtime startup OK仍只证明本机配置/binding，不证明external freshness、provider ACK、off-device或human read。
+
+### 留给下一轮
+- owner真实`.env`应保持strict，完成install后主动模拟一个无副作用配置漂移/恢复，证明LaunchAgent拒绝宽松启动并在修复后恢复；保存
+  doctor/stderr/heartbeat/IM证据，不能在当前无授权环境代跑。
+- 下一机器侧审计应聚焦strict通过后的external evidence freshness：优先复用已有dead-man evidence、recovery custody/drill和platform ACK
+  receipt，不在startup临时联网，也不让过期证据永远全绿。
+- B-010至B-014仍需真实receiver/provider/storage/owner样本；本轮不改变external blocker状态。
+
+### 状态变化
+- strict从“install时配置门禁”提升为“每次Telegram/Feishu启动都执行的持续runtime policy”，LaunchAgent restart绕过已关闭。
+- production config failure不再把Pydantic raw dotenv input写入长期stderr；secret-safe doctor仍是诊断入口。
+- goal保持active；没有把993个本地测试、runtime fail-closed或134-member wheel写成external E2E、commercial readiness或无人公司已上线。
+
+## Round 246 — 2026-07-22 — Codex
+
+### 输入
+- 持续目标:打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 245让strict贯穿install/runtime；继续沿真实配置图审计发现，incident alert与dead-man pulse只分别验证HTTPS/TTL，未验证
+  两种不兼容strict协议之间的endpoint和credential隔离。
+- 当前文档/P-064明确两类endpoint不能共用，但same URL甚至same bearer在service和Phase1中仍能各自OK并通过strict admission。
+
+### 思考与讨论
+- 候选A:只保留文档告警 → ❌ 否决。P-064已有文档仍发生机器false-green。
+- 候选B:允许same URL，由receiver按event type分流 → ❌ 否决。当前strict routes的schema/authority不同，放宽扩大攻击面。
+- 候选C:强制different origin → ❌ 否决。同一外部receiver可用不同strict path；origin字符串也不证明故障域独立。
+- 候选D:共享cross-field validator，要求exact URL不同、双方非空bearer也不同 → ✅ 采用。
+
+### 产出
+- `absence_admission.py`新增secret-free `runtime_webhook_isolation_error`；只返回固定policy原因，不返回URL/token。
+- `STRICT_ABSENCE_CONTRACTS`新增`runtime endpoint isolation`，避免一边显示strict OK一边显示cross-field FAIL。
+- service readiness新增同名检查；same URL或双方same token在install调用launchctl前FAIL，same origin/different path继续允许。
+- Phase1Settings复用同一helper；Telegram/Feishu每次启动都在Channel/state前拒绝authority复用，production settings loader继续脱敏。
+- 新增四个回归样本：service/Phase分别覆盖same URL + distinct token和distinct URL + same token，并断言诊断不含原值。
+- 新增ADR-0084、Goal Brief与P-102；更新`.env.example`、B-011/B-012、quickstart、daily ops、troubleshooting、absence
+  playbook、architecture、CHANGELOG与STATUS。
+
+### 验证结果
+- Phase/service targeted:`113 passed`；full root:`997 passed, 1 skipped`；SME isolated:`53 passed`。
+- `ruff check .`、root mypy(220 source files)、SME strict mypy(37 source files)、220个`src/aico + tests` format、127个生产文件/
+  2619 definitions结构、repo JSON、dead-man Compose、134-member offline wheel与`git diff --check`全部通过。
+- 全仓`ruff format --check .`仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`；没有顺手修改。
+- external-state保持未变：没有创建真实`.env`、安装/restart服务、部署receiver、发送webhook/IM或调用provider。
+
+### 关键决策
+- 🔒 incident event与liveness pulse是不同wire protocol/authority；各自HTTPS合法不等于组合安全。
+- 🔒 两条URL必须exact-distinct，双方bearer均存在时也必须distinct；同origin不同path可满足机器协议隔离。
+- 🔒 cross-field policy必须在service/install与所有runtime entrypoint共享，不能只写在receiver/docs。
+- 🔒 distinct URL/token不证明物理失效域、provider账号、网络独立、真实ACK或human read。
+- 🔒 隔离错误只返回固定原因，不能为了排障打印endpoint/credential。
+
+### 留给下一轮
+- owner真实部署时为incident和pulse创建两个strict path与两套credential，分别发送真实合法/错误协议样本，保存双方ACK/拒绝证据；
+  本机unit无法替代B-011/B-012。
+- 下一机器侧审计继续检查跨组件组合约束，特别是strict external evidence freshness与配置变更后的recommission边界；不得在startup
+  临时联网或持久化secret hash。
+- B-011/B-012仍需第二故障域receiver、alert-path failure、process/network outage、provider和手机样本。
+
+### 状态变化
+- absence webhook从“两条配置各自合法”提升为“协议endpoint与bearer authority机器隔离”；strict组合误配不再判绿。
+- external endpoint真实性和第二故障域仍未证明，B-011/B-012保持DEFERRED。
+- goal保持active；没有把997个本地测试、different path/token或wheel green写成external HA、commercial readiness或老板已读。
+
+## Round 247 — 2026-07-22 — Codex
+
+### 输入与决策
+- strict已覆盖install/startup，但运行中`.env`变化后doctor验证磁盘新配置，旧进程仍使用启动settings，形成loaded-config false green。
+- 否决content/secret hash、hot reload和自动restart；采用只在内存保存stat代际的required health component。
+
+### 产出
+- 新增`RuntimeConfigSourceHealth`：production loader捕获device/inode/size/mtime/mode/uid，heartbeat只输出固定component状态。
+- strict runtime每轮比较代际；编辑/替换/删除形成`configuration:dotenv-generation` FAILED，复用三次确认runtime alert。
+- 旧进程继续运行known-good配置，不reload/restart/provider replay；owner验收新配置后显式切换。
+- 新增ADR-0085、Goal Brief、P-103并更新`.env.example`、daily ops、troubleshooting、CHANGELOG与STATUS。
+
+### 验证与边界
+- targeted:`74 passed`；full root:`999 passed, 1 skipped`；SME:`53 passed`；Ruff、root mypy(221 files)、SME mypy(37)、
+  221-file format、128生产文件/2623 definitions、Compose、135-member offline wheel、diff通过。
+- 全仓format仍只报告未触碰的`projects/data-agent-v1/src/data_agent_v1/engine.py`。
+- metadata不是tamper-proof，FAILED也不证明新配置已external recommission；本轮无真实`.env`、外发、安装或provider调用。
+- goal保持active；下一步应为配置变更后的真实外部验收建立bounded、可过期且不含secret hash的receipt。
+
+## Round 248 — 2026-07-22 — Codex
+
+### 输入与决策
+- Round 247指出新配置切换前需要bounded external recommission evidence；审计现有verifier发现历史bundle可无限复用，且只信生成时的
+  `notification_probe_fresh`，不会要求当前route healthy。
+- 否决给所有bundle固定TTL或在verifier中联网回查receiver；保留历史审计兼容，新增operator显式组合的current-health acceptance。
+
+### 产出
+- `verify_evidence_bytes`与CLI新增正有限最大artifact年龄；future和超龄`generated_at`均fail closed。
+- fresh probe按verification time重算，必须enabled、settled且至少有一次completed checkpoint；生成时fresh但验收时过期会失败。
+- all-route gate要求每个slot当前为healthy，unknown/degraded均失败；三项不改变evidence/summary schema，不读取credential或联网。
+- 新增ADR-0086、Goal Brief、P-104并更新receiver部署、Quickstart、Daily Ops、Troubleshooting、absence playbook、architecture、
+  CHANGELOG、B-012与STATUS。
+
+### 验证与边界
+- targeted:`8 passed`；full root:`1001 passed, 1 skipped`；SME:`53 passed`；Ruff、root/SME mypy(221/37 files)、
+  221/37-file format、128生产文件/2625 definitions、repo JSON、dead-man Compose、135-member offline wheel及entrypoint、diff通过。
+- 全仓format仍只报告未触碰的`projects/data-agent-v1/src/data_agent_v1/engine.py`；本轮没有顺手修改。
+- 没有真实receiver导出、签名、host/TLS/provider ACK、owner手机或fault-action样本；local artifact仍可被有写权限者伪造。
+- goal保持active；下一机器切片应把strict external acceptance、loaded dotenv generation和reviewed config revision绑定为secret-free、
+  可失效的commission receipt，而不是把本轮CLI通过写成commercial readiness。
+
+## Round 249 — 2026-07-22 — Codex
+
+### 输入与决策
+- Round 247/248分别提供dotenv代际健康和strict dead-man验收，但三份绿灯没有共同generation/identity/expiry；A配置的证据仍可能被
+  B配置复用，运行中artifact/probe过期也不会自动使runtime health失败。
+- 否决startup联网探测与持久化dotenv content/hash；采用owner先固定最终外部路径，再生成secret-free expiring receipt。
+- receipt SHA不写回其绑定的同一`.env`，避免“创建后为填SHA编辑配置，receipt立即自我失效”的循环；owner可在外部操作记录单独保存SHA。
+
+### 产出
+- 新增`aico-commission create|verify`：要求owner-only、checkout-external evidence/receipt和clean owner-reviewed Git revision；绑定safe
+  runtime id、canonical config evidence SHA、dotenv stat generation fingerprint与dead-man exact-byte SHA。
+- expiry取bundle maximum age和completed silent-probe TTL较早值；verify按当前时刻重跑complete/all-delivered/fresh-probe/all-route strict
+  evidence，并拒绝receipt/evidence/config/dotenv/runtime identity漂移。
+- strict machine graph新增`runtime commissioning`；service doctor/install与Phase1 runtime在launchctl/Channel/state前复核。
+- heartbeat新增required `configuration:commissioning-receipt`，在线程中执行离线复核；FAILED复用既有三次确认alert，不触发
+  reload/restart/provider replay。
+- receipt显式不记录dotenv path/metadata/content/content hash，固定receiver origin/provider ACK/human read未认证和
+  `business_absence_ready=false`。新增ADR-0087、Goal Brief、P-105并更新env、receiver/运维/架构、CHANGELOG、B-010/B-012与STATUS。
+
+### 验证与边界
+- targeted:`130 passed`；full root:`1009 passed, 1 skipped`；SME:`53 passed`；Ruff、root/SME mypy(224/37 files)、
+  224/37-file format、130生产文件/2652 definitions、repo JSON、dead-man Compose、137-member offline wheel及新entrypoint、diff通过。
+- 全仓format仍只报告未触碰的`projects/data-agent-v1/src/data_agent_v1/engine.py`；本轮没有顺手修改。
+- external-state未变：没有创建真实`.env`、覆盖旧artifact、安装/restart LaunchAgent、部署receiver、发送webhook/IM或调用provider。
+- local stat/hash与owner-only权限不抵抗同一OS用户恶意进程；receipt不是detached signature，也不证明host/TLS/fault action/platform ACK/
+  human read。B-010/B-012继续DEFERRED，goal保持active。
+
+## Round 250 proposal — 2026-07-22 — Codex
+
+### 输入
+
+- 持续目标：打造human-absent / boss-absent前提下可个人公司商用的multi-agent系统。
+- Round 249已把配置代际与exact evidence bytes绑定，但receipt和artifact均可由AICO Mac同用户进程写入；SHA只能证明“当前字节与先前记录一致”，不能证明“字节由独立receiver签发”。
+- 真实receiver/TLS/provider/手机仍需owner外部环境；本轮只审计仍可关闭的machine trust gap，不伪造external sample。
+
+### 思考与讨论
+
+- 候选A：继续依赖owner-only文件与SHA → ❌ 否决。同一OS user正是本轮新增威胁模型，权限和digest不提供producer identity。
+- 候选B：receiver/AICO共享HMAC secret → ❌ 否决。verifier同时获得签发能力，AICO Mac泄露后仍可伪造evidence。
+- 候选C：envelope携带公钥并自验证 → ❌ 否决。只能证明未知key签过，不能建立owner trust anchor。
+- 候选D：TLS证书或启动时在线查询 → ❌ 否决。前者不能随artifact离线携带来源事实，后者扩大strict startup副作用。
+- 候选E：owner-pinned Ed25519公钥验证receiver exact-byte签名 → ✅ 提议；使用维护中的`cryptography`，不自制密码学。
+- 该方案新增密码学依赖、receiver wire contract和strict部署workflow，按开发规范必须先形成方案并等待owner确认。
+
+### 产出
+
+- 新增Goal Brief `2026-07-22-signed-dead-man-evidence-envelope.md`，固定threat model、domain-separated signing input、key lifecycle、compatibility、failure semantics、adversarial acceptance matrix与rollout order。
+- 新增Proposed ADR-0088，明确推荐Ed25519，否决unsigned/HMAC/self-trusted key/TLS substitute，并保持`business_absence_ready=false`。
+- 更新ADR索引、STATUS下一步与B-012；没有修改production code、dependency lock或运行配置。
+
+### 验证与边界
+
+- 文档引用路径与ADR索引已检查，`git diff --check`待本轮收口执行。
+- external-state未变：没有生成私钥、联网下载依赖、创建`.env`、部署receiver、安装LaunchAgent、发送webhook/IM或调用provider。
+- signature未来即使实现也只证明owner-pinned key possession；不能证明key所在物理host、TLS、故障动作、平台ACK、owner已读或商业DR完成。
+
+### 留给下一轮
+
+- owner确认ADR-0088后，按Goal Brief顺序实现sign/verify primitive、receiver signed endpoint、offline verifier、commissioning schema v2与strict continuous health，再完成全量gate。
+- 若owner不接受新增`cryptography`依赖，应明确选择替代trust authority；不得静默退回HMAC或自制Ed25519。
+- B-010/B-012/B-013/B-014仍需真实owner环境与外部证据，goal保持active。

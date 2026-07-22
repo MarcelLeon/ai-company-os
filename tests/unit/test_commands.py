@@ -23,6 +23,7 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     roles = parse_command("roles")
     assignments = parse_command("assignments")
     sessions = parse_command("sessions")
+    proposals = parse_command("proposals")
 
     assert status is not None
     assert metrics is not None
@@ -45,6 +46,7 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     assert roles is not None
     assert assignments is not None
     assert sessions is not None
+    assert proposals is not None
     assert status.name is CommandName.STATUS
     assert metrics.name is CommandName.METRICS
     assert inbox.name is CommandName.INBOX
@@ -66,6 +68,7 @@ def test_parse_command_accepts_plain_readonly_commands() -> None:
     assert roles.name is CommandName.ROLES
     assert assignments.name is CommandName.ASSIGNMENTS
     assert sessions.name is CommandName.SESSIONS
+    assert proposals.name is CommandName.PROPOSALS
 
 
 def test_parse_command_accepts_slash_command_with_bot_suffix() -> None:
@@ -187,6 +190,7 @@ def test_parse_command_accepts_project_assignment_commands() -> None:
     overnight_command = parse_command("/overnight finish the phase 8 plan")
     dream_command = parse_command("/dream")
     goal_command = parse_command("/goal implementer inspect release plan")
+    proposal_command = parse_command("/proposal accept prop-123")
     roles_command = parse_command("/roles aico")
     role_command = parse_command("/role propose 需要一个增长分析岗位")
     who_command = parse_command("/who implementer")
@@ -210,6 +214,7 @@ def test_parse_command_accepts_project_assignment_commands() -> None:
     assert overnight_command is not None
     assert dream_command is not None
     assert goal_command is not None
+    assert proposal_command is not None
     assert roles_command is not None
     assert role_command is not None
     assert who_command is not None
@@ -246,6 +251,8 @@ def test_parse_command_accepts_project_assignment_commands() -> None:
     assert dream_command.payload == ""
     assert goal_command.name is CommandName.GOAL
     assert goal_command.payload == "implementer inspect release plan"
+    assert proposal_command.name is CommandName.PROPOSAL
+    assert proposal_command.payload == "accept prop-123"
     assert roles_command.name is CommandName.ROLES
     assert roles_command.payload == "aico"
     assert role_command.name is CommandName.ROLE

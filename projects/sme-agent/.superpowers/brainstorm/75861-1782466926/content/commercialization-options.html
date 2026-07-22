@@ -1,0 +1,101 @@
+<h2>SME Agent: choose the first commercial interaction slice</h2>
+<p class="subtitle">
+  Goal: make this usable by a small merchant, livestream seller, or owner-operator,
+  while staying inside <code>projects/sme-agent</code>.
+</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. Local Diagnosis Workbench</div>
+        <div class="mockup-body">
+          <div class="mock-nav">SME Agent | Live Commerce Diagnosis</div>
+          <div style="display:grid;grid-template-columns:260px 1fr;gap:14px;margin-top:14px;">
+            <div class="mock-sidebar">
+              <strong>Step 1</strong> Choose sample or upload CSV<br><br>
+              <strong>Step 2</strong> Validate field mapping<br><br>
+              <strong>Step 3</strong> Generate report
+            </div>
+            <div class="mock-content">
+              <h3 style="margin-top:0">老板看板</h3>
+              <div class="placeholder">GMV / paid GMV / refund / GPM / conversion</div>
+              <div class="placeholder">Findings with evidence and human checks</div>
+              <button class="mock-button">Use public dogfood sample</button>
+              <button class="mock-button">Copy report</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Local Diagnosis Workbench</h3>
+      <p>
+        A browser UI served locally by Python. The user can use bundled samples,
+        paste/upload CSV later, see mapping coverage, metrics, findings, and copy
+        a report. Fastest path to real dogfooding.
+      </p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Immediate acceptance surface</li><li>No cloud/auth needed</li><li>Uses existing diagnosis code</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Local-only</li><li>Not a full SaaS</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. Delivery Portal</div>
+        <div class="mockup-body">
+          <div class="mock-nav">Customer Project | Evidence | Delivery</div>
+          <div class="placeholder">Customer intake form</div>
+          <div class="placeholder">Workspace files: raw / work / delivery</div>
+          <div class="placeholder">Final report review checklist</div>
+          <button class="mock-button">Create customer workspace</button>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Delivery Portal</h3>
+      <p>
+        A more operator-facing portal focused on customer workspace creation,
+        evidence manifests, redaction checklist, and final delivery readiness.
+      </p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Closest to paid service ops</li><li>Improves delivery reliability</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Less useful for buyer demo</li><li>Still indirect for owners</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. SaaS Landing + Demo</div>
+        <div class="mockup-body">
+          <div class="mock-nav">SME Agent | Pricing | Demo</div>
+          <div class="placeholder">Marketing hero and pricing</div>
+          <div class="placeholder">Embedded report preview</div>
+          <button class="mock-button">Book diagnosis</button>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. SaaS Landing + Demo</h3>
+      <p>
+        A buyer-facing marketing page with a guided demo. Good for selling the
+        concept, but less honest if the backend interaction is still manual.
+      </p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul><li>Looks commercial quickly</li><li>Can reuse Taobao copy</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Risk of overclaiming</li><li>Does not solve real usage enough</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">
+  Recommendation: choose A first. It turns the current engine into something you
+  can actually验收: open a local page, run the sample, inspect the diagnosis, and
+  decide whether it feels commercially credible.
+</p>

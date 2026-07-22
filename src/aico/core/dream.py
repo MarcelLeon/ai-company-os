@@ -121,7 +121,8 @@ def dream_review_message(project_id: str, candidates: tuple[MemoryAtom, ...]) ->
     lines.append("")
     lines.append("Next:")
     lines.append("- /inbox")
-    lines.append("- /remember <accepted lesson>")
+    lines.append("- /experience review")
+    lines.append("- /experience promote <candidate-id> as <role>")
     return rich_text_message("\n".join(lines))
 
 

@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#1e3a8a"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#020617" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect width="800" height="800" rx="44" fill="url(#bg)"/>
+  <path d="M80 575 C190 480 265 610 380 500 C510 375 585 410 720 295"
+        fill="none" stroke="#60a5fa" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+  <circle cx="720" cy="295" r="18" fill="#bfdbfe"/>
+
+  <text x="72" y="104" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="24" fill="#bfdbfe" letter-spacing="2">FOR SMALL BUSINESS OWNERS</text>
+  <text x="72" y="188" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="58" font-weight="800" fill="#ffffff">收入下降</text>
+  <text x="72" y="254" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="52" font-weight="800" fill="#ffffff">不要只怪流量</text>
+  <text x="76" y="312" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="28" fill="#dbeafe">从订单、退款、广告 ROI、库存动销里</text>
+  <text x="76" y="354" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="28" fill="#dbeafe">找真正原因</text>
+
+  <g filter="url(#shadow)">
+    <rect x="76" y="430" width="205" height="128" rx="24" fill="#ffffff" opacity="0.96"/>
+    <text x="106" y="482" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="23" font-weight="800" fill="#0f172a">退款率</text>
+    <text x="106" y="526" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="38" font-weight="800" fill="#dc2626">15.0%</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="306" y="430" width="205" height="128" rx="24" fill="#ffffff" opacity="0.96"/>
+    <text x="336" y="482" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="23" font-weight="800" fill="#0f172a">广告 ROAS</text>
+    <text x="336" y="526" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="38" font-weight="800" fill="#ca8a04">1.29</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="536" y="430" width="188" height="128" rx="24" fill="#ffffff" opacity="0.96"/>
+    <text x="566" y="482" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="23" font-weight="800" fill="#0f172a">滞销 SKU</text>
+    <text x="566" y="526" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="38" font-weight="800" fill="#2563eb">2 个</text>
+  </g>
+
+  <rect x="72" y="664" width="180" height="48" rx="24" fill="#ffffff"/>
+  <text x="108" y="696" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="20" font-weight="700" fill="#1e3a8a">适合电商小店</text>
+  <rect x="276" y="664" width="180" height="48" rx="24" fill="#ffffff"/>
+  <text x="318" y="696" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="20" font-weight="700" fill="#1e3a8a">支持 Excel</text>
+  <rect x="480" y="664" width="220" height="48" rx="24" fill="#ffffff"/>
+  <text x="522" y="696" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="20" font-weight="700" fill="#1e3a8a">交付诊断报告</text>
+</svg>

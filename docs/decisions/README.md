@@ -55,6 +55,58 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0034 | Rollback Granularity Boundary | Accepted | 2026-05-31 |
 | ADR-0035 | aico-view Token Auth Posture | Accepted | 2026-05-31 |
 | ADR-0036 | aico-view IM-delivered HTML Snapshot | Accepted | 2026-06-02 |
+| ADR-0037 | Lead Standing Charter Proposal Boundary | Accepted | 2026-07-21 |
+| ADR-0038 | macOS launchd Durable Runtime Service | Accepted | 2026-07-21 |
+| ADR-0039 | Runtime Component Health in the Local Heartbeat | Accepted | 2026-07-21 |
+| ADR-0040 | Reconcile Persisted Running Tasks as Interrupted After Restart | Accepted | 2026-07-21 |
+| ADR-0041 | Transactional Outbox for Restart Recovery Audit | Accepted | 2026-07-21 |
+| ADR-0042 | OS Advisory Lock for Single Runtime Ownership | Accepted | 2026-07-21 |
+| ADR-0043 | Bounded In-Process Recovery for Owned Background Tasks | Accepted | 2026-07-21 |
+| ADR-0044 | Durable Out-of-Band Runtime Alerts | Superseded by ADR-0077 | 2026-07-21 |
+| ADR-0045 | External Dead-Man Runtime Liveness | Superseded by ADR-0078 | 2026-07-21 |
+| ADR-0046 | Deployable Persistent Dead-Man Receiver | Superseded by ADR-0078 | 2026-07-21 |
+| ADR-0047 | Dead-Man Receiver Worker Progress Readiness | Accepted | 2026-07-21 |
+| ADR-0048 | Exportable Dead-Man Outage Evidence Bundle | Superseded by ADR-0078 | 2026-07-21 |
+| ADR-0049 | Owner-Fenced SQLite Online Backup and Restore | Accepted | 2026-07-21 |
+| ADR-0050 | Disposable Restore Drill as Recovery Evidence | Accepted | 2026-07-21 |
+| ADR-0051 | Owner-Bound Read-Only Standing Autonomy | Accepted | 2026-07-21 |
+| ADR-0052 | Non-Mutating Standing Autonomy Deployment Preflight | Accepted | 2026-07-21 |
+| ADR-0053 | Derived Standing Autonomy Execution Receipts | Accepted | 2026-07-21 |
+| ADR-0054 | Post-run Provider Usage Circuit Breaker | Accepted | 2026-07-21 |
+| ADR-0055 | Repository-grounded Standing Result Contract | Accepted | 2026-07-21 |
+| ADR-0056 | Bounded Standing Result Envelope | Accepted | 2026-07-22 |
+| ADR-0057 | Standing Evidence Fingerprint and Drift Gate | Accepted | 2026-07-22 |
+| ADR-0058 | Bounded Approval Lease and Transactional Expiry | Accepted | 2026-07-22 |
+| ADR-0059 | Owner-Bound IM Ingress Before Orchestration | Accepted | 2026-07-22 |
+| ADR-0060 | Persisted Authorization Clock Rollback Fence | Accepted | 2026-07-22 |
+| ADR-0061 | Tamper-Evident Local Audit Ledger | Accepted | 2026-07-22 |
+| ADR-0062 | Portable Audit Recovery Point | Accepted | 2026-07-22 |
+| ADR-0063 | Owner-Fenced Audit Restore and Corrupt-Live Quarantine | Accepted | 2026-07-22 |
+| ADR-0064 | Bounded-Window Core Recovery Set | Superseded by ADR-0065 | 2026-07-22 |
+| ADR-0065 | Tamper-Evident Memory Recovery | Superseded by ADR-0066 | 2026-07-22 |
+| ADR-0066 | Reviewed Configuration Revision Recovery | Superseded by ADR-0067 | 2026-07-22 |
+| ADR-0067 | Secret-free Runtime Reinjection Receipts | Accepted | 2026-07-22 |
+| ADR-0068 | Independent Dead-man Receiver Recovery | Superseded by ADR-0078 | 2026-07-22 |
+| ADR-0069 | Live Provider Authentication Receipts | Accepted | 2026-07-22 |
+| ADR-0070 | Durable At-least-once Scheduled Morning Delivery | Accepted | 2026-07-22 |
+| ADR-0071 | Durable Scheduled Autonomy Intent and Evidence-based Recovery | Accepted | 2026-07-22 |
+| ADR-0072 | Durable Scheduled Core Recovery Backup Without Automatic Restore | Superseded by ADR-0074 | 2026-07-22 |
+| ADR-0073 | Continuous Recovery Artifact Custody Attestation | Accepted | 2026-07-22 |
+| ADR-0074 | Bounded Crash-Consistent Recovery Retention | Accepted | 2026-07-22 |
+| ADR-0075 | Durable Scheduled Disposable Recovery Drill | Accepted | 2026-07-22 |
+| ADR-0076 | Durable Scheduled Autonomy Outcome Delivery | Accepted | 2026-07-22 |
+| ADR-0077 | Confirmed Required-Component Runtime Alerts | Accepted | 2026-07-22 |
+| ADR-0078 | Alert-Delivery-Aware Dead-Man Renewal | Superseded by ADR-0079 (receiver/evidence/recovery schema only) | 2026-07-22 |
+| ADR-0079 | Quorum Dead-Man Notification Routes | Superseded by ADR-0080 (receiver/evidence/recovery schema only) | 2026-07-22 |
+| ADR-0080 | Durable Notification Route Health Edges | Superseded by ADR-0081 (schema and continuous-observation boundary only) | 2026-07-22 |
+| ADR-0081 | Durable Silent Notification Route Probes | Accepted | 2026-07-22 |
+| ADR-0082 | Strict Absence Install Admission | Accepted | 2026-07-22 |
+| ADR-0083 | Runtime-Enforced Strict Absence Admission | Accepted | 2026-07-22 |
+| ADR-0084 | Runtime Webhook Authority Isolation | Accepted | 2026-07-22 |
+| ADR-0085 | Runtime Dotenv Generation Drift Health | Accepted | 2026-07-22 |
+| ADR-0086 | Bounded Current Dead-Man Evidence Acceptance | Accepted | 2026-07-22 |
+| ADR-0087 | Expiring Runtime Commissioning Receipt | Accepted | 2026-07-22 |
+| ADR-0088 | Signed Dead-Man Evidence Envelope | Proposed | 2026-07-22 |
 
 **状态图例**:
 - `Proposed`(提议中)

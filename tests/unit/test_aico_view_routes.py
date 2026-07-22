@@ -112,6 +112,39 @@ def test_timeline_renders_recent_events(tmp_path: Path) -> None:
     assert "mem-fact" in body or "mem-exp" in body
 
 
+def test_timeline_hides_provider_session_identifier(tmp_path: Path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    sink = JsonlAuditSink(audit_path)
+    sink.write(
+        AuditEvent(
+            event_id="evt-session-busy",
+            event_type=AuditEventType.TASK_FAILED,
+            task_id="task-session-busy",
+            actor_id="boss-1",
+            target_persona="reviewer",
+            risk_level=RiskLevel.READ_ONLY,
+            detail=("Error: Session ID 019f3b9a-8a26-7453-ac6f-246aaa25b2b6 is already in use."),
+            timestamp=datetime(2026, 7, 21, 9, 0, tzinfo=UTC),
+        )
+    )
+    client = TestClient(
+        build_view_app(
+            ViewSettings(
+                audit_log_path=audit_path,
+                memory_path=None,
+                state_db_path=None,
+                project_ids=("aico",),
+            )
+        )
+    )
+
+    body = client.get("/").text
+
+    assert "role session busy" in body
+    assert "Session ID" not in body
+    assert "019f3b9a" not in body
+
+
 def test_trace_renders_events_for_id(tmp_path: Path) -> None:
     client = _client(tmp_path)
     response = client.get("/trace/task-view-1")

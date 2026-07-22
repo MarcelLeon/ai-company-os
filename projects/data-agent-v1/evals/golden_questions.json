@@ -1,0 +1,176 @@
+[
+  {
+    "id": "G001",
+    "question": "本月华东区收入为什么下降？",
+    "expected_intent": "east_china_revenue_drop",
+    "expected_facts": {
+      "current_month_revenue": "84000",
+      "previous_month_revenue": "120000",
+      "drop_pct": "30.0",
+      "largest_channel_drag": "Douyin"
+    }
+  },
+  {
+    "id": "G002",
+    "question": "华东收入下滑主要少在哪个渠道？",
+    "expected_intent": "east_china_revenue_drop",
+    "expected_facts": {
+      "drop_amount": "36000",
+      "largest_channel_drag": "Douyin"
+    }
+  },
+  {
+    "id": "G003",
+    "question": "East revenue drop 的幅度是多少？",
+    "expected_intent": "east_china_revenue_drop",
+    "expected_facts": {
+      "drop_pct": "30.0"
+    }
+  },
+  {
+    "id": "G004",
+    "question": "广告 ROAS 低是哪个渠道拖累的？",
+    "expected_intent": "roas_drag",
+    "expected_facts": {
+      "lowest_roas_channel": "Douyin",
+      "lowest_roas": "1.40"
+    }
+  },
+  {
+    "id": "G005",
+    "question": "本月华东广告投放哪个渠道 ROAS 最差？",
+    "expected_intent": "roas_drag",
+    "expected_facts": {
+      "douyin_roas": "1.40",
+      "search_roas": "4.00"
+    }
+  },
+  {
+    "id": "G006",
+    "question": "ROAS 为什么看起来低？",
+    "expected_intent": "roas_drag",
+    "expected_facts": {
+      "lowest_roas_channel": "Douyin"
+    }
+  },
+  {
+    "id": "G007",
+    "question": "退款率上升主要来自哪些商品或客户分群？",
+    "expected_intent": "refund_contributors",
+    "expected_facts": {
+      "top_refund_product": "Smart Camera",
+      "refund_rate": "19.0"
+    }
+  },
+  {
+    "id": "G008",
+    "question": "退款主要来自哪个商品？",
+    "expected_intent": "refund_contributors",
+    "expected_facts": {
+      "top_refund_product": "Smart Camera",
+      "top_refund_amount": "14000"
+    }
+  },
+  {
+    "id": "G009",
+    "question": "哪个客户分群贡献了退款？",
+    "expected_intent": "refund_contributors",
+    "expected_facts": {
+      "top_refund_segment": "new"
+    }
+  },
+  {
+    "id": "G010",
+    "question": "哪个地区本月收入最高？",
+    "expected_intent": "regional_revenue_rank",
+    "expected_facts": {
+      "top_region": "East",
+      "top_region_revenue": "84000"
+    }
+  },
+  {
+    "id": "G011",
+    "question": "地区收入排名第一是谁？",
+    "expected_intent": "regional_revenue_rank",
+    "expected_facts": {
+      "top_region": "East"
+    }
+  },
+  {
+    "id": "G012",
+    "question": "本月全站总收入是多少？",
+    "expected_intent": "total_revenue",
+    "expected_facts": {
+      "total_revenue": "224000",
+      "month": "2026-06"
+    }
+  },
+  {
+    "id": "G013",
+    "question": "overall revenue for this month?",
+    "expected_intent": "total_revenue",
+    "expected_facts": {
+      "total_revenue": "224000"
+    }
+  },
+  {
+    "id": "G014",
+    "question": "华东本月各渠道收入是多少？",
+    "expected_intent": "channel_revenue",
+    "expected_facts": {
+      "top_channel": "Douyin",
+      "top_channel_revenue": "28000"
+    }
+  },
+  {
+    "id": "G015",
+    "question": "哪个渠道收入最高？",
+    "expected_intent": "channel_revenue",
+    "expected_facts": {
+      "top_channel": "Douyin"
+    }
+  },
+  {
+    "id": "G016",
+    "question": "华东哪个商品收入最高？",
+    "expected_intent": "product_revenue",
+    "expected_facts": {
+      "top_product": "Smart Camera",
+      "top_product_revenue": "34000"
+    }
+  },
+  {
+    "id": "G017",
+    "question": "商品收入第一名是什么？",
+    "expected_intent": "product_revenue",
+    "expected_facts": {
+      "top_product": "Smart Camera"
+    }
+  },
+  {
+    "id": "G018",
+    "question": "库存风险最高的是哪个商品？",
+    "expected_intent": "inventory_risk",
+    "expected_facts": {
+      "inventory_risk_product": "Smart Camera",
+      "months_of_cover": "12.4"
+    }
+  },
+  {
+    "id": "G019",
+    "question": "华东客户分群收入最高的是谁？",
+    "expected_intent": "customer_segment_revenue",
+    "expected_facts": {
+      "top_customer_segment": "new",
+      "top_segment_revenue": "42000"
+    }
+  },
+  {
+    "id": "G020",
+    "question": "收入怎么样？",
+    "expected_intent": "needs_clarification",
+    "expected_facts": {
+      "missing_scope": "time_period_or_business_scope"
+    }
+  }
+]

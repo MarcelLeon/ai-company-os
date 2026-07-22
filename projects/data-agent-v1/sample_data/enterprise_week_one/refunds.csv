@@ -1,0 +1,8 @@
+refund_id,order_id,month,region,product_id,product_name,customer_segment,refund_amount,reason
+R-M-001,M-E-001,2026-05,East,P100,Smart Camera,new,3000,quality
+R-M-002,M-E-003,2026-05,East,P100,Smart Camera,returning,2000,quality
+R-M-003,M-E-004,2026-05,East,P300,Data Console,vip,1000,setup
+R-J-001,J-E-001,2026-06,East,P100,Smart Camera,new,8000,quality
+R-J-002,J-E-003,2026-06,East,P100,Smart Camera,returning,6000,quality
+R-J-003,J-E-002,2026-06,East,P200,Edge Router,returning,1000,delivery
+R-J-004,J-E-004,2026-06,East,P300,Data Console,vip,1000,setup

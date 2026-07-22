@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from aico.core.models import (
     AckStatus,
     ApprovalRequest,
     ApprovalStatus,
+    AuditEvent,
     RiskLevel,
     Task,
     TaskAck,
@@ -14,6 +17,12 @@ from aico.core.models import (
     utc_now,
 )
 from aico.core.task_store import TaskStateStore
+
+RUNTIME_RESTART_INTERRUPTED_REASON = (
+    "runtime restarted before task completion; execution ownership was lost. "
+    "Verify external side effects before submitting a new task."
+)
+APPROVAL_EXPIRED_REASON = "approval lease expired; submit a new task for fresh review"
 
 
 class TaskStateRepository:
@@ -69,6 +78,7 @@ class TaskStateRepository:
         status: TaskStatus,
         *,
         reason: str | None = None,
+        now: datetime | None = None,
     ) -> TaskSnapshot | None:
         snapshot = self.tasks.get(task_id)
         if snapshot is None:
@@ -77,7 +87,7 @@ class TaskStateRepository:
             update={
                 "status": status,
                 "reason": reason,
-                "updated_at": utc_now(),
+                "updated_at": now or utc_now(),
             }
         )
         self.tasks[task_id] = updated
@@ -130,6 +140,35 @@ class TaskStateRepository:
             if approval.status is ApprovalStatus.PENDING
         )
 
+    def mark_recovery_audit_delivered(self, event_id: str) -> None:
+        if self._store is not None:
+            self._store.mark_recovery_audit_delivered(event_id)
+
+    def reconcile_startup(self) -> tuple[AuditEvent, ...]:
+        return self._reconcile_running_tasks()
+
+    def reconcile_expired_approvals(
+        self,
+        *,
+        now: datetime,
+        max_age_seconds: int,
+        reason: str = APPROVAL_EXPIRED_REASON,
+        force: bool = False,
+    ) -> tuple[AuditEvent, ...]:
+        if self._store is None:
+            return ()
+        reconciled = self._store.reconcile_expired_approvals(
+            expires_before=now - timedelta(seconds=max_age_seconds),
+            now=now,
+            reason=reason,
+            force=force,
+        )
+        for result in reconciled:
+            self.approvals[result.approval.task.task_id] = result.approval
+            if result.snapshot is not None:
+                self.tasks[result.snapshot.task_id] = result.snapshot
+        return self._store.load_pending_recovery_audit_events()
+
     def resolve_pending_approval(self, task_ref: str | None) -> ApprovalRequest | TaskAck:
         pending = self.pending_approvals()
         if not task_ref:
@@ -156,6 +195,18 @@ class TaskStateRepository:
                 status=AckStatus.REJECTED,
                 reason=f"multiple pending approvals match: {_pending_task_refs(matches)}",
             )
+        expired = [
+            approval
+            for approval in self.approvals.values()
+            if approval.status is ApprovalStatus.EXPIRED
+            and approval.task.task_id.startswith(task_ref)
+        ]
+        if len(expired) == 1:
+            return TaskAck(
+                task_id=expired[0].task.task_id,
+                status=AckStatus.REJECTED,
+                reason=expired[0].reason or APPROVAL_EXPIRED_REASON,
+            )
         return TaskAck(
             task_id=task_ref,
             status=AckStatus.REJECTED,
@@ -170,6 +221,14 @@ class TaskStateRepository:
 
     def _load_approvals(self) -> tuple[ApprovalRequest, ...]:
         return () if self._store is None else self._store.load_approvals()
+
+    def _reconcile_running_tasks(self) -> tuple[AuditEvent, ...]:
+        if self._store is None:
+            return ()
+        updated = self._store.reconcile_running_tasks(reason=RUNTIME_RESTART_INTERRUPTED_REASON)
+        for snapshot in updated:
+            self.tasks[snapshot.task_id] = snapshot
+        return self._store.load_pending_recovery_audit_events()
 
     def _save_snapshot(self, snapshot: TaskSnapshot) -> None:
         if self._store is not None:

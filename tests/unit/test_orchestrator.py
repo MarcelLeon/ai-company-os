@@ -1,6 +1,7 @@
+import asyncio
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,8 @@ from aico.core import (
     HealthStatus,
     IncomingMessage,
     InMemoryAgentSessionStore,
+    InMemoryAuditLog,
+    InMemoryStandingProposalStore,
     JsonlMemoryStore,
     MemoryAtom,
     MemoryBroadcastService,
@@ -49,12 +52,40 @@ from aico.core import (
     RoleProfile,
     SentMessage,
     SQLiteOfflineDelegationStore,
+    SQLiteStandingProposalStore,
+    SQLiteTaskStateStore,
+    StandingCharterItem,
+    StandingProposal,
+    StandingProposalDecisionMode,
+    StandingProposalStatus,
     Task,
     TaskAck,
     TaskBus,
     TaskOutput,
+    TaskSnapshot,
     TaskStatus,
+    TaskUsage,
     provider_session_from_task,
+)
+from aico.core.authorization_clock import AUTHORIZATION_CLOCK_ROLLBACK_REASON
+from aico.core.collaboration import collaboration_disabled
+from aico.core.ingress_authorization import OwnerBoundIngressAuthorizer
+from aico.core.preauthorized_execution import preauthorized_execution_mode
+from aico.core.standing_autonomy import (
+    SCHEDULED_AUTONOMY_INTENT_ID_KEY,
+    StandingAutonomyGrant,
+    StandingAutonomyGrantSet,
+    StandingAutonomyReceiptStatus,
+    StandingAutonomyRunDisposition,
+)
+from aico.core.standing_result import (
+    MAX_STANDING_RESULT_CHARS,
+    StandingEvidenceStatus,
+    StandingResultContractStatus,
+    StandingResultFailure,
+    StandingResultReceipt,
+    standing_result_evidence_status,
+    validate_standing_result,
 )
 
 
@@ -113,6 +144,48 @@ class ScriptedAdapter:
         return HealthStatus.OK
 
 
+class ErrorAdapter(ScriptedAdapter):
+    def __init__(self, error: str, *, name: str = "claude-code") -> None:
+        super().__init__(name=name, output_texts=())
+        self._error = error
+
+    async def _outputs(self, task_id: str) -> AsyncIterator[TaskOutput]:
+        yield TaskOutput(
+            task_id=task_id,
+            sequence=0,
+            type=OutputType.ERROR,
+            content=self._error,
+        )
+
+
+class SafeReadOnlyAdapter(ScriptedAdapter):
+    def supports_preauthorized_execution(self, mode: str) -> bool:
+        return mode == "read_only"
+
+    def task_usage(self, task_id: str) -> TaskUsage | None:
+        if task_id in self.interrupted_task_ids:
+            return None
+        return TaskUsage(input_tokens=80, output_tokens=20, total_tokens=100)
+
+
+class HangingSafeReadOnlyAdapter(SafeReadOnlyAdapter):
+    async def _outputs(self, task_id: str) -> AsyncIterator[TaskOutput]:
+        del task_id
+        await asyncio.Event().wait()
+        if False:  # pragma: no cover - keeps this an async generator
+            yield TaskOutput(task_id="never", sequence=0, type=OutputType.DONE, content="")
+
+
+class FailedSafeReadOnlyAdapter(SafeReadOnlyAdapter):
+    async def _outputs(self, task_id: str) -> AsyncIterator[TaskOutput]:
+        yield TaskOutput(
+            task_id=task_id,
+            sequence=0,
+            type=OutputType.ERROR,
+            content="provider transport failed",
+        )
+
+
 class RecordingChannel:
     def __init__(self) -> None:
         self.handler: IncomingMessageHandler | None = None
@@ -161,6 +234,20 @@ class RecordingChannel:
         return HealthStatus.OK
 
 
+class FailingStartNotificationChannel(RecordingChannel):
+    async def send_message(self, target: ChannelTarget, content: MessageContent) -> SentMessage:
+        if content.text.startswith("Preauthorized proposal started:"):
+            raise RuntimeError("private start notification transport detail")
+        return await super().send_message(target, content)
+
+
+class FailingTaskAcceptedChannel(RecordingChannel):
+    async def send_message(self, target: ChannelTarget, content: MessageContent) -> SentMessage:
+        if content.text.startswith("Task accepted:"):
+            raise RuntimeError("private task acknowledgement transport detail")
+        return await super().send_message(target, content)
+
+
 async def test_orchestrator_runs_fake_channel_to_fake_adapter_flow() -> None:
     adapter = ScriptedAdapter()
     channel = RecordingChannel()
@@ -183,6 +270,89 @@ async def test_orchestrator_runs_fake_channel_to_fake_adapter_flow() -> None:
     ]
 
 
+async def test_orchestrator_drops_untrusted_ingress_before_business_state() -> None:
+    adapter = ScriptedAdapter()
+    channel = RecordingChannel()
+    audit = InMemoryAuditLog()
+    bus = TaskBus(adapter, audit_log=audit)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-denied"),
+        task_bus=bus,
+        ingress_authorizer=OwnerBoundIngressAuthorizer(
+            channel_name="telegram",
+            owner_sender_ids=("owner-1",),
+            trusted_target_ids=("chat-1",),
+        ),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="run pytest", sender_id="stranger"))
+    await orchestrator.handle_incoming(
+        IncomingMessage(
+            channel_name="telegram",
+            source=ChannelTarget(channel_name="telegram", target_id="public-chat"),
+            sender_id="owner-1",
+            content=MessageContent(text="/inbox"),
+            raw_ref="message-public",
+        )
+    )
+
+    assert adapter.received_tasks == []
+    assert channel.sent_messages == []
+    assert bus.task_snapshots(limit=None) == ()
+    assert audit.events() == ()
+
+
+async def test_orchestrator_allows_owner_only_in_trusted_target() -> None:
+    adapter = ScriptedAdapter()
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-owner"),
+        task_bus=TaskBus(adapter),
+        ingress_authorizer=OwnerBoundIngressAuthorizer(
+            channel_name="telegram",
+            owner_sender_ids=("owner-1",),
+            trusted_target_ids=("chat-1",),
+        ),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(sender_id="owner-1"))
+
+    assert adapter.received_tasks[0].task_id == "task-owner"
+
+
+async def test_untrusted_sender_cannot_self_approve_owner_task() -> None:
+    adapter = ScriptedAdapter()
+    channel = RecordingChannel()
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(
+            default_persona="default",
+            task_id_factory=lambda: "task-owner-approval",
+        ),
+        task_bus=bus,
+        ingress_authorizer=OwnerBoundIngressAuthorizer(
+            channel_name="telegram",
+            owner_sender_ids=("owner-1",),
+            trusted_target_ids=("chat-1",),
+        ),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="run pytest", sender_id="owner-1"))
+    messages_before_attack = tuple(channel.sent_messages)
+    await orchestrator.handle_incoming(_incoming_message(text="/approve", sender_id="stranger"))
+
+    assert tuple(channel.sent_messages) == messages_before_attack
+    assert adapter.received_tasks == []
+    assert bus.task_snapshots(limit=None)[0].status is TaskStatus.WAITING_APPROVAL
+
+    await orchestrator.handle_incoming(_incoming_message(text="/approve", sender_id="owner-1"))
+
+    assert adapter.received_tasks[0].task_id == "task-owner-approval"
+
+
 async def test_orchestrator_reports_rejected_task_without_streaming() -> None:
     adapter = ScriptedAdapter(ack_status=AckStatus.BUSY)
     channel = RecordingChannel()
@@ -196,6 +366,75 @@ async def test_orchestrator_reports_rejected_task_without_streaming() -> None:
 
     assert channel.sent_messages == [MessageContent(text="Task busy: adapter unavailable")]
     assert channel.edited_messages == []
+
+
+async def test_orchestrator_translates_provider_session_busy_for_boss_but_keeps_raw_trace() -> None:
+    raw_error = "Error: Session ID 019f3b9a-8a26-7453-ac6f-246aaa25b2b6 is already in use."
+    adapter = ErrorAdapter(raw_error)
+    channel = RecordingChannel()
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(
+            default_persona="reviewer",
+            task_id_factory=lambda: "task-session-busy",
+        ),
+        task_bus=bus,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_reviewer(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(text="/ask --exact reviewer review this result", mentions=())
+    )
+
+    boss_text = channel.edited_messages[-1].text
+    assert "Role is busy with another task" in boss_text
+    assert "/tasks" in boss_text
+    assert "/interrupt <task_id>" in boss_text
+    assert "/task task-ses" in boss_text
+    assert "Session ID" not in boss_text
+    assert "019f3b9a" not in boss_text
+
+    snapshot = bus.task_snapshot("task-session-busy")
+    assert snapshot.status is TaskStatus.FAILED
+    assert snapshot.reason == raw_error
+    failed_event = next(
+        event
+        for event in bus.audit_events(limit=None)
+        if event.event_type is AuditEventType.TASK_FAILED
+    )
+    assert failed_event.detail == raw_error
+
+    for command in ("/tasks", "/audit", "/inbox", "/morning"):
+        await orchestrator.handle_incoming(_incoming_message(text=command, mentions=()))
+        summary_text = channel.sent_messages[-1].text
+        assert "Session ID" not in summary_text
+        assert "019f3b9a" not in summary_text
+        assert "role session busy" in summary_text
+
+    await orchestrator.handle_incoming(_incoming_message(text="/task task-ses", mentions=()))
+    assert raw_error in channel.sent_messages[-1].text
+
+
+async def test_orchestrator_keeps_unknown_provider_error_visible() -> None:
+    adapter = ErrorAdapter("bad credentials")
+    channel = RecordingChannel()
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(
+            default_persona="reviewer",
+            task_id_factory=lambda: "task-provider-error",
+        ),
+        task_bus=bus,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="review this result", mentions=()))
+
+    assert channel.edited_messages[-1].text == "\nERROR: bad credentials"
+    assert bus.task_snapshot("task-provider-error").reason == "bad credentials"
 
 
 async def test_orchestrator_reports_adapter_status_without_submitting_task() -> None:
@@ -555,6 +794,7 @@ async def test_orchestrator_reports_help_without_submitting_task() -> None:
     assert "/sessions" in channel.sent_messages[0].text
     assert "/approve [task_id]" in channel.sent_messages[0].text
     assert "/codex <task>" in channel.sent_messages[0].text
+    assert "/ask [--exact] <role> <task>" in channel.sent_messages[0].text
     assert channel.edited_messages == []
 
 
@@ -793,6 +1033,73 @@ async def test_orchestrator_routes_later_collaboration_directive_and_keeps_text(
         message.text == "Collaboration requested\nsource: implementer\ntarget: reviewer"
         and message.spans
         for message in channel.sent_messages
+    )
+
+
+async def test_orchestrator_exact_ask_does_not_expand_into_collaboration() -> None:
+    adapter = ScriptedAdapter(
+        name="claude-code",
+        output_texts=("验收结果\n@reviewer: 再检查一次格式\n",),
+    )
+    channel = RecordingChannel()
+    task_ids = iter(("task-exact", "task-unexpected-child"))
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
+        task_bus=bus,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_reviewer(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(
+            text="/ask --exact reviewer 只输出一个两列表格",
+            mentions=(),
+        )
+    )
+
+    assert len(adapter.received_tasks) == 1
+    task = adapter.received_tasks[0]
+    assert _metadata_value(task, "aico.collaboration_mode") == "disabled"
+    assert "Exact-output constraint:" in task.payload
+    assert "只输出一个两列表格" in task.payload
+    assert not any(
+        event.event_type is AuditEventType.COLLABORATION_REQUESTED
+        for event in bus.audit_events(limit=None)
+    )
+
+
+async def test_orchestrator_infers_exact_ask_from_no_collaboration_language() -> None:
+    adapter = ScriptedAdapter(
+        name="claude-code",
+        output_texts=("验收结果\n@reviewer: 再检查一次格式\n",),
+    )
+    channel = RecordingChannel()
+    task_ids = iter(("task-exact", "task-unexpected-child"))
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
+        task_bus=bus,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_reviewer(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(
+            text="/ask reviewer 只输出本条结果，不要请求协作。给出一个两列表格。",
+            mentions=(),
+        )
+    )
+
+    assert len(adapter.received_tasks) == 1
+    assert _metadata_value(adapter.received_tasks[0], "aico.collaboration_mode") == "disabled"
+    assert not any(
+        event.event_type is AuditEventType.COLLABORATION_REQUESTED
+        for event in bus.audit_events(limit=None)
     )
 
 
@@ -1764,15 +2071,15 @@ async def test_orchestrator_inbox_summarizes_project_attention_and_handoffs() ->
 
     inbox = channel.sent_messages[-1].text
     assert "Inbox: aico\n" in inbox
-    assert "scope: current project (aico)\n" in inbox
-    assert "First action:\n• decide task-app -> /approve task-app or /reject task-app" in inbox
+    assert "范围: 当前项目\n" in inbox
+    assert "下一步:\n• decide task-app -> /approve task-app or /reject task-app" in inbox
     assert "decide task-app [implementer]" in inbox
     assert "-> /approve task-app or /reject task-app" in inbox
     assert "monitor task-run [reviewer/claude-code] running" in inbox
     assert "-> /task task-run or /interrupt task-run" in inbox
     assert "inspect handoff night-task-nig: implementer -> claude (task-nig)" in inbox
     assert "inspect goal_brief: task-goa [running] -> /task task-goa" in inbox
-    assert "Next:\n• /inbox\n• /daily aico\n• /tasks\n• /audit" in inbox
+    assert "更多:\n• /daily aico\n• /tasks\n• /view" in inbox
 
 
 async def test_orchestrator_morning_handoff_summarizes_absence_recovery() -> None:
@@ -1855,6 +2162,578 @@ async def test_orchestrator_can_push_morning_handoff_without_incoming_message() 
     handoff = channel.sent_messages[-1].text
     assert handoff.startswith("Morning handoff: aico\n")
     assert "Next actions:\n• /inbox\n• /dream" in handoff
+
+
+async def test_orchestrator_inbox_proposes_idle_charter_and_accepts_through_task_bus() -> None:
+    adapter = ScriptedAdapter(name="claude-code", output_texts=("bounded repair done",))
+    channel = RecordingChannel()
+    store = InMemoryStandingProposalStore()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-proposal"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=store,
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(_incoming_message(text="/inbox", mentions=()))
+
+    proposal = store.list_project("aico")[0]
+    assert proposal.status is StandingProposalStatus.CANDIDATE
+    assert "主动提案:" in channel.sent_messages[-1].text
+    assert adapter.received_tasks == []
+
+    await orchestrator.handle_incoming(
+        _incoming_message(text=f"/proposal accept {proposal.proposal_id}", mentions=())
+    )
+
+    assert store.list_project("aico")[0].status is StandingProposalStatus.ACCEPTED
+    assert len(adapter.received_tasks) == 1
+    assert _metadata_value(adapter.received_tasks[0], "aico.intent") == "standing_charter"
+
+
+async def test_orchestrator_morning_push_surfaces_proposal_without_auto_execution() -> None:
+    adapter = ScriptedAdapter(name="claude-code")
+    channel = RecordingChannel()
+    store = InMemoryStandingProposalStore()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=store,
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    assert len(store.list_project("aico")) == 1
+    assert "Standing proposals:\n• " in channel.sent_messages[-1].text
+    assert "/proposal accept" in channel.sent_messages[-1].text
+    assert adapter.received_tasks == []
+
+
+async def test_scheduled_morning_executes_exact_owner_bound_read_only_grant() -> None:
+    adapter = SafeReadOnlyAdapter(name="claude-code", output_texts=(_standing_result_json(),))
+    channel = RecordingChannel()
+    store = InMemoryStandingProposalStore()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-autonomy"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=store,
+        standing_autonomy_grants=_standing_autonomy_grants(),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    proposal = store.list_project("aico")[0]
+    assert proposal.status is StandingProposalStatus.ACCEPTED
+    assert proposal.decision_mode is StandingProposalDecisionMode.PREAUTHORIZED
+    assert proposal.authorization_id == "grant-1"
+    assert proposal.scheduled_intent_id is not None
+    assert proposal.task_id == "task-autonomy"
+    assert proposal.usage is not None
+    assert proposal.usage.total_tokens == 100
+    assert proposal.result_receipt is not None
+    assert proposal.result_receipt.status.value == "complete"
+    assert proposal.result_receipt.evidence_sha256 is not None
+    assert len(proposal.result_receipt.source_manifest) == 1
+    assert len(adapter.received_tasks) == 1
+    task = adapter.received_tasks[0]
+    assert task.requester_id == "owner-telegram-123"
+    assert preauthorized_execution_mode(task) == "read_only"
+    assert collaboration_disabled(task)
+    assert provider_session_from_task(task) is None
+    assert _metadata_value(task, "aico.standing_proposal_id") == proposal.proposal_id
+    assert _metadata_value(task, SCHEDULED_AUTONOMY_INTENT_ID_KEY) == proposal.scheduled_intent_id
+    evidence = orchestrator.scheduled_autonomy_evidence(
+        project_id="aico",
+        intent_id=proposal.scheduled_intent_id,
+    )
+    assert evidence is not None
+    assert evidence.disposition is StandingAutonomyRunDisposition.DISPATCH_RECORDED
+    assert evidence.proposal_id == proposal.proposal_id
+    assert evidence.task_id == proposal.task_id
+    assert any("Preauthorized proposal started:" in item.text for item in channel.sent_messages)
+    assert any(
+        "Scheduled autonomy outcome: status=done outcome=complete" in item.text
+        for item in channel.sent_messages
+    )
+    assert all(_standing_result_json() not in item.text for item in channel.edited_messages)
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    assert len(adapter.received_tasks) == 1
+    assert "Standing autonomy receipts:" in channel.sent_messages[-1].text
+    assert "[done]" in channel.sent_messages[-1].text
+    assert "task=task-aut" in channel.sent_messages[-1].text
+    assert "tokens=100" in channel.sent_messages[-1].text
+    assert "outcome=complete" in channel.sent_messages[-1].text
+    assert "evidence=current" in channel.sent_messages[-1].text
+
+
+async def test_start_notification_failure_does_not_block_preauthorized_execution() -> None:
+    adapter = SafeReadOnlyAdapter(name="claude-code", output_texts=(_standing_result_json(),))
+    channel = FailingStartNotificationChannel()
+    store = InMemoryStandingProposalStore()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-autonomy"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=store,
+        standing_autonomy_grants=_standing_autonomy_grants(),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    proposal = store.list_project("aico")[0]
+    assert len(adapter.received_tasks) == 1
+    assert proposal.result_receipt is not None
+    assert proposal.result_receipt.status is StandingResultContractStatus.COMPLETE
+    assert any(
+        item.text.startswith("Scheduled autonomy outcome: status=done")
+        for item in channel.sent_messages
+    )
+
+
+async def test_task_ack_notification_failure_interrupts_dispatched_preauthorized_task() -> None:
+    adapter = SafeReadOnlyAdapter(name="claude-code", output_texts=(_standing_result_json(),))
+    channel = FailingTaskAcceptedChannel()
+    store = InMemoryStandingProposalStore()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-autonomy"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=store,
+        standing_autonomy_grants=_standing_autonomy_grants(),
+    )
+
+    with pytest.raises(RuntimeError, match="task acknowledgement"):
+        await orchestrator.send_morning_handoff(
+            ChannelTarget(channel_name="telegram", target_id="chat-1"),
+            project_id="aico",
+        )
+
+    snapshot = orchestrator._task_bus.task_snapshot("task-autonomy")  # noqa: SLF001
+    assert isinstance(snapshot, TaskSnapshot)
+    assert snapshot.status is TaskStatus.INTERRUPTED
+    assert adapter.interrupted_task_ids == ["task-autonomy"]
+    proposal = store.list_project("aico")[0]
+    assert proposal.scheduled_intent_id is not None
+    evidence = orchestrator.scheduled_autonomy_evidence(
+        project_id="aico",
+        intent_id=proposal.scheduled_intent_id,
+    )
+    assert evidence is not None
+    outcome = orchestrator.prepare_scheduled_autonomy_outcome(evidence)
+    assert outcome is not None
+    assert outcome.source_status is StandingAutonomyReceiptStatus.EVIDENCE_MISSING
+
+
+async def test_scheduled_morning_holds_grant_after_persisted_clock_rollback(
+    tmp_path: Path,
+) -> None:
+    wall = [datetime(2026, 7, 22, 8, tzinfo=UTC)]
+    state_path = tmp_path / "state.db"
+    first = TaskBus(
+        SafeReadOnlyAdapter(name="claude-code"),
+        task_store=SQLiteTaskStateStore(state_path),
+        clock=lambda: wall[0],
+    )
+    first.authorization_time_refusal()
+    wall[0] -= timedelta(minutes=1)
+
+    adapter = SafeReadOnlyAdapter(name="claude-code", output_texts=(_standing_result_json(),))
+    channel = RecordingChannel()
+    restarted = TaskBus(
+        adapter,
+        task_store=SQLiteTaskStateStore(state_path),
+        clock=lambda: wall[0],
+    )
+    proposal_store = InMemoryStandingProposalStore()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=restarted,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=proposal_store,
+        standing_autonomy_grants=_standing_autonomy_grants(),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    assert adapter.received_tasks == []
+    assert proposal_store.list_project("aico")[0].status is StandingProposalStatus.CANDIDATE
+    assert any(
+        f"Autonomy held: {AUTHORIZATION_CLOCK_ROLLBACK_REASON}" in item.text
+        for item in channel.sent_messages
+    )
+
+
+async def test_interactive_inbox_does_not_consume_standing_autonomy_grant() -> None:
+    adapter = SafeReadOnlyAdapter(name="claude-code")
+    channel = RecordingChannel()
+    store = InMemoryStandingProposalStore()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=store,
+        standing_autonomy_grants=_standing_autonomy_grants(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(_incoming_message(text="/inbox", mentions=()))
+
+    assert store.list_project("aico")[0].status is StandingProposalStatus.CANDIDATE
+    assert adapter.received_tasks == []
+
+
+async def test_scheduled_morning_holds_exhausted_persisted_grant(tmp_path: Path) -> None:
+    store_path = tmp_path / "state.db"
+    first_store = SQLiteStandingProposalStore(store_path)
+    first_store.upsert(
+        StandingProposal(
+            proposal_id="proposal-consumed",
+            project_id="aico",
+            charter_id="absence-loop",
+            role="implementer",
+            objective="Inspect prior recovery evidence.",
+            acceptance_evidence=("one verified contract",),
+            stop_conditions=("stop before external sending",),
+            cooldown_hours=1,
+            status=StandingProposalStatus.ACCEPTED,
+            task_id="task-consumed",
+            decision_mode=StandingProposalDecisionMode.PREAUTHORIZED,
+            authorization_id="grant-1",
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            decided_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    restarted_store = SQLiteStandingProposalStore(store_path)
+    adapter = SafeReadOnlyAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(cooldown_hours=1),
+        standing_proposal_store=restarted_store,
+        standing_autonomy_grants=_standing_autonomy_grants(),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    assert adapter.received_tasks == []
+    assert any("Autonomy held: run budget exhausted" in item.text for item in channel.sent_messages)
+    assert len(restarted_store.list_project("aico")) == 2
+
+
+@pytest.mark.parametrize(
+    ("prior_usage", "expected_reason"),
+    [
+        (TaskUsage(input_tokens=80, output_tokens=20, total_tokens=100), "token threshold"),
+        (None, "usage evidence missing"),
+    ],
+)
+async def test_scheduled_morning_fails_closed_on_observed_or_missing_usage(
+    prior_usage: TaskUsage | None,
+    expected_reason: str,
+) -> None:
+    store = InMemoryStandingProposalStore()
+    store.upsert(
+        StandingProposal(
+            proposal_id="proposal-prior",
+            project_id="aico",
+            charter_id="absence-loop",
+            role="implementer",
+            objective="Inspect prior recovery evidence.",
+            acceptance_evidence=("one verified contract",),
+            stop_conditions=("stop before external sending",),
+            cooldown_hours=1,
+            status=StandingProposalStatus.ACCEPTED,
+            task_id="task-prior",
+            decision_mode=StandingProposalDecisionMode.PREAUTHORIZED,
+            authorization_id="grant-1",
+            usage=prior_usage,
+            usage_recorded_at=(
+                datetime(2026, 1, 1, tzinfo=UTC) if prior_usage is not None else None
+            ),
+            result_receipt=_complete_result_receipt(),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            decided_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    adapter = SafeReadOnlyAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(cooldown_hours=1),
+        standing_proposal_store=store,
+        standing_autonomy_grants=_standing_autonomy_grants(
+            max_runs=2,
+            token_stop_threshold=100,
+        ),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    assert adapter.received_tasks == []
+    assert any(expected_reason in item.text for item in channel.sent_messages)
+
+
+@pytest.mark.parametrize(
+    ("result_status", "expected_reason"),
+    [
+        (None, "result contract evidence missing"),
+        (StandingResultContractStatus.INVALID, "result contract invalid"),
+        (StandingResultContractStatus.BLOCKED, "prior result blocked"),
+    ],
+)
+async def test_scheduled_morning_fails_closed_on_unhealthy_prior_result(
+    result_status: StandingResultContractStatus | None,
+    expected_reason: str,
+) -> None:
+    store = InMemoryStandingProposalStore()
+    prior = StandingProposal(
+        proposal_id="proposal-prior",
+        project_id="aico",
+        charter_id="absence-loop",
+        role="implementer",
+        objective="Inspect prior recovery evidence.",
+        acceptance_evidence=("one verified contract",),
+        stop_conditions=("stop before external sending",),
+        cooldown_hours=1,
+        status=StandingProposalStatus.ACCEPTED,
+        task_id="task-prior",
+        decision_mode=StandingProposalDecisionMode.PREAUTHORIZED,
+        authorization_id="grant-1",
+        usage=TaskUsage(input_tokens=80, output_tokens=20, total_tokens=100),
+        result_receipt=(
+            None
+            if result_status is None
+            else _complete_result_receipt().model_copy(update={"status": result_status})
+        ),
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        decided_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    store.upsert(prior)
+    adapter = SafeReadOnlyAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(cooldown_hours=1),
+        standing_proposal_store=store,
+        standing_autonomy_grants=_standing_autonomy_grants(max_runs=2),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    assert adapter.received_tasks == []
+    assert any(expected_reason in item.text for item in channel.sent_messages)
+
+
+@pytest.mark.parametrize(
+    ("evidence_change", "expected_status", "expected_reason"),
+    [
+        ("drift", StandingEvidenceStatus.DRIFTED, "result evidence drifted"),
+        ("missing", StandingEvidenceStatus.MISSING, "result evidence missing"),
+    ],
+)
+async def test_scheduled_morning_fails_closed_when_prior_evidence_is_unhealthy(
+    tmp_path: Path,
+    evidence_change: str,
+    expected_status: StandingEvidenceStatus,
+    expected_reason: str,
+) -> None:
+    source = tmp_path / "pyproject.toml"
+    source.write_text("original\n", encoding="utf-8")
+    result = validate_standing_result(
+        _standing_result_json(),
+        acceptance_evidence=("one verified contract",),
+        stop_conditions=("stop before external sending",),
+        evidence_root=tmp_path,
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    assert result.evidence_sha256 is not None
+    if evidence_change == "drift":
+        source.write_text("changed\n", encoding="utf-8")
+    else:
+        source.unlink()
+    assert standing_result_evidence_status(result, tmp_path) is expected_status
+    store = InMemoryStandingProposalStore()
+    store.upsert(
+        StandingProposal(
+            proposal_id="proposal-prior",
+            project_id="aico",
+            charter_id="absence-loop",
+            role="implementer",
+            objective="Inspect prior recovery evidence.",
+            acceptance_evidence=("one verified contract",),
+            stop_conditions=("stop before external sending",),
+            cooldown_hours=1,
+            status=StandingProposalStatus.ACCEPTED,
+            task_id="task-prior",
+            decision_mode=StandingProposalDecisionMode.PREAUTHORIZED,
+            authorization_id="grant-1",
+            usage=TaskUsage(input_tokens=80, output_tokens=20, total_tokens=100),
+            result_receipt=result,
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            decided_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    adapter = SafeReadOnlyAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(
+            cooldown_hours=1,
+            repo=str(tmp_path),
+        ),
+        standing_proposal_store=store,
+        standing_autonomy_grants=_standing_autonomy_grants(max_runs=2),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    assert adapter.received_tasks == []
+    assert any(expected_reason in item.text for item in channel.sent_messages)
+
+
+async def test_scheduled_morning_interrupts_task_at_granted_runtime_budget() -> None:
+    adapter = HangingSafeReadOnlyAdapter(name="claude-code")
+    channel = RecordingChannel()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-timeout"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=InMemoryStandingProposalStore(),
+        standing_autonomy_grants=_standing_autonomy_grants(max_duration_seconds=0.01),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    assert adapter.interrupted_task_ids == ["task-timeout"]
+    assert orchestrator._task_bus.task_snapshot("task-timeout").status is TaskStatus.INTERRUPTED  # noqa: SLF001
+    assert any("runtime budget exhausted" in item.text for item in channel.sent_messages)
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    assert adapter.interrupted_task_ids == ["task-timeout"]
+    assert "[evidence_missing]" in channel.sent_messages[-1].text
+
+
+async def test_scheduled_morning_never_accepts_result_when_transport_failed() -> None:
+    adapter = FailedSafeReadOnlyAdapter(name="claude-code")
+    channel = RecordingChannel()
+    store = InMemoryStandingProposalStore()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-failed"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=store,
+        standing_autonomy_grants=_standing_autonomy_grants(),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    proposal = store.list_project("aico")[0]
+    assert proposal.usage is not None
+    assert proposal.result_receipt is None
+    assert orchestrator._task_bus.task_snapshot("task-failed").status is TaskStatus.FAILED  # noqa: SLF001
+    assert any("transport did not complete" in item.text for item in channel.sent_messages)
+
+
+async def test_scheduled_morning_bounds_oversized_result_before_receipt() -> None:
+    oversized_marker = "oversized-private-provider-result"
+    oversized = oversized_marker + "x" * (MAX_STANDING_RESULT_CHARS + 100)
+    adapter = SafeReadOnlyAdapter(name="claude-code", output_texts=(oversized,))
+    channel = RecordingChannel()
+    store = InMemoryStandingProposalStore()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-large"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=store,
+        standing_autonomy_grants=_standing_autonomy_grants(),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    proposal = store.list_project("aico")[0]
+    assert proposal.result_receipt is not None
+    assert proposal.result_receipt.failure is StandingResultFailure.RESULT_TOO_LARGE
+    assert len(proposal.model_dump_json()) < 5_000
+    rendered = "\n".join(item.text for item in (*channel.sent_messages, *channel.edited_messages))
+    assert oversized_marker not in rendered
+    assert "result_too_large" in rendered
 
 
 async def test_orchestrator_goal_runs_outcome_grader_when_tester_is_appointed() -> None:
@@ -1982,6 +2861,9 @@ async def test_orchestrator_dream_writes_reviewable_candidate_memory(tmp_path: P
     assert "1 task(s) are blocked on approval (task-app)" in dream
     assert channel.sent_messages[-1].spans
     assert "active experience unchanged" not in dream
+    assert "• /experience review" in dream
+    assert "• /experience promote" in dream
+    assert "/remember <accepted lesson>" not in dream
     assert len(atoms) == 1
     assert atoms[0].status is MemoryStatus.CANDIDATE
     assert atoms[0].source == "dream_review"
@@ -2529,6 +3411,42 @@ async def test_orchestrator_ask_lead_alias_runs_lead_decision_workflow() -> None
     )
 
 
+async def test_orchestrator_exact_ask_lead_routes_once_and_explains_resolved_role() -> None:
+    adapter = ScriptedAdapter(name="claude-code", output_texts=("single answer",))
+    channel = RecordingChannel()
+    task_ids = iter(("task-exact-lead", "task-unexpected-consultation", "task-unexpected-decision"))
+    bus = TaskBus(adapter)
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: next(task_ids)),
+        task_bus=bus,
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_reviewer(),
+    )
+
+    await orchestrator.handle_incoming(_incoming_message(text="/project aico", mentions=()))
+    await orchestrator.handle_incoming(_incoming_message(text="/lead reviewer", mentions=()))
+    await orchestrator.handle_incoming(
+        _incoming_message(
+            text="/ask --exact lead decide whether this table format passes",
+            mentions=(),
+        )
+    )
+
+    assert len(adapter.received_tasks) == 1
+    task = adapter.received_tasks[0]
+    assert _metadata_value(task, "aico.assignment_role") == "reviewer"
+    assert _metadata_value(task, "aico.collaboration_mode") == "disabled"
+    assert any(
+        message.text == "Routing: lead -> reviewer (claude)" for message in channel.sent_messages
+    )
+    assert not any(
+        event.event_type
+        in {AuditEventType.COLLABORATION_REQUESTED, AuditEventType.LEAD_DECISION_RECORDED}
+        for event in bus.audit_events(limit=None)
+    )
+
+
 async def test_orchestrator_memory_commands_require_active_project(tmp_path: Path) -> None:
     adapter = ScriptedAdapter(name="claude-code")
     channel = RecordingChannel()
@@ -2986,6 +3904,94 @@ def _project_directory_with_reviewer() -> ProjectAssignmentDirectory:
                 ),
             }
         )
+    )
+
+
+def _project_directory_with_standing_charter(
+    *,
+    cooldown_hours: int = 168,
+    repo: str | None = None,
+) -> ProjectAssignmentDirectory:
+    config = _project_directory()._config  # noqa: SLF001
+    project = config.projects["aico"]
+    charter = StandingCharterItem(
+        id="absence-loop",
+        objective="Inspect absence recovery and propose one bounded repair.",
+        role="implementer",
+        acceptance_evidence=("one verified contract",),
+        stop_conditions=("stop before external sending",),
+        cooldown_hours=cooldown_hours,
+    )
+    return ProjectAssignmentDirectory(
+        config.model_copy(
+            update={
+                "projects": {
+                    "aico": project.model_copy(
+                        update={
+                            "repo": repo or str(Path.cwd()),
+                            "standing_charter": (charter,),
+                        }
+                    )
+                }
+            }
+        )
+    )
+
+
+def _standing_autonomy_grants(
+    *,
+    max_duration_seconds: float = 0.1,
+    max_runs: int = 1,
+    token_stop_threshold: int = 100_000,
+) -> StandingAutonomyGrantSet:
+    return StandingAutonomyGrantSet(
+        grants=(
+            StandingAutonomyGrant(
+                grant_id="grant-1",
+                owner_id="owner-telegram-123",
+                channel_name="telegram",
+                target_id="chat-1",
+                project_id="aico",
+                charter_id="absence-loop",
+                expires_at=datetime(2027, 1, 1, tzinfo=UTC),
+                max_runs=max_runs,
+                max_duration_seconds=max_duration_seconds,
+                token_stop_threshold=token_stop_threshold,
+            ),
+        )
+    )
+
+
+def _standing_result_json() -> str:
+    return json.dumps(
+        {
+            "version": 1,
+            "result": "complete",
+            "summary": "inspection complete",
+            "criteria": [
+                {
+                    "criterion_id": "A1",
+                    "verdict": "met",
+                    "evidence": "repository status is present",
+                    "sources": [{"path": "pyproject.toml", "line": 1}],
+                }
+            ],
+            "stop_conditions": [{"stop_id": "S1", "observed": True}],
+            "gaps": [],
+            "risks": [],
+            "next_actions": ["wait for the next bounded schedule"],
+        },
+        separators=(",", ":"),
+    )
+
+
+def _complete_result_receipt() -> StandingResultReceipt:
+    return validate_standing_result(
+        _standing_result_json(),
+        acceptance_evidence=("one verified contract",),
+        stop_conditions=("stop before external sending",),
+        evidence_root=Path.cwd(),
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC),
     )
 
 

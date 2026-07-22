@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationError, model_validator
 
+from aico.core.memory_ledger import MemoryIntegrityError, MemoryLedger, MemoryLedgerRecord
 from aico.core.models import FrozenModel, utc_now
 
 
@@ -326,7 +326,7 @@ class MemorySemanticScorer(Protocol):
 
 
 class JsonlMemoryStore:
-    """Append-only JSONL memory store with in-memory indexes rebuilt on startup."""
+    """Tamper-evident JSONL memory store with process-safe durable appends."""
 
     def __init__(
         self,
@@ -334,23 +334,24 @@ class JsonlMemoryStore:
         *,
         semantic_scorer: MemorySemanticScorer | None = None,
     ) -> None:
-        self._path = path
         self._semantic_scorer = semantic_scorer or LocalHybridMemoryScorer()
         self._atoms: dict[str, MemoryAtom] = {}
         self._edges: list[MemoryEdge] = []
-        self._load()
+        self._ledger = MemoryLedger(path)
+        self._rebuild_indexes(self._ledger.records)
 
     def append_atom(self, atom: MemoryAtom) -> MemoryAtom:
-        self._atoms[atom.memory_id] = atom
-        self._append_record("atom", atom)
+        self._ledger.append("atom", atom.model_dump(mode="json"))
+        self._rebuild_indexes(self._ledger.records)
         return atom
 
     def get_atom(self, memory_id: str) -> MemoryAtom | None:
+        self._refresh_indexes()
         return self._atoms.get(memory_id)
 
     def append_edge(self, edge: MemoryEdge) -> MemoryEdge:
-        self._edges.append(edge)
-        self._append_record("edge", edge)
+        self._ledger.append("edge", edge.model_dump(mode="json"))
+        self._rebuild_indexes(self._ledger.records)
         return edge
 
     def list_atoms(
@@ -359,6 +360,7 @@ class JsonlMemoryStore:
         *,
         include_archived: bool = False,
     ) -> tuple[MemoryAtom, ...]:
+        self._refresh_indexes()
         atoms = [
             atom
             for atom in self._atoms.values()
@@ -382,6 +384,7 @@ class JsonlMemoryStore:
         return tuple(atom for _, atom in ranked)
 
     def archive(self, memory_id: str, *, reason: str | None = None) -> MemoryAtom:
+        self._refresh_indexes()
         atom = self._atoms.get(memory_id)
         if atom is None:
             raise KeyError(f"Unknown memory id: {memory_id}")
@@ -395,6 +398,7 @@ class JsonlMemoryStore:
         applies_to: tuple[str, ...] = (),
         triggers: tuple[str, ...] = (),
     ) -> MemoryAtom:
+        self._refresh_indexes()
         atom = self._atoms.get(memory_id)
         if atom is None:
             raise KeyError(f"Unknown memory id: {memory_id}")
@@ -429,6 +433,7 @@ class JsonlMemoryStore:
         verdict_misses_delta: int = 0,
         injection_count_delta: int = 0,
     ) -> MemoryAtom:
+        self._refresh_indexes()
         atom = self._atoms.get(memory_id)
         if atom is None:
             raise KeyError(f"Unknown memory id: {memory_id}")
@@ -460,6 +465,7 @@ class JsonlMemoryStore:
         trigger_keys: tuple[str, ...] = (),
         statuses: tuple[MemoryStatus, ...] = (MemoryStatus.ACTIVE,),
     ) -> tuple[MemoryAtom, ...]:
+        self._refresh_indexes()
         triggers_set = set(trigger_keys)
         status_set = set(statuses)
         matches: list[MemoryAtom] = []
@@ -482,33 +488,28 @@ class JsonlMemoryStore:
         return tuple(sorted(matches, key=lambda atom: (-atom.confidence, atom.created_at)))
 
     def list_edges(self, source_memory_id: str | None = None) -> tuple[MemoryEdge, ...]:
+        self._refresh_indexes()
         if source_memory_id is None:
             return tuple(self._edges)
         return tuple(edge for edge in self._edges if edge.source_memory_id == source_memory_id)
 
-    def _load(self) -> None:
-        if not self._path.exists():
-            return
-        for line in self._path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            payload = json.loads(line)
-            match payload.get("record_type"):
-                case "atom":
-                    atom = MemoryAtom.model_validate(payload["payload"])
-                    self._atoms[atom.memory_id] = atom
-                case "edge":
-                    self._edges.append(MemoryEdge.model_validate(payload["payload"]))
+    def _refresh_indexes(self) -> None:
+        self._rebuild_indexes(self._ledger.refresh())
 
-    def _append_record(self, record_type: str, payload: FrozenModel) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        line = json.dumps(
-            {"payload": payload.model_dump(mode="json"), "record_type": record_type},
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-        with self._path.open("a", encoding="utf-8") as file:
-            file.write(f"{line}\n")
+    def _rebuild_indexes(self, records: tuple[MemoryLedgerRecord, ...]) -> None:
+        atoms: dict[str, MemoryAtom] = {}
+        edges: list[MemoryEdge] = []
+        try:
+            for record in records:
+                if record.record_type == "atom":
+                    atom = MemoryAtom.model_validate(record.payload)
+                    atoms[atom.memory_id] = atom
+                else:
+                    edges.append(MemoryEdge.model_validate(record.payload))
+        except ValidationError:
+            raise MemoryIntegrityError("memory ledger contains an invalid domain record") from None
+        self._atoms = atoms
+        self._edges = edges
 
 
 class MemoryGovernor:
@@ -530,6 +531,8 @@ class MemoryGovernor:
         )
 
     def allows(self, atom: MemoryAtom) -> bool:
+        if atom.kind is not MemoryKind.FACT:
+            return False
         if atom.status is not MemoryStatus.ACTIVE:
             return False
         if atom.confidence < self._min_confidence:

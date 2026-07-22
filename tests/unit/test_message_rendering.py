@@ -39,6 +39,18 @@ def test_rich_text_message_bolds_label_left_of_colon() -> None:
     assert (message.text.index("role"), len("role"), MessageTextStyle.BOLD) in styles
 
 
+def test_rich_text_message_bolds_chinese_boss_labels() -> None:
+    message = rich_text_message(
+        "结论: 先修 Telegram 展示\n风险: Claude 仍可能输出坏表\n下一步: /view"
+    )
+
+    styles = [(span.offset, span.length, span.style) for span in message.spans]
+    assert (message.text.index("结论"), len("结论"), MessageTextStyle.BOLD) in styles
+    assert (message.text.index("风险"), len("风险"), MessageTextStyle.BOLD) in styles
+    assert (message.text.index("下一步"), len("下一步"), MessageTextStyle.BOLD) in styles
+    assert (message.text.index("/view"), len("/view"), MessageTextStyle.CODE) in styles
+
+
 def test_rich_text_message_renders_agent_list_as_im_friendly_bullets() -> None:
     message = rich_text_message(
         "Agents:\n"
@@ -69,15 +81,43 @@ def test_rich_text_message_splits_glued_agent_markdown_headings() -> None:
     assert (message.text.index("Why"), len("Why"), MessageTextStyle.BOLD) in styles
 
 
-def test_rich_text_message_renders_markdown_tables_as_monospaced_im_table() -> None:
+def test_rich_text_message_renders_small_markdown_tables_as_compact_table() -> None:
     message = rich_text_message(
         "| Sprint | Status |\n|---|---|\n| Inbox | OK |\n| Dream | Needs review |"
     )
 
-    assert message.text == (
-        "Sprint | Status\n-------+-------------\nInbox  | OK\nDream  | Needs review"
+    assert "Sprint" in message.text
+    assert "Status" in message.text
+    assert "Inbox" in message.text
+    assert "Dream" in message.text
+    assert "Needs review" in message.text
+    assert "• Sprint:" not in message.text
+    styles = [(span.offset, span.length, span.style) for span in message.spans]
+    assert any(span_style is MessageTextStyle.CODE for _, _, span_style in styles)
+
+
+def test_rich_text_message_separates_detail_command_glued_to_table_row() -> None:
+    message = rich_text_message(
+        "ROUND192 Telegram 表格验收\n"
+        "| 场景 | 状态 | 负责人 | 说明 |\n"
+        "|---|---|---|---|\n"
+        "| 小表 | 通过 | reviewer | 单块等宽展示 |\n"
+        "| 宽表 | 受控 | lead | 超宽内容需截断并通过 view 查看详情 |详情命令: /view"
     )
-    assert all(span.style is MessageTextStyle.CODE for span in message.spans)
+
+    assert "补充1" not in message.text
+    assert "详情命" not in message.text
+    assert message.text.count("/view") == 1
+    assert "详情: /view 查看完整表格" in message.text
+
+
+def test_rich_text_message_preserves_unclosed_extra_table_cell() -> None:
+    message = rich_text_message(
+        "| 角色 | 状态 | 交付 |\n|---|---|---|\n| lead | active | 决策 | 这是额外说明"
+    )
+
+    assert "补充1" in message.text
+    assert "这是额外…" in message.text
 
 
 def test_rich_text_message_preserves_fenced_code_blocks_as_code_spans() -> None:

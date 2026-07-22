@@ -1,0 +1,4 @@
+product_id,product_name,on_hand_units,unit_cost,monthly_units_sold
+P100,Smart Camera,420,100,34
+P200,Edge Router,80,120,26
+P300,Data Console,55,300,24

@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from aico.core import (
     AuditEventType,
+    ExperienceMeta,
     InMemoryAuditLog,
     JsonlAuditSink,
     JsonlMemoryStore,
@@ -19,6 +20,7 @@ from aico.core import (
     MemoryEdgeType,
     MemoryEvidence,
     MemoryGovernor,
+    MemoryKind,
     MemoryPacket,
     MemoryPacketItem,
     MemoryPurpose,
@@ -223,6 +225,38 @@ def test_memory_retriever_builds_governed_packet_without_cross_project_leakage(
         ),
     )
     assert packet.policy_summary == "max_sensitivity=internal; min_confidence=0.0"
+
+
+def test_memory_retriever_excludes_experience_from_shared_memory_packet(
+    tmp_path: Path,
+) -> None:
+    store = JsonlMemoryStore(tmp_path / "memory.jsonl")
+    fact = _memory_atom(
+        memory_id="mem-fact",
+        claim="The fantasy party promised to write down companion preferences.",
+        tags=("memory", "party"),
+    )
+    experience = _memory_atom(
+        memory_id="mem-exp",
+        claim="Repeated castle-raid approvals must be resolved before dispatch.",
+        tags=("dream", "runbook-candidate"),
+    ).model_copy(
+        update={
+            "kind": MemoryKind.EXPERIENCE,
+            "experience": ExperienceMeta(applies_to=("implementer",)),
+        }
+    )
+    store.append_atom(fact)
+    store.append_atom(experience)
+
+    packet = MemoryRetriever(store).retrieve_packet(
+        scopes=(MemoryScope.project("aico"),),
+        query="party approvals memory",
+        governor=MemoryGovernor(max_sensitivity=MemorySensitivity.INTERNAL),
+        top_k=5,
+    )
+
+    assert [item.memory_id for item in packet.items] == ["mem-fact"]
 
 
 def test_memory_retriever_exposes_ranked_hits_with_reasons(tmp_path: Path) -> None:

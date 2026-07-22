@@ -6,7 +6,7 @@ from pathlib import Path
 from pytest import MonkeyPatch
 
 from aico.app.metrics_cli import run
-from aico.core import AuditEvent, AuditEventType, RiskLevel
+from aico.core import AuditEvent, AuditEventType, JsonlAuditSink, RiskLevel
 
 
 def test_metrics_cli_outputs_text_from_audit_log(tmp_path: Path) -> None:
@@ -61,10 +61,9 @@ def _write_audit_events(path: Path) -> None:
             adapter_name="claude-code",
         ),
     )
-    path.write_text(
-        "\n".join(event.model_dump_json() for event in events) + "\n",
-        encoding="utf-8",
-    )
+    sink = JsonlAuditSink(path)
+    for event in events:
+        sink.write(event)
 
 
 def _event(

@@ -11,7 +11,14 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 
-from aico.app.phase1 import Phase1Runtime, Phase1Settings, build_phase1_runtime, configure_logging
+from aico.app.phase1 import (
+    Phase1Runtime,
+    Phase1Settings,
+    build_phase1_runtime,
+    configure_logging,
+    load_phase1_settings,
+    phase1_runtime_lifespan,
+)
 from aico.channel import FeishuAPIError, FeishuChannel
 
 log = logging.getLogger(__name__)
@@ -31,11 +38,8 @@ def build_feishu_webhook_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.aico_runtime = runtime
-        await runtime.start()
-        try:
+        async with phase1_runtime_lifespan(feishu_settings, runtime):
             yield
-        finally:
-            await runtime.stop()
 
     app = FastAPI(title="AI Company OS Feishu Webhook", lifespan=lifespan)
     app.state.aico_runtime = runtime
@@ -60,7 +64,7 @@ def build_feishu_webhook_app(
 
 
 def main() -> None:
-    settings = Phase1Settings()
+    settings = load_phase1_settings()
     configure_logging(settings)
     uvicorn.run(
         build_feishu_webhook_app(settings),

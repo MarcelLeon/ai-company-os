@@ -168,6 +168,26 @@ def test_project_blockers_message_adds_section_and_command_spans() -> None:
     ) in styles
 
 
+def test_project_blockers_message_hides_provider_session_identifier() -> None:
+    message = project_blockers_message(
+        ProjectProfile(id="aico", name="AI Company OS", repo="/repo/aico"),
+        (
+            TaskSnapshot(
+                task_id="task-session-busy",
+                target_persona="reviewer",
+                status=TaskStatus.FAILED,
+                reason=(
+                    "Error: Session ID 019f3b9a-8a26-7453-ac6f-246aaa25b2b6 is already in use."
+                ),
+            ),
+        ),
+    )
+
+    assert "role session busy" in message.text
+    assert "Session ID" not in message.text
+    assert "019f3b9a" not in message.text
+
+
 def test_project_next_message_normalizes_fact_bullets_and_inline_markdown() -> None:
     message = project_next_message(
         ProjectProfile(

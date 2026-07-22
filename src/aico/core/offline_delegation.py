@@ -76,6 +76,18 @@ class SQLiteOfflineDelegationStore:
             ).fetchall()
         return tuple(_record_from_json(str(row[0])) for row in rows)
 
+    def load_project_records(self, project_id: str) -> tuple[OfflineDelegationRecord, ...]:
+        """Load project records across IM scopes for a read-only boss snapshot."""
+        with self._database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT payload FROM offline_delegations
+                ORDER BY created_at ASC
+                """
+            ).fetchall()
+        records = (_record_from_json(str(row[0])) for row in rows)
+        return tuple(record for record in records if record.project_id == project_id)
+
     def upsert_record(self, scope_id: str, record: OfflineDelegationRecord) -> None:
         with self._database.connect() as connection:
             connection.execute(

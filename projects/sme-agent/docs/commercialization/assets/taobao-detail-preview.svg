@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1800" viewBox="0 0 900 1800">
+  <defs>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e3a8a"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#1f2937" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect width="900" height="1800" fill="#f8fafc"/>
+
+  <rect x="0" y="0" width="900" height="310" fill="url(#hero)"/>
+  <text x="70" y="92" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="28" fill="#bfdbfe">AI 经营诊断服务</text>
+  <text x="70" y="162" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="54" font-weight="800" fill="#ffffff">你不是缺数据</text>
+  <text x="70" y="228" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="54" font-weight="800" fill="#ffffff">是缺能串起来看的人</text>
+  <text x="70" y="274" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="24" fill="#dbeafe">订单 / 广告 / 库存 / 退款 → 经营诊断报告</text>
+
+  <text x="70" y="390" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="34" font-weight="800" fill="#0f172a">我交付的不是模板，是一份可复核的诊断</text>
+  <g filter="url(#cardShadow)">
+    <rect x="70" y="430" width="350" height="130" rx="22" fill="#ffffff"/>
+    <text x="100" y="482" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="26" font-weight="800" fill="#1e3a8a">整理数据</text>
+    <text x="100" y="524" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="21" fill="#475569">订单 / 广告 / 库存 / 退款</text>
+  </g>
+  <g filter="url(#cardShadow)">
+    <rect x="480" y="430" width="350" height="130" rx="22" fill="#ffffff"/>
+    <text x="510" y="482" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="26" font-weight="800" fill="#1e3a8a">梳理口径</text>
+    <text x="510" y="524" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="21" fill="#475569">收入 / 退款率 / 客单价 / ROI</text>
+  </g>
+  <g filter="url(#cardShadow)">
+    <rect x="70" y="590" width="350" height="130" rx="22" fill="#ffffff"/>
+    <text x="100" y="642" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="26" font-weight="800" fill="#1e3a8a">发现异常</text>
+    <text x="100" y="684" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="21" fill="#475569">退款偏高 / ROAS 偏低 / 滞销库存</text>
+  </g>
+  <g filter="url(#cardShadow)">
+    <rect x="480" y="590" width="350" height="130" rx="22" fill="#ffffff"/>
+    <text x="510" y="642" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="26" font-weight="800" fill="#1e3a8a">给出动作</text>
+    <text x="510" y="684" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="21" fill="#475569">今天查什么 / 三天改什么</text>
+  </g>
+
+  <text x="70" y="800" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="34" font-weight="800" fill="#0f172a">报告会清楚标注证据和不确定项</text>
+  <g filter="url(#cardShadow)">
+    <rect x="70" y="840" width="760" height="270" rx="28" fill="#ffffff"/>
+    <text x="110" y="900" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="28" font-weight="800" fill="#0f172a">样例：收入下降是否与广告有关？</text>
+    <text x="110" y="958" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="23" fill="#334155">关键指标：净收入 2120 / 退款率 15.0% / ROAS 1.29</text>
+    <text x="110" y="1010" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="23" fill="#334155">诊断发现：退款率偏高、广告 ROAS 偏低、存在疑似滞销库存</text>
+    <text x="110" y="1062" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="23" fill="#334155">人工确认：收入口径、广告归因口径、库存季节性</text>
+  </g>
+
+  <text x="70" y="1190" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="34" font-weight="800" fill="#0f172a">套餐价格</text>
+  <g filter="url(#cardShadow)">
+    <rect x="70" y="1230" width="230" height="230" rx="28" fill="#ffffff"/>
+    <text x="110" y="1290" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="30" font-weight="800" fill="#1e3a8a">199 元</text>
+    <text x="110" y="1340" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="22" font-weight="700" fill="#0f172a">AI 经营体检</text>
+    <text x="110" y="1390" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="19" fill="#475569">1 个问题 / 1 张表</text>
+  </g>
+  <g filter="url(#cardShadow)">
+    <rect x="335" y="1210" width="230" height="270" rx="28" fill="#1e3a8a"/>
+    <text x="375" y="1280" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="34" font-weight="800" fill="#ffffff">699 元</text>
+    <text x="375" y="1332" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="22" font-weight="700" fill="#dbeafe">标准诊断报告</text>
+    <text x="375" y="1382" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="19" fill="#dbeafe">最多 3 张表 / 完整报告</text>
+    <text x="375" y="1430" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="19" fill="#dbeafe">主推</text>
+  </g>
+  <g filter="url(#cardShadow)">
+    <rect x="600" y="1230" width="230" height="230" rx="28" fill="#ffffff"/>
+    <text x="640" y="1290" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="30" font-weight="800" fill="#1e3a8a">1999 元</text>
+    <text x="640" y="1340" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="22" font-weight="700" fill="#0f172a">助手体验版</text>
+    <text x="640" y="1390" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+          font-size="19" fill="#475569">报告 + 7 天陪跑</text>
+  </g>
+
+  <rect x="70" y="1545" width="760" height="170" rx="30" fill="#e0f2fe"/>
+  <text x="110" y="1605" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="30" font-weight="800" fill="#0f172a">数据安全和结论边界，比“AI 很厉害”更重要</text>
+  <text x="110" y="1656" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="22" fill="#334155">请先删除手机号、姓名、地址等个人信息；不承诺保证增长；</text>
+  <text x="110" y="1696" font-family="Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="22" fill="#334155">数据不足时会明确写“不足以判断”。</text>
+</svg>

@@ -83,7 +83,24 @@
           "role": "pm",
           "prompt_override": "prompts/projects/aico/pm.md"
         }
-      }
+      },
+      "standing_charter": [
+        {
+          "id": "absence-evidence-audit",
+          "objective": "Inspect the current absence-first acceptance evidence, identify one high-confidence gap, and recommend one bounded follow-up.",
+          "role": "reviewer",
+          "acceptance_evidence": [
+            "one finding tied to current STATUS or BLOCKERS",
+            "specific local evidence supporting the finding",
+            "one bounded recommendation with verification and stop conditions"
+          ],
+          "stop_conditions": [
+            "stop before external communication or publication",
+            "stop before file, repository, service, or credential mutation"
+          ],
+          "cooldown_hours": 168
+        }
+      ]
     }
   },
   "appointments": [

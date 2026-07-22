@@ -1,0 +1,98 @@
+{
+  "agents": {
+    "claude": {
+      "id": "claude",
+      "provider": "claude-code",
+      "title": "Build Lead",
+      "capabilities": ["code_edit", "shell_exec", "long_running", "stream_output", "interruptible"],
+      "max_concurrent_tasks": 5,
+      "recommended_max_appointments": 4
+    },
+    "codex": {
+      "id": "codex",
+      "provider": "codex",
+      "title": "Independent Review Lead",
+      "capabilities": ["code_review", "web_browse", "stream_output", "interruptible"],
+      "max_concurrent_tasks": 5,
+      "recommended_max_appointments": 4
+    }
+  },
+  "roles": {
+    "lead": {
+      "id": "lead",
+      "title": "Data-Agent Product Lead",
+      "summary": "Own goal framing, slice plan, delegation, evidence, and benchmark handoff.",
+      "default_permissions": ["docs", "audit"],
+      "inline_prompt": "Keep the benchmark scorecard stable. Do not move acceptance criteria after seeing product quality. Ask the human only for approval, business semantics, or final acceptance."
+    },
+    "architect": {
+      "id": "architect",
+      "title": "Enterprise Data-Agent Architect",
+      "summary": "Own semantic layer, module boundaries, source authority, ambiguity policy, and enterprise-readiness trade-offs.",
+      "default_permissions": ["code", "docs", "tests"],
+      "approval_required": ["shell_exec", "destructive"],
+      "inline_prompt": "Protect semantic correctness. Every metric needs definition, source authority, and ambiguity behavior."
+    },
+    "implementer": {
+      "id": "implementer",
+      "title": "Data-Agent Implementer",
+      "summary": "Own local CLI, deterministic engine, sample data, and docs for the active slice.",
+      "default_permissions": ["code", "tests", "docs"],
+      "approval_required": ["shell_exec", "destructive"],
+      "inline_prompt": "Keep implementation deterministic. Do not rely on LLM answers for benchmark pass/fail."
+    },
+    "tester": {
+      "id": "tester",
+      "title": "Golden Eval Tester",
+      "summary": "Own golden evals, unit tests, reproducible command evidence, and benchmark score inputs.",
+      "default_permissions": ["code", "tests", "audit"],
+      "inline_prompt": "Report exact commands, pass/fail counts, and gaps. Never accept model prose as proof."
+    },
+    "reviewer": {
+      "id": "reviewer",
+      "title": "Maintainability and Safety Reviewer",
+      "summary": "Review boundaries, data privacy, maintainability, and evidence quality.",
+      "default_permissions": ["code", "docs", "audit"],
+      "inline_prompt": "Findings first. Reject hidden coupling to AICO core, unclear data provenance, and missing failure conditions."
+    },
+    "challenger": {
+      "id": "challenger",
+      "title": "Benchmark Challenger",
+      "summary": "Challenge whether the run proves AICO orchestration and whether the data-agent is more than a toy.",
+      "default_permissions": ["docs", "audit"],
+      "inline_prompt": "End with oppose, conditional support, or support. State what evidence would change the verdict."
+    }
+  },
+  "projects": {
+    "data-agent-v1": {
+      "id": "data-agent-v1",
+      "name": "Data-Agent V1",
+      "repo": "projects/data-agent-v1",
+      "north_star": "NORTH_STAR.md",
+      "status_doc": "STATUS.md",
+      "journal": "docs/journal/ROUNDS.md",
+      "blockers_doc": "docs/journal/BLOCKERS.md",
+      "pitfalls_doc": "docs/journal/PITFALLS.md",
+      "current_phase": "Baseline scaffold for AICO benchmark",
+      "brief": "Build a local enterprise data-agent benchmark product with deterministic answers, semantic layer, sample data, golden evals, tests, quickstart, and AICO evidence.",
+      "default_role": "lead",
+      "default_assignment": "data-agent-v1-lead",
+      "roles": {
+        "lead": {"role": "lead", "resources": ["STATUS.md", "docs/goals/baseline-v1.md", "docs/handoffs/current.md"]},
+        "architect": {"role": "architect", "resources": ["NORTH_STAR.md", "src/data_agent_v1/semantic_layer.py", "docs/goals/baseline-v1.md"]},
+        "implementer": {"role": "implementer", "resources": ["src/data_agent_v1", "sample_data/enterprise_week_one", "README.md"]},
+        "tester": {"role": "tester", "resources": ["tests", "evals/golden_questions.json", "docs/evidence/baseline-v1.md"]},
+        "reviewer": {"role": "reviewer", "resources": ["AGENTS.md", "docs/journal/PITFALLS.md", "benchmarks/data-agent/scorecard.md"]},
+        "challenger": {"role": "challenger", "resources": ["NORTH_STAR.md", "docs/goals/baseline-v1.md", "benchmarks/data-agent/scorecard.md"]}
+      }
+    }
+  },
+  "appointments": [
+    {"project": "data-agent-v1", "agent": "claude", "role": "lead", "seat": "data-agent-v1-lead", "session_policy": "project_scoped", "risk_policy": "approval_required", "permissions": ["docs", "audit"], "workspace": "projects/data-agent-v1"},
+    {"project": "data-agent-v1", "agent": "claude", "role": "architect", "seat": "data-agent-v1-architect", "session_policy": "project_scoped", "risk_policy": "approval_required", "permissions": ["code", "tests", "docs"], "workspace": "projects/data-agent-v1"},
+    {"project": "data-agent-v1", "agent": "claude", "role": "implementer", "seat": "data-agent-v1-implementer", "session_policy": "project_scoped", "risk_policy": "approval_required", "permissions": ["code", "tests", "docs"], "workspace": "projects/data-agent-v1"},
+    {"project": "data-agent-v1", "agent": "codex", "role": "tester", "seat": "data-agent-v1-tester", "session_policy": "bind_or_resume", "risk_policy": "read_only", "permissions": ["code", "tests", "audit"], "workspace": "projects/data-agent-v1"},
+    {"project": "data-agent-v1", "agent": "codex", "role": "reviewer", "seat": "data-agent-v1-reviewer", "session_policy": "bind_or_resume", "risk_policy": "read_only", "permissions": ["code", "docs", "audit"], "workspace": "projects/data-agent-v1"},
+    {"project": "data-agent-v1", "agent": "codex", "role": "challenger", "seat": "data-agent-v1-challenger", "session_policy": "bind_or_resume", "risk_policy": "read_only", "permissions": ["docs", "audit"], "workspace": "projects/data-agent-v1"}
+  ]
+}

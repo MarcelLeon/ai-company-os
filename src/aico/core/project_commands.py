@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 
 from aico.channel import IMChannel
 from aico.core.agent_directory import AgentDirectory
+from aico.core.collaboration import exact_output_requested
 from aico.core.models import IncomingMessage, MessageContent
 from aico.core.project_assignment import ProjectAssignmentDirectory, ProjectProfile
 from aico.core.project_messages import (
@@ -25,7 +26,7 @@ from aico.core.project_status_commands import ProjectStatusCommandHandler, Proje
 from aico.core.session_commands import session_scope
 from aico.core.task_bus import TaskBus
 
-RoleTaskRunner = Callable[[IncomingMessage, str, str], Awaitable[None]]
+RoleTaskRunner = Callable[[IncomingMessage, str, str, bool], Awaitable[None]]
 
 
 class ProjectCommandHandler:
@@ -244,14 +245,14 @@ class ProjectCommandHandler:
         )
 
     async def handle_ask(self, message: IncomingMessage, payload: str) -> None:
-        role_ref, _, task_text = payload.partition(" ")
-        if not role_ref or not task_text.strip():
+        role_ref, task_text, exact_output = _ask_parts(payload)
+        if role_ref is None or task_text is None:
             await self._channel.send_message(
                 message.source,
-                MessageContent(text="Usage: /ask <role> <task>"),
+                MessageContent(text="Usage: /ask [--exact] <role> <task>"),
             )
             return
-        await self._run_role_task(message, role_ref, task_text.strip())
+        await self._run_role_task(message, role_ref, task_text, exact_output)
 
     async def handle_default(self, message: IncomingMessage, role_ref: str) -> None:
         if not role_ref:
@@ -341,6 +342,26 @@ def _appoint_parts(payload: str) -> tuple[str | None, str | None, tuple[str, ...
         return None, None, ()
     permissions = tuple(_permission_tokens(parts[3:]))
     return parts[0], parts[2], permissions
+
+
+def _ask_parts(payload: str) -> tuple[str | None, str | None, bool]:
+    parts = payload.split()
+    if not parts:
+        return None, None, False
+    exact_output = parts[0].casefold() == "--exact"
+    if exact_output:
+        parts = parts[1:]
+    if len(parts) < 2:
+        return None, None, exact_output
+    role_ref = parts[0]
+    task_parts = parts[1:]
+    if task_parts and task_parts[0].casefold() == "--exact":
+        exact_output = True
+        task_parts = task_parts[1:]
+    task_text = " ".join(task_parts).strip()
+    if not task_text:
+        return None, None, exact_output
+    return role_ref, task_text, exact_output or exact_output_requested(task_text)
 
 
 def _roles_parts(payload: str | None) -> tuple[str | None, bool]:

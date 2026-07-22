@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from aico.core.models import MetadataEntry, Task
+
+COLLABORATION_MODE_METADATA_KEY = "aico.collaboration_mode"
+COLLABORATION_DISABLED = "disabled"
+
 
 @dataclass(frozen=True)
 class CollaborationDirective:
@@ -68,7 +73,58 @@ def collaboration_payload(
     return f"{text}Current task:\n{payload}"
 
 
+def exact_output_requested(text: str) -> bool:
+    """Return whether the boss explicitly requested a one-shot, non-delegating answer."""
+    normalized = text.casefold()
+    return any(marker in normalized for marker in _EXACT_OUTPUT_MARKERS)
+
+
+def task_with_exact_output_constraint(task: Task) -> Task:
+    """Make exact-output behavior durable across prompt execution and stream parsing."""
+    metadata = tuple(
+        entry for entry in task.metadata if entry.key != COLLABORATION_MODE_METADATA_KEY
+    )
+    constrained_payload = (
+        f"{task.payload}\n\n"
+        "Exact-output constraint:\n"
+        "- Answer only the current request and preserve its requested output shape.\n"
+        "- Do not delegate, request collaboration, or emit @role directives."
+    )
+    return task.model_copy(
+        update={
+            "payload": constrained_payload,
+            "metadata": (
+                *metadata,
+                MetadataEntry(
+                    key=COLLABORATION_MODE_METADATA_KEY,
+                    value=COLLABORATION_DISABLED,
+                ),
+            ),
+        }
+    )
+
+
+def collaboration_disabled(task: Task) -> bool:
+    return any(
+        entry.key == COLLABORATION_MODE_METADATA_KEY and entry.value == COLLABORATION_DISABLED
+        for entry in task.metadata
+    )
+
+
 _SOURCE_CONTEXT_LIMIT = 4000
+_EXACT_OUTPUT_MARKERS = (
+    "不要请求协作",
+    "不要协作",
+    "不要 @",
+    "不要@",
+    "只输出本条",
+    "只返回本条",
+    "no-collab",
+    "no collaboration",
+    "do not request collaboration",
+    "do not delegate",
+    "exact-output",
+)
 
 
 def _trim_source_context(source_context: str | None) -> str:

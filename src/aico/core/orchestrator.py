@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 
@@ -12,12 +13,24 @@ from aico.core.agent_session import (
     InMemoryAgentSessionStore,
     ProviderSessionRef,
 )
-from aico.core.collaboration import collaboration_payload, split_collaboration_directive
+from aico.core.collaboration import (
+    collaboration_disabled,
+    collaboration_payload,
+    split_collaboration_directive,
+    task_with_exact_output_constraint,
+)
 from aico.core.command_messages import (
     ack_failure_message,
     approval_required_message,
+    short_id_text,
+    task_error_text,
 )
-from aico.core.commands import Command, parse_command
+from aico.core.commands import parse_command
+from aico.core.ingress_authorization import (
+    AllowAllIngressAuthorizer,
+    IngressAuthorizer,
+    IngressGuard,
+)
 from aico.core.language import (
     ResponseLanguageStore,
     task_with_response_language,
@@ -37,6 +50,7 @@ from aico.core.models import (
     TaskSnapshot,
     TaskStatus,
 )
+from aico.core.morning import MorningHandoffEnvelope
 from aico.core.native_output import native_output_format_from_task, task_with_native_output_format
 from aico.core.offline_delegation import (
     OfflineDelegationStore,
@@ -45,6 +59,7 @@ from aico.core.offline_delegation import (
 )
 from aico.core.orchestrator_command_registry import OrchestratorCommandRegistry
 from aico.core.orchestrator_task_factory import OrchestratorTaskFactory, _is_same_assignment
+from aico.core.preauthorized_execution import preauthorized_execution_mode
 from aico.core.project_assignment import (
     AssignmentProfile,
     ProjectAssignmentDirectory,
@@ -54,6 +69,13 @@ from aico.core.session_commands import (
     has_explicit_task_target,
     session_scope,
 )
+from aico.core.standing_autonomy import (
+    StandingAutonomyGrantSet,
+    StandingAutonomyOutcomeEnvelope,
+    StandingAutonomyRunReceipt,
+)
+from aico.core.standing_proposal import StandingProposalStore
+from aico.core.standing_result import MAX_STANDING_RESULT_CHARS
 from aico.core.streaming import StreamedMessageWriter
 from aico.core.task_bus import TaskBus
 from aico.core.unified_event import InMemoryUnifiedEventIndex, UnifiedEventIndex
@@ -63,7 +85,68 @@ log = logging.getLogger(__name__)
 ProviderSessionRefFactory = Callable[[AgentSession], ProviderSessionRef | None]
 
 
-class Orchestrator:
+class _MorningHandoffOrchestratorMixin:
+    _commands: OrchestratorCommandRegistry
+
+    def prepare_morning_handoff(
+        self,
+        *,
+        project_id: str,
+        scope_id: str,
+        delivery_id: str,
+    ) -> MorningHandoffEnvelope:
+        return self._commands.prepare_morning_handoff(
+            project_id=project_id,
+            scope_id=scope_id,
+            delivery_id=delivery_id,
+        )
+
+    async def deliver_morning_handoff(
+        self,
+        target: ChannelTarget,
+        envelope: MorningHandoffEnvelope,
+    ) -> SentMessage:
+        return await self._commands.deliver_morning_handoff(target, envelope)
+
+    async def run_scheduled_autonomy(
+        self,
+        target: ChannelTarget,
+        *,
+        project_id: str,
+        intent_id: str,
+    ) -> StandingAutonomyRunReceipt:
+        return await self._commands.run_scheduled_autonomy(
+            target,
+            project_id=project_id,
+            intent_id=intent_id,
+        )
+
+    def scheduled_autonomy_evidence(
+        self,
+        *,
+        project_id: str,
+        intent_id: str,
+    ) -> StandingAutonomyRunReceipt | None:
+        return self._commands.scheduled_autonomy_evidence(
+            project_id=project_id,
+            intent_id=intent_id,
+        )
+
+    def prepare_scheduled_autonomy_outcome(
+        self,
+        receipt: StandingAutonomyRunReceipt,
+    ) -> StandingAutonomyOutcomeEnvelope | None:
+        return self._commands.prepare_scheduled_autonomy_outcome(receipt)
+
+    async def deliver_scheduled_autonomy_outcome(
+        self,
+        target: ChannelTarget,
+        envelope: StandingAutonomyOutcomeEnvelope,
+    ) -> SentMessage:
+        return await self._commands.deliver_scheduled_autonomy_outcome(target, envelope)
+
+
+class Orchestrator(_MorningHandoffOrchestratorMixin):
     """Handle an incoming IM message by submitting a task and streaming progress back."""
 
     def __init__(
@@ -77,8 +160,12 @@ class Orchestrator:
         project_directory: ProjectAssignmentDirectory | None = None,
         memory_store: MemoryStore | None = None,
         offline_delegation_store: OfflineDelegationStore | None = None,
+        standing_proposal_store: StandingProposalStore | None = None,
+        standing_autonomy_grants: StandingAutonomyGrantSet | None = None,
         view_snapshot_handler: ViewSnapshotCommandHandler | None = None,
         prefer_native_channel_format: bool = False,
+        ingress_authorizer: IngressAuthorizer | None = None,
+        reveal_denied_ingress_identity: bool = False,
     ) -> None:
         self._channel = channel
         self._router = router
@@ -90,6 +177,10 @@ class Orchestrator:
         self._memory_store = memory_store
         self._view_snapshots = view_snapshot_handler
         self._prefer_native_channel_format = prefer_native_channel_format
+        self._ingress = IngressGuard(
+            ingress_authorizer or AllowAllIngressAuthorizer(),
+            reveal_denied_identity=reveal_denied_ingress_identity,
+        )
         self._task_sessions: dict[str, str] = {}
         self._response_languages = ResponseLanguageStore()
         self._task_factory = OrchestratorTaskFactory(
@@ -116,11 +207,14 @@ class Orchestrator:
             response_languages=self._response_languages,
             provider_session_factory=self._provider_session_factory,
             offline_delegation_store=offline_delegation_store,
+            standing_proposal_store=standing_proposal_store,
+            standing_autonomy_grants=standing_autonomy_grants,
             view_snapshot_handler=self._view_snapshots,
             run_task=self._run_task,
             run_target_task=self._run_target_task,
             run_project_role_task=self._run_project_role_task,
             run_delegated_task=self._run_delegated_task,
+            run_preauthorized_task=self._run_bounded_preauthorized_task,
             run_goal_task=self._run_goal_task,
             run_decision_task=self._run_decision_task,
             stream_outputs_for_task=self._stream_outputs_for_task,
@@ -139,6 +233,8 @@ class Orchestrator:
         )
 
     async def handle_incoming(self, message: IncomingMessage) -> None:
+        if not self._ingress.accepts(message):
+            return
         log.info(
             "Incoming message: raw_ref=%s sender=%s chars=%s",
             message.raw_ref,
@@ -148,10 +244,10 @@ class Orchestrator:
         command = parse_command(message.content.text)
         if command is not None:
             log.info("Command received: raw_ref=%s command=%s", message.raw_ref, command.name.value)
-            await self._handle_command(message, command)
+            await self._commands.handle(message, command)
             return
 
-        self._capture_boss_feedback(message)
+        _capture_boss_feedback(self._memory_capture, self._project_directory, message)
         lead_decision = self._lead_decision_assignment_for_message(message)
         if lead_decision is not None:
             project_id, assignment = lead_decision
@@ -176,28 +272,19 @@ class Orchestrator:
             session_id=None if session is None else session.session_id,
         )
 
-    async def _handle_command(self, message: IncomingMessage, command: Command) -> None:
-        await self._commands.handle(message, command)
-
     async def send_morning_handoff(
         self,
         target: ChannelTarget,
         *,
         project_id: str,
         scope_id: str | None = None,
-    ) -> None:
-        await self._commands.send_morning_handoff(
+        delivery_id: str | None = None,
+    ) -> SentMessage:
+        return await self._commands.send_morning_handoff(
             target,
             project_id=project_id,
             scope_id=scope_id,
-        )
-
-    def _capture_boss_feedback(self, message: IncomingMessage) -> None:
-        if self._memory_capture is None:
-            return
-        self._memory_capture.capture_boss_feedback(
-            message,
-            active_project=self._project_directory.active_project(session_scope(message)),
+            delivery_id=delivery_id,
         )
 
     async def _run_task(
@@ -283,6 +370,39 @@ class Orchestrator:
         await self._mark_incomplete_overnight_handoff(message, task, output)
         return output
 
+    async def _run_bounded_preauthorized_task(
+        self,
+        message: IncomingMessage,
+        task: Task,
+        session: AgentSession | None,
+        timeout_seconds: float,
+    ) -> str:
+        session_id = None if session is None else session.session_id
+        runner = asyncio.create_task(
+            self._run_task(message, task, include_target=True, session_id=session_id)
+        )
+        try:
+            return await asyncio.wait_for(asyncio.shield(runner), timeout=timeout_seconds)
+        except TimeoutError:
+            await self._task_bus.interrupt(task.task_id)
+            if not runner.done():
+                runner.cancel()
+            try:
+                await runner
+            except asyncio.CancelledError:
+                pass
+            await self._channel.send_message(
+                message.source,
+                MessageContent(
+                    text=f"Preauthorized task {short_id_text(task.task_id)} interrupted: "
+                    "runtime budget exhausted."
+                ),
+            )
+            return ""
+        except Exception:
+            await _interrupt_running_preauthorized_task(self._task_bus, task.task_id)
+            raise
+
     async def _mark_incomplete_overnight_handoff(
         self,
         message: IncomingMessage,
@@ -319,6 +439,7 @@ class Orchestrator:
         message: IncomingMessage,
         role_ref: str,
         payload: str,
+        exact_output: bool = False,
     ) -> None:
         project = self._project_directory.active_project(session_scope(message))
         if project is None:
@@ -334,7 +455,15 @@ class Orchestrator:
                 MessageContent(text=f"Role not appointed in {project.id}: {role_ref}"),
             )
             return
-        if self._should_run_lead_decision(project.id, assignment, payload):
+        role_alias = role_ref.casefold()
+        if role_alias in {"lead", "default"} and role_alias != assignment.role.casefold():
+            await self._channel.send_message(
+                message.source,
+                MessageContent(
+                    text=f"Routing: {role_alias} -> {assignment.role} ({assignment.agent})"
+                ),
+            )
+        if not exact_output and self._should_run_lead_decision(project.id, assignment, payload):
             await self._commands.lead_decisions.run(
                 message,
                 project_id=project.id,
@@ -342,7 +471,7 @@ class Orchestrator:
                 boss_task=payload,
             )
             return
-        if await self._commands.goal_briefs.maybe_run_auto_goal(
+        if not exact_output and await self._commands.goal_briefs.maybe_run_auto_goal(
             message,
             project=project,
             assignment=assignment,
@@ -352,6 +481,8 @@ class Orchestrator:
         task, session = self._task_factory.task_for_assignment(
             message, project.id, assignment, payload=payload
         )
+        if exact_output:
+            task = task_with_exact_output_constraint(task)
         await self._run_task(
             message,
             task,
@@ -417,10 +548,14 @@ class Orchestrator:
             preferred_format=native_output_format_from_task(task),
         )
         captured: list[str] = []
+        captured_chars = 0
         async for output in self._task_bus.stream_output(task.task_id):
             text = ""
             if output.type is OutputType.TEXT:
-                directive, remaining = split_collaboration_directive(output.content)
+                if collaboration_disabled(task):
+                    directive, remaining = None, output.content
+                else:
+                    directive, remaining = split_collaboration_directive(output.content)
                 if directive is not None and collaboration_depth == 0:
                     parent_context = "".join((*captured, remaining))
                     await self._handle_collaboration_directive(
@@ -435,7 +570,7 @@ class Orchestrator:
                 await writer.show_status(output.content)
                 continue
             elif output.type is OutputType.ERROR:
-                text = f"\nERROR: {output.content}"
+                text = task_error_text(task.task_id, output.content)
             elif output.type is OutputType.DONE and output.content:
                 text = output.content
 
@@ -446,8 +581,8 @@ class Orchestrator:
                     output.type.value,
                     len(text),
                 )
-                captured.append(text)
-            await writer.append(text)
+                captured_chars = _capture_output(captured, task, text, captured_chars)
+            await writer.append(_boss_visible_text(task, output.type, text))
         log.info("Stream finished: task_id=%s", task.task_id)
         return "".join(captured)
 
@@ -462,7 +597,7 @@ class Orchestrator:
             writer = StreamedMessageWriter(self._channel, message.source, sent_message)
             async for output in self._task_bus.stream_output(task_id):
                 if output.type is OutputType.ERROR:
-                    await writer.append(f"\nERROR: {output.content}")
+                    await writer.append(task_error_text(task_id, output.content))
             return
         await self._stream_outputs_for_task(message, sent_message, task)
 
@@ -510,6 +645,56 @@ class Orchestrator:
             include_target=True,
             collaboration_depth=1,
         )
+
+
+async def _interrupt_running_preauthorized_task(task_bus: TaskBus, task_id: str) -> None:
+    snapshot = task_bus.task_snapshot(task_id)
+    if not isinstance(snapshot, TaskSnapshot) or snapshot.status is not TaskStatus.RUNNING:
+        return
+    try:
+        await task_bus.interrupt(task_id)
+    except Exception as exc:
+        log.error(
+            "Preauthorized task cleanup failed: task_id=%s type=%s",
+            task_id,
+            type(exc).__name__,
+        )
+
+
+def _boss_visible_text(task: Task, output_type: OutputType, text: str) -> str:
+    if preauthorized_execution_mode(task) is not None and output_type is OutputType.TEXT:
+        return ""
+    return text
+
+
+def _capture_boss_feedback(
+    service: MemoryCaptureService | None,
+    project_directory: ProjectAssignmentDirectory,
+    message: IncomingMessage,
+) -> None:
+    if service is None:
+        return
+    service.capture_boss_feedback(
+        message,
+        active_project=project_directory.active_project(session_scope(message)),
+    )
+
+
+def _capture_output(
+    captured: list[str],
+    task: Task,
+    text: str,
+    captured_chars: int,
+) -> int:
+    if preauthorized_execution_mode(task) is None:
+        captured.append(text)
+        return captured_chars + len(text)
+    remaining = MAX_STANDING_RESULT_CHARS + 1 - captured_chars
+    if remaining <= 0:
+        return captured_chars
+    piece = text[:remaining]
+    captured.append(piece)
+    return captured_chars + len(piece)
 
 
 _ASSIGNMENT_ROLE_METADATA_KEY = "aico.assignment_role"

@@ -6,7 +6,15 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from aico.core.models import AdapterStatus, Capability, HealthStatus, Task, TaskAck, TaskOutput
+    from aico.core.models import (
+        AdapterStatus,
+        Capability,
+        HealthStatus,
+        Task,
+        TaskAck,
+        TaskOutput,
+        TaskUsage,
+    )
 
 
 @runtime_checkable
@@ -27,3 +35,10 @@ class AIAdapter(Protocol):
     async def interrupt(self, task_id: str) -> None: ...
 
     async def health_check(self) -> HealthStatus: ...
+
+
+@runtime_checkable
+class TaskUsageReportingAdapter(Protocol):
+    """Optional post-run provider usage contract."""
+
+    def task_usage(self, task_id: str) -> TaskUsage | None: ...

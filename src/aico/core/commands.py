@@ -59,6 +59,8 @@ class CommandName(StrEnum):
     VIEW = "view"
     TIMELINE = "timeline"
     ROLLBACK = "rollback"
+    PROPOSALS = "proposals"
+    PROPOSAL = "proposal"
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,7 @@ def parse_command(text: str) -> Command | None:
         CommandName.UNDO,
         CommandName.VIEW,
         CommandName.TIMELINE,
+        CommandName.PROPOSALS,
     }:
         return Command(CommandName(lowered))
 
@@ -127,6 +130,8 @@ def help_text() -> str:
         "/metrics - show local task and agent metrics\n"
         "/inbox - show project approvals, running work, handoffs, and follow-ups\n"
         "/morning - show done, blocked, risks, and next actions for the active project\n"
+        "/proposals - show reviewable lead standing-charter proposals\n"
+        "/proposal accept|reject <id> [reason] - decide a proposal; only accept creates work\n"
         "/language [en|zh] - set future agent reply language for this chat; default English\n"
         "/tasks [limit] - show recent tasks\n"
         "/task <task_id> - show one task and available actions\n"
@@ -159,7 +164,7 @@ def help_text() -> str:
         "/who <role> - show who owns a role in the active project\n"
         "/appoint <agent> as <role> [scope] - appoint an agent; default scope comes from role\n"
         "/unappoint <role> - remove a role appointment from the active project\n"
-        "/ask <role> <task> - send one task to a project role\n"
+        "/ask [--exact] <role> <task> - send one role task; exact disables delegation\n"
         "/lead <role> - set the lead role for plain messages\n"
         "/default <role> - legacy alias for /lead <role>\n"
         "/use project <project> - route plain messages to a project\n"

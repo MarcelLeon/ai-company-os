@@ -1,3 +1,5 @@
+import pytest
+
 from aico.core import (
     AssignmentProfile,
     Capability,
@@ -7,9 +9,11 @@ from aico.core import (
     ProjectProfile,
     ProjectRoleProfile,
     RoleProfile,
+    StandingCharterItem,
     Task,
     task_with_assignment_context,
 )
+from aico.core.standing_result import MAX_STANDING_CRITERIA, MAX_STANDING_TEXT_CHARS
 
 
 def test_project_assignment_directory_tracks_active_project_by_scope() -> None:
@@ -23,6 +27,15 @@ def test_project_assignment_directory_tracks_active_project_by_scope() -> None:
     assert directory.default_assignment("aico") == directory.assignment("aico-implementer")
     assert directory.appointments("aico")[0].seat == "aico-implementer"
     assert directory.assignments("aico")[0].seat == "aico-implementer"
+
+
+def test_project_assignment_directory_defaults_to_only_project_when_scope_is_new() -> None:
+    directory = ProjectAssignmentDirectory(_config(), default_to_single_project=True)
+
+    active = directory.active_project("telegram:after-restart:boss")
+
+    assert active is not None
+    assert active.id == "aico"
 
 
 def test_project_assignment_directory_updates_default_role_and_appointments() -> None:
@@ -78,6 +91,54 @@ def test_project_assignment_directory_reports_missing_required_team_roles() -> N
 
     assert challenger is not None
     assert directory.missing_required_team_roles("aico") == ()
+
+
+def test_project_assignment_directory_validates_standing_charter_ids_and_roles() -> None:
+    project = _config().projects["aico"]
+    duplicate = StandingCharterItem(
+        id="weekly-loop",
+        objective="Find one bounded repair.",
+        role="tester",
+        acceptance_evidence=("one verified artifact",),
+        stop_conditions=("stop before external sending",),
+    )
+    config = _config().model_copy(
+        update={
+            "projects": {
+                "aico": project.model_copy(update={"standing_charter": (duplicate, duplicate)})
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="duplicate project aico standing charter"):
+        ProjectAssignmentDirectory(config)
+
+    invalid_role = duplicate.model_copy(update={"id": "invalid-role", "role": "sales"})
+    config = config.model_copy(
+        update={
+            "projects": {"aico": project.model_copy(update={"standing_charter": (invalid_role,)})}
+        }
+    )
+
+    with pytest.raises(ValueError, match="references unknown project role sales"):
+        ProjectAssignmentDirectory(config)
+
+
+def test_standing_charter_rejects_unbounded_result_contract_input() -> None:
+    with pytest.raises(ValueError):
+        StandingCharterItem(
+            id="too-many",
+            objective="inspect",
+            acceptance_evidence=("criterion",) * (MAX_STANDING_CRITERIA + 1),
+            stop_conditions=("stop",),
+        )
+    with pytest.raises(ValueError):
+        StandingCharterItem(
+            id="too-long",
+            objective="inspect",
+            acceptance_evidence=("x" * (MAX_STANDING_TEXT_CHARS + 1),),
+            stop_conditions=("stop",),
+        )
 
 
 def test_project_assignment_directory_resolves_agent_by_provider_name() -> None:

@@ -1,7 +1,9 @@
 import asyncio
 import json
+import logging
 
 import httpx
+import pytest
 
 from aico.channel import IMChannel
 from aico.channel.telegram import TelegramAPIError, TelegramChannel
@@ -16,11 +18,15 @@ from aico.core import (
     MessageTextStyle,
 )
 from aico.core.message_rendering import rich_text_message
+from aico.core.native_output import agent_output_message
 
 
-async def test_telegram_channel_parses_text_update_and_advances_offset() -> None:
+async def test_telegram_channel_parses_text_update_and_advances_offset(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     requests: list[httpx.Request] = []
     received: list[IncomingMessage] = []
+    caplog.set_level(logging.INFO, logger="aico.channel.telegram")
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -60,6 +66,9 @@ async def test_telegram_channel_parses_text_update_and_advances_offset() -> None
     assert received[0].content == MessageContent(text="@lao_zhang please inspect")
     assert requests[0].read() == b'{"timeout":1}'
     assert requests[1].read() == b'{"timeout":1,"offset":42}'
+    logs = "\n".join(record.getMessage() for record in caplog.records)
+    assert "sender=" not in logs
+    assert "please inspect" not in logs
 
 
 async def test_telegram_channel_default_client_allows_long_poll_timeout() -> None:
@@ -111,10 +120,61 @@ async def test_telegram_channel_does_not_block_polling_on_long_handler() -> None
         await asyncio.sleep(0)
         release_handler.set()
         await asyncio.sleep(0)
-        await channel.stop()
+    await channel.stop()
 
     assert received == ["message 1", "message 2"]
     assert requests == [b'{"timeout":1}', b'{"timeout":1,"offset":2}']
+
+
+async def test_telegram_health_fails_when_owned_polling_task_crashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def unexpected_poll_failure() -> None:
+        raise ValueError("sensitive upstream detail")
+
+    async with httpx.AsyncClient() as client:
+        channel = TelegramChannel("token", client=client)
+        monkeypatch.setattr(channel, "poll_once", unexpected_poll_failure)
+
+        await channel.start()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert await channel.health_check() is HealthStatus.FAILED
+        await channel.stop()
+
+
+async def test_telegram_channel_restarts_only_a_dead_owned_polling_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    keep_alive = asyncio.Event()
+
+    async def fail_once_then_wait() -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ValueError("sensitive upstream detail")
+        await keep_alive.wait()
+
+    async with httpx.AsyncClient() as client:
+        channel = TelegramChannel("token", client=client)
+        monkeypatch.setattr(channel, "poll_once", fail_once_then_wait)
+        await channel.start()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert channel.owned_task_alive() is False
+        await channel.restart_owned_task()
+        await asyncio.sleep(0)
+        await channel.restart_owned_task()
+
+        assert channel.owned_task_alive() is True
+        assert attempts == 2
+        await channel.stop()
+        await channel.restart_owned_task()
+        assert channel.owned_task_alive() is False
+        assert attempts == 2
 
 
 async def test_telegram_channel_maps_callback_query_to_incoming_message() -> None:
@@ -270,7 +330,95 @@ async def test_telegram_channel_renders_agent_markdown_as_html() -> None:
     payload = json.loads(calls[0][1])
     assert payload["parse_mode"] == "HTML"
     assert "<b>Decision</b>" in payload["text"]
-    assert "<code>Sprint | Status</code>" in payload["text"]
+    assert "| Sprint | Status |" not in payload["text"]
+    assert "| --- | --- |" not in payload["text"]
+    assert payload["text"].count("<pre>") == 1
+    assert payload["text"].count("</pre>") == 1
+    assert "<pre>Sprint" in payload["text"]
+    assert "Status\n------" in payload["text"]
+    assert "\nInbox" in payload["text"]
+    assert "OK</pre>" in payload["text"]
+    assert "<code>Sprint" not in payload["text"]
+
+
+async def test_telegram_channel_sends_wide_agent_table_as_preformatted_block() -> None:
+    calls: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, request.read()))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 123}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+
+        await channel.send_message(
+            target,
+            agent_output_message(
+                "Decision matrix\n"
+                "| Option | Decision | Owner | Evidence |\n"
+                "|---|---|---|---|\n"
+                "| Start v2 | Reject | lead | needs another full benchmark cycle |"
+            ),
+        )
+
+    payload = json.loads(calls[0][1])
+    assert payload["parse_mode"] == "HTML"
+    assert "|---|---|---|---|" not in payload["text"]
+    assert payload["text"].count("<pre>") == 1
+    assert payload["text"].count("</pre>") == 1
+    assert "<pre>Option" in payload["text"]
+    assert "Decision" in payload["text"]
+    assert "Evidence\n--------" in payload["text"]
+    assert "\nStart v2" in payload["text"]
+    assert "needs an…</pre>" in payload["text"]
+    assert "<code>Option" not in payload["text"]
+    assert "<b>详情</b>: <code>/view</code> 查看完整表格" in payload["text"]
+
+
+async def test_telegram_channel_keeps_inline_code_outside_preformatted_blocks() -> None:
+    calls: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, request.read()))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 123}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+
+        await channel.send_message(target, rich_text_message("Run `/view` now"))
+
+    payload = json.loads(calls[0][1])
+    assert "<code>/view</code>" in payload["text"]
+    assert "<pre>" not in payload["text"]
+
+
+async def test_telegram_channel_sends_html_list_fallback_as_readable_bullets() -> None:
+    calls: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, request.read()))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 123}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+
+        await channel.send_message(
+            target,
+            agent_output_message(
+                "<b>Risks</b><ul><li>High: 表格过宽</li><li>Medium: 列表粘连</li></ul>"
+            ),
+        )
+
+    payload = json.loads(calls[0][1])
+    assert payload["parse_mode"] == "HTML"
+    assert "<ul>" not in payload["text"]
+    assert "<li>" not in payload["text"]
+    assert "<b>Risks</b>" in payload["text"]
+    assert "• <b>High</b>: 表格过宽" in payload["text"]
+    assert "• <b>Medium</b>: 列表粘连" in payload["text"]
 
 
 async def test_telegram_channel_sends_native_telegram_html_without_span_rewrite() -> None:
@@ -298,6 +446,40 @@ async def test_telegram_channel_sends_native_telegram_html_without_span_rewrite(
         "text": "<b>Status</b>\n<pre>Inbox | OK</pre>",
         "parse_mode": "HTML",
     }
+
+
+async def test_telegram_channel_does_not_send_native_pre_markdown_table_raw() -> None:
+    calls: list[tuple[str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.url.path, request.read()))
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 123}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+
+        await channel.send_message(
+            target,
+            agent_output_message(
+                "<b>Matrix</b>\n"
+                "<pre>| Option | Decision | Owner | Evidence |\n"
+                "|---|---|---|---|\n"
+                "| Start v2 | Reject | lead | needs another full benchmark cycle |</pre>",
+                preferred_format=MessageNativeFormat.TELEGRAM_HTML,
+            ),
+        )
+
+    payload = json.loads(calls[0][1])
+    assert payload["parse_mode"] == "HTML"
+    assert "|---|---|---|---|" not in payload["text"]
+    assert payload["text"].count("<pre>") == 1
+    assert payload["text"].count("</pre>") == 1
+    assert "<pre>Option" in payload["text"]
+    assert "Decision" in payload["text"]
+    assert "needs an…</pre>" in payload["text"]
+    assert "<code>Option" not in payload["text"]
+    assert "<b>详情</b>: <code>/view</code> 查看完整表格" in payload["text"]
 
 
 async def test_telegram_channel_renders_actions_as_inline_keyboard() -> None:
@@ -371,6 +553,28 @@ async def test_telegram_channel_reports_failed_health_when_api_fails() -> None:
         channel = TelegramChannel("token", client=client)
 
         assert await channel.health_check() is HealthStatus.FAILED
+
+
+async def test_telegram_channel_retries_one_connect_timeout_before_sending() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.ConnectTimeout("TLS handshake timed out", request=request)
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 42}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+
+        sent = await channel.send_message(
+            ChannelTarget(channel_name="telegram", target_id="chat-1"),
+            MessageContent(text="hello"),
+        )
+
+    assert sent.message_id == "42"
+    assert attempts == 2
 
 
 async def test_telegram_channel_raises_when_api_returns_not_ok() -> None:

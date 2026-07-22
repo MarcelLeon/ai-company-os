@@ -20,6 +20,15 @@ def test_telegram_html_message_rejects_unsupported_html_and_markdown() -> None:
     assert telegram_html_message("<table><tr><td>Inbox</td></tr></table>") is None
     assert telegram_html_message("```uv run pytest```") is None
     assert telegram_html_message("| Feature | Status |\n|---|---|\n| Inbox | OK |") is None
+    assert (
+        telegram_html_message(
+            "<b>Matrix</b>\n"
+            "<pre>| Option | Decision | Owner | Evidence |\n"
+            "|---|---|---|---|\n"
+            "| Start v2 | Reject | lead | needs another full benchmark cycle |</pre>"
+        )
+        is None
+    )
 
 
 def test_telegram_html_message_escapes_placeholders_inside_pre_blocks() -> None:
@@ -46,6 +55,28 @@ def test_agent_output_message_prefers_native_format_and_falls_back_to_rich_text(
     assert fallback.native_format is None
     assert fallback.text == "Status\nuv run pytest"
     assert any(span.style is MessageTextStyle.CODE for span in fallback.spans)
+
+
+def test_agent_output_message_reformats_native_pre_markdown_tables() -> None:
+    message = agent_output_message(
+        "<b>Matrix</b>\n"
+        "<pre>| Option | Decision | Owner | Evidence |\n"
+        "|---|---|---|---|\n"
+        "| Start v2 | Reject | lead | needs another full benchmark cycle |</pre>",
+        preferred_format=MessageNativeFormat.TELEGRAM_HTML,
+    )
+
+    assert message.native_format is None
+    assert "|---|---|---|---|" not in message.text
+    assert "Option" in message.text
+    assert "Decision" in message.text
+    assert "needs an…" in message.text
+    assert "详情: /view 查看完整表格" in message.text
+    assert (
+        message.text.index("详情"),
+        len("详情"),
+        MessageTextStyle.BOLD,
+    ) in [(span.offset, span.length, span.style) for span in message.spans]
 
 
 def test_agent_output_message_splits_glued_native_html_sections() -> None:
@@ -89,6 +120,38 @@ def test_agent_output_message_splits_glued_review_bullets() -> None:
     )
 
 
+def test_agent_output_message_splits_glued_numbered_sections() -> None:
+    message = agent_output_message(
+        "Findings1. CI does not enforce Data-Agent mypy."
+        "2. Unignored runtime state is present."
+        "Missing Tests未看到 SQL/evidence contract tests."
+        "Verdict: oppose"
+    )
+
+    assert message.text == (
+        "Findings\n\n"
+        "1. CI does not enforce Data-Agent mypy.\n\n"
+        "2. Unignored runtime state is present.\n\n"
+        "Missing Tests\n"
+        "未看到 SQL/evidence contract tests.\n\n"
+        "Verdict: oppose"
+    )
+
+
+def test_agent_output_message_simplifies_local_markdown_file_links() -> None:
+    message = agent_output_message(
+        "See [.github/workflows/ci.yml]"
+        "(/Users/wangzq/VsCodeProjects/ai-company-os/.github/workflows/ci.yml:38) "
+        "and [templates.py]"
+        "(/Users/wangzq/VsCodeProjects/ai-company-os/projects/sme-agent/templates.py:106)."
+    )
+
+    assert "/Users/wangzq" not in message.text
+    assert "[.github/workflows/ci.yml]" not in message.text
+    assert ".github/workflows/ci.yml:38" in message.text
+    assert "templates.py:106" in message.text
+
+
 def test_task_with_native_output_format_injects_telegram_contract_when_enabled() -> None:
     task = Task(
         task_id="task-1",
@@ -107,3 +170,20 @@ def test_task_with_native_output_format_injects_telegram_contract_when_enabled()
     assert formatted.metadata[-1].value == MessageNativeFormat.TELEGRAM_HTML.value
     assert disabled == task
     assert feishu == task
+
+
+def test_telegram_native_contract_prefers_mobile_table_routing_over_pre_tables() -> None:
+    formatted = task_with_native_output_format(
+        Task(
+            task_id="task-1",
+            payload="return a role table",
+            requester_id="user-1",
+            target_persona="reviewer",
+        ),
+        channel_name="telegram",
+        enabled=True,
+    )
+
+    assert "Prefer compact Telegram-readable tables" in formatted.payload
+    assert "Shorten long cells before rendering tables" in formatted.payload
+    assert "keep details for /view or /task" in formatted.payload

@@ -4,10 +4,21 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from enum import StrEnum
+from typing import Annotated
 
 from pydantic import Field
 
 from aico.core.models import Capability, FrozenModel, MetadataEntry, Task
+from aico.core.standing_result import (
+    MAX_STANDING_CRITERIA,
+    MAX_STANDING_STOPS,
+    MAX_STANDING_TEXT_CHARS,
+)
+
+_StandingCharterText = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_STANDING_TEXT_CHARS),
+]
 
 
 class RoleScope(StrEnum):
@@ -48,6 +59,21 @@ class ProjectRoleProfile(FrozenModel):
     resources: tuple[str, ...] = ()
 
 
+class StandingCharterItem(FrozenModel):
+    id: str = Field(min_length=1)
+    objective: str = Field(min_length=1)
+    role: str = Field(default="lead", min_length=1)
+    acceptance_evidence: tuple[_StandingCharterText, ...] = Field(
+        min_length=1,
+        max_length=MAX_STANDING_CRITERIA,
+    )
+    stop_conditions: tuple[_StandingCharterText, ...] = Field(
+        min_length=1,
+        max_length=MAX_STANDING_STOPS,
+    )
+    cooldown_hours: int = Field(default=168, ge=1)
+
+
 class ProjectProfile(FrozenModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
@@ -62,6 +88,7 @@ class ProjectProfile(FrozenModel):
     default_role: str | None = None
     default_assignment: str | None = None
     roles: dict[str, ProjectRoleProfile] = Field(default_factory=dict)
+    standing_charter: tuple[StandingCharterItem, ...] = ()
 
 
 class AssignmentProfile(FrozenModel):
@@ -87,8 +114,14 @@ class ProjectAssignmentConfig(FrozenModel):
 class ProjectAssignmentDirectory:
     """Resolve project-scoped assignments and active project context."""
 
-    def __init__(self, config: ProjectAssignmentConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: ProjectAssignmentConfig | None = None,
+        *,
+        default_to_single_project: bool = False,
+    ) -> None:
         self._config = config or ProjectAssignmentConfig()
+        self._default_to_single_project = default_to_single_project
         self._validate()
         self._agents_by_ref = {_normalize(agent_id): agent_id for agent_id in self._config.agents}
         self._roles_by_ref = {_normalize(role_id): role_id for role_id in self._config.roles}
@@ -321,12 +354,19 @@ class ProjectAssignmentDirectory:
     def active_project(self, scope_id: str) -> ProjectProfile | None:
         project_id = self._active_projects.get(scope_id)
         if project_id is None:
-            return None
-        project = self.project(project_id)
-        if project is None:
+            if not self._default_to_single_project:
+                return None
+            projects = self.projects()
+            if len(projects) != 1:
+                return None
+            only_project = projects[0]
+            self._active_projects[scope_id] = only_project.id
+            return only_project
+        resolved_project = self.project(project_id)
+        if resolved_project is None:
             self._active_projects.pop(scope_id, None)
             return None
-        return project
+        return resolved_project
 
     def _validate(self) -> None:
         _validate_keys("agent", self._config.agents)
@@ -337,6 +377,10 @@ class ProjectAssignmentDirectory:
             (appointment.seat for appointment in self._appointments()),
         )
         for project in self._config.projects.values():
+            _unique_values(
+                f"project {project.id} standing charter",
+                (charter.id for charter in project.standing_charter),
+            )
             if project.default_assignment and project.default_assignment not in seats:
                 raise ValueError(
                     f"project {project.id} references unknown default assignment "
@@ -347,6 +391,14 @@ class ProjectAssignmentDirectory:
                     raise ValueError(
                         f"project {project.id} role key {role_id} must match "
                         f"role value {project_role.role}"
+                    )
+            for charter in project.standing_charter:
+                available_roles = set(project.roles) if project.roles else set(self._config.roles)
+                is_lead_alias = _normalize(charter.role) in {"lead", "default"}
+                if charter.role not in available_roles and not is_lead_alias:
+                    raise ValueError(
+                        f"project {project.id} standing charter {charter.id} "
+                        f"references unknown project role {charter.role}"
                     )
         for appointment in self._appointments():
             if appointment.project not in self._config.projects:

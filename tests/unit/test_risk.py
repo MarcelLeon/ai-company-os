@@ -102,6 +102,46 @@ def test_text_risk_assessor_still_flags_current_task_in_appointment_prompt() -> 
     assert risk.requires_approval is True
 
 
+def test_text_risk_assessor_does_not_treat_displayed_commands_as_execution() -> None:
+    task = Task(
+        task_id="task-1",
+        payload=("Current task:\n输出 Markdown 表格，表格后输出‘详情命令: /view’，不要使用 HTML。"),
+        requester_id="user-1",
+        target_persona="reviewer",
+    )
+
+    risk = TextRiskAssessor().assess(task)
+
+    assert risk.risk_level is RiskLevel.READ_ONLY
+    assert risk.requires_approval is False
+
+
+def test_text_risk_assessor_still_flags_explicit_command_execution() -> None:
+    assessor = TextRiskAssessor()
+    english_task = Task(
+        task_id="task-1",
+        payload="run command pytest",
+        requester_id="user-1",
+        target_persona="implementer",
+    )
+    chinese_task = Task(
+        task_id="task-2",
+        payload="执行命令 pytest",
+        requester_id="user-1",
+        target_persona="implementer",
+    )
+    natural_chinese_task = Task(
+        task_id="task-3",
+        payload="执行一下测试并汇报结果",
+        requester_id="user-1",
+        target_persona="implementer",
+    )
+
+    assert assessor.assess(english_task).risk_level is RiskLevel.SHELL_EXEC
+    assert assessor.assess(chinese_task).risk_level is RiskLevel.SHELL_EXEC
+    assert assessor.assess(natural_chinese_task).risk_level is RiskLevel.SHELL_EXEC
+
+
 def test_text_risk_assessor_treats_internal_role_proposals_as_read_only() -> None:
     task = Task(
         task_id="task-1",

@@ -1,5 +1,6 @@
 from aico.core.collaboration import (
     collaboration_payload,
+    exact_output_requested,
     parse_collaboration_directive,
     split_collaboration_directive,
 )
@@ -48,6 +49,12 @@ def test_split_collaboration_directive_keeps_non_directive_text() -> None:
 def test_parse_collaboration_directive_ignores_plain_mentions() -> None:
     assert parse_collaboration_directive("Please ask @reviewer later") is None
     assert parse_collaboration_directive("@reviewer") is None
+
+
+def test_exact_output_requested_recognizes_boss_no_collaboration_language() -> None:
+    assert exact_output_requested("只输出本条结果，不要请求协作")
+    assert exact_output_requested("Use exact-output and do not delegate")
+    assert not exact_output_requested("请 reviewer 协作检查实现")
 
 
 def test_collaboration_payload_preserves_source_persona() -> None:

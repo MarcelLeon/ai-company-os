@@ -15,6 +15,7 @@ from aico.core import (
     MemoryEvidence,
     MemoryKind,
     MemoryScope,
+    seal_legacy_memory_ledger,
 )
 
 
@@ -83,8 +84,8 @@ def test_memory_atom_experience_accepts_meta() -> None:
     assert atom.experience.verdict_misses == 0
 
 
-def test_jsonl_store_loads_legacy_atom_without_kind(tmp_path: Path) -> None:
-    """Old JSONL written before M1 lacks `kind`/`experience` fields; loading must succeed."""
+def test_jsonl_store_loads_explicitly_sealed_legacy_atom_without_kind(tmp_path: Path) -> None:
+    """Owner-sealed pre-M1 JSONL still receives model defaults after integrity migration."""
     legacy_path = tmp_path / "memory.jsonl"
     legacy_atom_payload = {
         "memory_id": "legacy-1",
@@ -103,6 +104,8 @@ def test_jsonl_store_loads_legacy_atom_without_kind(tmp_path: Path) -> None:
         json.dumps({"record_type": "atom", "payload": legacy_atom_payload}) + "\n",
         encoding="utf-8",
     )
+    legacy_path.chmod(0o600)
+    seal_legacy_memory_ledger(legacy_path)
 
     store = JsonlMemoryStore(legacy_path)
     loaded = store.get_atom("legacy-1")

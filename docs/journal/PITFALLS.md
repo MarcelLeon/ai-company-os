@@ -42,6 +42,9 @@
 - P-032:quiet heartbeat 进入结果缓冲导致 native HTML 回退裸露
 - P-036:Agent native heading / bullet 被流式拼接后糊成 Telegram 一整段
 - P-037:Telegram API 上限不是老板手机阅读上限
+- P-042:真实 Telegram 链路跑通但老板可读性仍失败
+- P-047:native `<pre>` 包 Markdown 表格会绕过紧凑表格 renderer
+- P-049:紧凑表格的连续 code 行必须合并成单个 Telegram `<pre>`
 
 ### AI 间协作
 - P-009:协作指令只支持冒号导致真实自然语言未触发 reviewer
@@ -58,6 +61,9 @@
 ### 部署与运维
 - P-017:真实 Stage 3 录屏被底层 CLI 噪音污染
 - P-018:httpx INFO 日志会把 Telegram Bot token 打进日志
+- P-061:Generic health failure 不能直接驱动无人值守重启
+- P-062:Heartbeat 直发 webhook 不是可靠的缺席告警
+- P-095:Process alive 与 dead-man pulse fresh 不能证明 required 业务组件仍可用
 
 ### Java / Spring AI 相关
 - (待填充)
@@ -68,6 +74,7 @@
 
 ### 持久化与 schema 兼容
 - P-033:Memory/Audit JSONL 升级是单向门(`FrozenModel.extra="forbid"`)
+- P-045:Dream 候选经验不能被当成普通 shared memory 或 `/remember` 流程
 
 ### Adapter 层
 - P-005:Codex CLI 全局参数必须放在子命令前
@@ -1522,3 +1529,2282 @@ Phase 8 contract gate 因显式 `env -u AICO_VIEW_TOKEN -u AICO_VIEW_ENABLED` �
 **相关链接**
 - ROUNDS Round 157
 - NORTH_STAR.md Dogfooding 的验收分层
+
+### [P-041] Telegram Desktop 实例与启动状态必须实测
+
+**状态**:🟡 MITIGATED
+**首次踩中**:Round 178
+**最后更新**:2026-07-15(Round 191)
+**影响范围**:真实 Telegram dogfood、Computer Use 验收、AICO IM baseline
+
+**症状**
+Round 178 尝试用 Computer Use 操作 Telegram 时,系统中同时存在:
+
+- `/Applications/Telegram.app`:已登录,能看到 `ai_co` bot 对话。
+- `/Applications/Telegram 2.app`:未登录,打开后是 QR code 登录页。
+
+如果只按 bundle id `ru.keepcoder.Telegram` 操作,Computer Use 会认为 app identifier ambiguous。即使指定
+已登录的 `/Applications/Telegram.app`,读屏可用,但 click 动作本轮返回 tool activation error。
+Round 179 继续复验后,Computer Use 仍可渲染 Telegram 截图,但 click / key 均不可用;`open`、直接 executable
+和 System Events 也不能稳定控制 Telegram 进程。
+
+Round 191 复验时只剩 `/Applications/Telegram.app` 12.8(build 282010)。它启动后约 0.1 秒主动
+以 exit 0 退出,macOS 没有生成 crash report;Telegram 自身日志显示加密数据库打开且网络握手已开始,
+但没有明确 fatal。`codesign --verify` 报 `CSSMERR_TP_NOT_TRUSTED`,但该信号不足以证明它是主动退出的根因。
+
+**根因**
+同一 bundle id 下有两个 Telegram 安装实例,其中一个未登录。桌面自动化如果不指定准确 app path,容易进入错误实例或登录页。
+
+**解决方案 / 缓解措施**
+- 做真实 Telegram dogfood 前先用 Computer Use `list_apps` / `get_app_state` 确认 app path 和是否已登录。
+- 不要使用 `/Applications/Telegram 2.app` 跑 AICO baseline,除非人类明确在该实例完成登录。
+- 如果 Computer Use click 不稳定,把 exact IM commands 写入 evidence,由人类手动粘贴发送,agent 继续做可判定证据整理。
+- 如果需要非人工证据,只能标注为 local injected IM baseline,不能写成真实 Telegram baseline。
+- Round 191 起桌面 app 不可用时,优先复用已登录 Telegram Web;不在无根因证据时删除 group container
+  或重置账号数据。
+
+**如何避免再次踩中**
+- 所有 Telegram dogfood runbook 写清楚目标 app path 和目标 bot/chat。
+- 不要把“Telegram app 能打开”误判为“已登录且可发送到正确 bot”。
+- 不要把未发送的 IM 命令登记为已完成 transcript。
+- 不要把 Computer Use 截图能力误判为 Computer Use 操作能力。
+
+**相关链接**
+- ROUNDS Round 178
+- ROUNDS Round 179
+- B-007
+
+### [P-042] 真实 Telegram 链路跑通但老板可读性仍失败
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 181
+**最后更新**:2026-07-06
+**影响范围**:`src/aico/core/native_output.py`, `src/aico/core/streaming.py`,
+`src/aico/core/inbox.py`, `src/aico/view/commands.py`
+
+**症状**
+data-agent-v1 真实 Telegram Web 聊天记录显示 `/ask lead`、`/inbox`、`/view` 已经真实送达,
+后台 `logs/aico.log` 也能对上 task / adapter / sendMessage / editMessageText 链路。但老板端仍然很难读:
+
+- agent 输出出现 `Findings1.`、`Missing Tests未...`、Markdown 表格和本地绝对路径原样露出。
+- 流式分片虽然低于 1400 字,但会发出 3 字符或几十字符的尾片。
+- `/inbox` 空状态仍展示多个 `none` 小节、audit event kind 和固定 Next 命令,像后台状态 dump。
+- `/view` 只发 HTML 附件,没有告诉老板为什么要打开、打不开时该看什么。
+
+**根因**
+上一轮修复解决了“能发”和“不要超长墙”,但还把“Bot API 成功发送”和“老板能在手机上接手”混在一起。
+当前流式 writer 按长度切分,没有按语义卡片切分;`/inbox` 直接暴露内部状态集合;`/view` 把附件当成完整交接。
+
+**解决方案 / 缓解措施**
+- `normalize_agent_output_for_im()` 增加普通标题粘连归一化,覆盖 `Findings1.`、编号项连续、`Missing Tests未...` 和 `Verdict:`。
+- `StreamedMessageWriter` 对接近阅读上限的小尾片不再单独发消息,避免 Telegram 出现微型碎片。
+- `StreamedMessageWriter` 进一步按 Summary / Findings / Decision / Risks / Next Actions 等老板语义卡片切分,卡片内部超长才回退长度切分。
+- `normalize_agent_output_for_im()` 将本地 Markdown 文件链接简化为 `path:line`,避免 Telegram 暴露 `/Users/...` 绝对路径。
+- `/inbox` 改为老板摘要:无动作时只说“当前无待处理事项”;有动作时优先显示一个下一步,再显示少量需要关注、运行中、交接和深挖入口。
+- `/view` 在发送附件前先发中文说明,告诉老板用途和替代命令 `/inbox`、`/task <id>`。
+- 新增/更新单测覆盖真实坏样本和新的老板摘要 contract,并新增 `test_telegram_ux_regression.py` 集中回归 `Findings1.`、本地路径链接和 Markdown 表格分隔符。
+
+**如何避免再次踩中**
+- 真实 IM 验收不能只看链路是否跑通;必须看第一屏是否能回答“现在要我做什么”。
+- 长输出不要只按字符数切;先问是否能按 Findings / Decision / Risks / Next Actions 切成老板卡片。
+- `/inbox`、`/morning`、`/view` 这类老板入口默认应隐藏内部 event kind,把原始审计留给 `/task`、`/why`、`/audit`。
+- 每次修 Telegram 输出,都把真实坏样本固化成 unit test 或模拟 E2E,不要只依赖下一次人工截图。
+
+**相关链接**
+- ROUNDS Round 181
+- P-036
+- P-037
+
+### [P-043] 表格渲染不能只看语法,要按移动端可读性分流
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 183
+**最后更新**:2026-07-09(Round 189)
+**影响范围**:`src/aico/core/message_rendering.py`, `tests/unit/test_telegram_ux_regression.py`
+
+**症状**
+Round 182 后,回归测试已经覆盖 `|---|---|` 不应直接出现在 Telegram 输出里,但真实 Telegram Web
+抽样仍然看到角色分工表格以 `| 角色 | seat | 状态 | 交付 |` 形式挤在一条气泡里。Round 184/186 又尝试让少行少列小表保留
+为 Markdown 表格,但人类用真实 `/ask reviewer ... 小表、宽表、HTML list ...` 验收后反馈“表格是错乱的”。
+Round 187 改成纯字段列表后,人类再次反馈“这是人能看懂的???”。结论是:Telegram 需要保留表格感,但不能裸发 pipe table;
+需要紧凑等宽表格、压缩字符,并用 `/view` / `/task` 懒加载详情。
+
+**根因**
+测试把“Markdown 表格语法没有裸露”或“小表在桌面看起来还行”误当成“Telegram 气泡可读”。Telegram 气泡不是数据表容器,
+pipe table 在手机和 Web 气泡里都会受到字体、换行、缩放和内容宽度影响。但把表格完全降级成字段列表也会丢失横向比较能力。
+另一个真实坏样本是 provider 会把标题和表格粘在同一行,或把新表头行混在旧表格 body 中,
+导致常规 Markdown table detector 根本识别不到表格结构。
+
+**解决方案 / 缓解措施**
+- Round 183 先把 Markdown 表格统一降级为 key-value 列表,快速解决宽表手机不可读。
+- Round 184/186 的“小表保留”策略被真实 Telegram 验收推翻。
+- Round 187 最终改为无裸表格策略:
+  - 所有 Markdown 表格都降级为 key-value 字段列表;
+  - 表头作为字段 label,在 Telegram HTML payload 中加粗;
+  - 缺失表头的额外列不再显示 `col 4`,改为 `补充`,避免把实现细节暴露给老板;
+  - native Telegram prompt 明确要求不要输出 Markdown table,也不要用 `<pre>` 包表格。
+- Round 188 根据人类反馈修正最终策略:
+  - 不裸发 pipe Markdown table,但尽量保留表格形态;
+  - 表格渲染为紧凑等宽 Telegram 表格,长单元格截断;
+  - 截断或列数较多时追加 `详情: /view 查看完整表格`;
+  - 缺失表头的额外列使用 `补充1/补充2`,避免多个 `补充` 混在一起;
+  - 当表格 body 中出现更宽的行,且后续行同宽,把该行识别为嵌入的新表头,避免把真实列名渲染成一串补充字段。
+- Round 189 补齐 native Telegram HTML 缺口:
+  - 如果模型把 Markdown pipe table 放进 `<pre>`,native validator 先把允许的 HTML tag 去掉再检测 Markdown table;
+  - 命中后不允许 native HTML 直通,而是回退到平台中立 renderer 生成紧凑表格;
+  - `<pre>` 中的 Markdown table 回退时不再继续作为 fenced code block,避免 `详情: /view 查看完整表格` 被整行 code span 吃掉。
+- `_split_glued_markdown_tables()` 在渲染前识别 `||---|...` 一类 glued table,先拆回多行再转紧凑表格。
+- `tests/unit/test_telegram_ux_regression.py` 同时覆盖小表紧凑表格、宽表截断、glued table、malformed table extra cell、
+  嵌入式宽表表头和“小表 + 宽表 + HTML list”展示样例。
+
+**如何避免再次踩中**
+- Telegram / Feishu / Kim 等 IM 输出不要裸发 pipe table,也不要一律字段列表;默认紧凑表格,详情交给 `/view` / `/task`。
+- 表格类回归测试必须断言最终阅读形态,不只断言分隔符消失。
+- 遇到真实 IM 反馈“好不好看”时,要把审美/可扫读规则转成可测试阈值,不要只靠下一次截图。
+
+**相关链接**
+- ROUNDS Round 183
+- ROUNDS Round 184
+- ROUNDS Round 187
+- ROUNDS Round 188
+- ROUNDS Round 189
+- P-030
+- P-042
+
+### [P-044] 短格式验收 prompt 被协作链放大
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 184
+**最后更新**:2026-07-21(Round 194)
+**影响范围**:`src/aico/core/orchestrator.py`, `src/aico/core/lead_decision.py`,
+`src/aico/core/project_assignment.py`, `src/aico/adapter/claude_code.py`, Telegram E2E
+
+**症状**
+data-agent-v1 真实 Telegram E2E 中,人类只要求验证表格渲染和 active project 恢复,并明确“不要改文件”。
+但 `/ask lead ...` 仍自动触发 reviewer / challenger / implementer 多任务链:
+
+- 第 1 条格式验收 prompt 产出了可用表格,随后又触发 `Collaboration requested source: lead target: reviewer`。
+- reviewer/codex 超过 120 秒无输出,Telegram 出现 `Still running: no adapter output for 120s`。
+- 第 2 条请求撞上 Claude provider session 并发,直接回 `Session ID ... is already in use`。
+- 第 4 条虽然指定 `/ask lead`,日志显示任务先路由到 reviewer/codex,随后又派生 implementer/claude。
+- 输出还出现 `FindingsHigh:`、`Risks / approval need-`、`今日验收 3 条要点1.` 这类粘连。
+
+**根因**
+当前 `/ask <role>` 缺少“短验收 / exact-output / no-collab”模式。role prompt 和 provider 输出里的
+consult/reviewer/challenger 语义容易触发协作解析,导致本应一次性返回的格式样本被编排成多 agent 链。
+同时 provider session 并发没有老板可读的排队/新 session 策略,所以第二个请求会把底层 session 占用错误原样暴露到 Telegram。
+
+**解决方案 / 缓解措施**
+- Round 193 已完成:
+  - 新增 `/ask --exact <role> <task>`,并自动识别“不要请求协作/不要 @/只输出本条/do not delegate”等明确约束。
+  - exact-output task 写入 `aico.collaboration_mode=disabled`,跳过 lead decision / Goal Brief 自动扩展;
+    stream parser 即使看到 `@role` 也不会创建 child task 或 `collaboration_requested` audit。
+  - `/ask lead|default` 解析到实际 role 时,IM 先显示 `Routing: <alias> -> <role> (<agent>)`。
+  - 标题粘连由 Round 186-192 的 native output / renderer golden loop 覆盖。
+- Round 194 已完成:
+  - presentation 层识别 provider session busy 签名,即时 IM 返回 role busy、`/tasks`、等待或 `/interrupt`、重试路径。
+  - `/tasks`、`/audit`、`/inbox`、`/morning`、project 摘要与 aico-view 使用老板可读摘要,不暴露 session id。
+  - 原始错误仍保留在 TaskBus snapshot/audit 和显式 `/task`;未知 provider 错误不被分类器吞掉。
+  - 不自动新建 session,避免在老板不知情时切断岗位的 provider 会话连续性。
+
+**如何避免再次踩中**
+- 修真实 IM UX 时,不要只看目标功能是否生效;同时检查是否引入额外协作、额外任务和 provider session 争用。
+- E2E prompt 如果用于格式验收,应有明确的 no-collab 合同并用单测覆盖。
+- 任何底层 provider session 错误都必须翻译成老板可执行语言,原始错误只进 `/task` / logs。
+
+**相关链接**
+- ROUNDS Round 184
+- ROUNDS Round 193
+- ROUNDS Round 194
+- P-042
+
+### [P-045] Dream 候选经验不能被当成普通 shared memory 或 `/remember` 流程
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 185
+**最后更新**:2026-07-07
+**影响范围**:`src/aico/core/dream.py`, `src/aico/core/memory.py`, `tests/unit/test_pop_culture_memory_dream_showcase.py`
+
+**症状**
+在设计“芙莉莲式长记忆旅队”和“无限城作战会议”两个热点叙事化验证 case 时,发现两处产品表达不一致:
+
+- `/dream` 已经把近期 task 信号写成 `kind=experience` + `status=candidate`,但下一步仍提示
+  `/remember <accepted lesson>`,把用户带回事实记忆入口。
+- `MemoryGovernor` 没有区分 `kind=fact` 和 `kind=experience`,导致 promoted experience 可能同时出现在
+  `Shared memory` 和 `Reusable experience` 两个 prompt section。
+
+同时 case 设计还暴露了一个客观规律:shared memory retrieval 不是读心。如果任务 query 和记忆 claim 没有可解释关联,
+就不应该强行声称系统“记住并召回”。
+
+**根因**
+M1/M2 后 experience 已从普通 memory 演化出独立生命周期,但 `/dream` 文案和 Shared memory governor 仍沿用早期
+“memory atom 都是事实”的心智模型。热点宣传 case 容易为了生动而把产品能力讲过头,从而掩盖真实边界。
+
+**解决方案 / 缓解措施**
+- `MemoryGovernor.allows()` 明确只允许 `MemoryKind.FACT` 进入 Shared memory packet。
+- `dream_review_message()` 的 Next 改为:
+  - `/experience review`
+  - `/experience promote <candidate-id> as <role>`
+- 新增 `tests/unit/test_pop_culture_memory_dream_showcase.py`,用两个可传播 case 验证 shared memory、dream candidate、
+  experience promote、collaboration audit 的真实链路。
+- showcase 文档显式写明 objective-reality review:任务文本必须和记忆有可解释关联;candidate experience 不会自动注入。
+
+**如何避免再次踩中**
+- 凡是输出 `kind=experience` 的入口,下一步必须指向 `/experience` 生命周期,不要回到 `/remember`。
+- Shared memory 文案只承诺事实记忆,experience 单独放在 Experience layer。
+- 宣传 case 要先写“客观边界”,再写“宣传话术”;不要为了借热点 IP 把检索、推理和自动学习讲成魔法。
+
+**相关链接**
+- ROUNDS Round 185
+- ADR-0031
+- `docs/showcase/frieren-memory-dream-case.md`
+- `docs/showcase/infinity-castle-memory-dream-case.md`
+
+### [P-046] Telegram Web 不是稳定的自动化发送 harness
+
+**状态**:🟡 MITIGATED
+**首次踩中**:Round 186
+**最后更新**:2026-07-15(Round 191)
+**影响范围**:Telegram E2E, Computer Use, `src/aico/channel/telegram.py`, `tests/unit/test_telegram_channel.py`
+
+**症状**
+Round 186 重启本机 `aico-phase1` 并打开已登录的 Telegram Web 后,输入框里能看到待发送的 `/inbox`,
+但自动化点击发送按钮、Space、Return 都没有让消息进入聊天。Accessibility tree 显示焦点在发送按钮,
+输入框内容仍保留 `/inbox`,因此不能把这次操作记为真实 Telegram 新消息验证。
+
+**根因**
+Telegram Web 的 contenteditable 输入框、图标按钮和浏览器 accessibility bridge 对自动化不稳定。
+Computer Use 能读到聊天历史和控件树,但“点击按钮 == 提交消息”这个假设不可靠。继续依赖 UI 点击会带来
+两类风险:把未发送消息误判成已发送,或把旧聊天记录误判成新代码的实端证据。
+
+**解决方案 / 缓解措施**
+- 本轮用 mock Bot API payload golden 覆盖可编程出口:
+  - 宽表最终进入 `sendMessage` payload 时必须是字段列表;
+  - HTML list fallback 不能包含 unsupported `<ul>/<li>`。
+- 真实 Telegram Web 只能作为肉眼观察补充,不能作为自动发送 harness。
+- 后续若要 agent 自闭环真实 E2E,优先新增受控的 Telegram dogfood harness:
+  - 通过测试 Bot token + test chat id 明确配置;
+  - 不从日志或进程环境泄漏 token;
+  - 每次测试记录 message id、输入命令、最终 payload / 可见文本和截图或 transcript。
+- Round 191 确认 Chrome Telegram Web 可以做受控 E2E,但不能把页面中唯一的 Playwright `textbox`
+  当成消息输入框:它实际是左侧搜索框。消息 composer 是 `div[contenteditable=true]`,需在当前可见 DOM
+  中定位后发送,再以当日时间、runtime 入站日志和最新气泡三方确认。
+- 同轮使用真实 Bot API 发送确定性样例,Telegram Web DOM 确认最终表格为 `PRE > CODE`,
+  因此 Web 当前可作为“可编程发送 + 真实客户端视觉”验收表面,但仍要保留 payload golden 作为稳定 Gate。
+
+**如何避免再次踩中**
+- “实端验证”必须区分三层证据:本地 renderer golden、Bot API payload golden、真实客户端视觉样本。
+- 不要把旧 Telegram 聊天历史、未提交输入框内容或单纯按钮焦点变化当作新代码证据。
+- UI 自动化失败时及时转向可编程 harness,不要靠反复点按钮碰运气。
+
+**相关链接**
+- ROUNDS Round 186
+- P-043
+- P-044
+
+### [P-049] 紧凑表格的连续 code 行必须合并成单个 Telegram `<pre>`
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 191
+**最后更新**:2026-07-15
+**影响范围**:`src/aico/channel/telegram.py`,`tests/unit/test_telegram_channel.py`,Telegram Web 表格体感
+
+**症状**
+Core renderer 已经把 Markdown table 压缩成对齐的等宽文本,但每行各自带一个 `MessageTextStyle.CODE`
+span。Telegram Channel 按 span 逐个转 HTML,导致一张表变成多个 `<code>...</code>` 行。真实客户端无法把它
+当作同一个可复制、列对齐的表格块,看起来仍像拼接文本。
+
+**根因**
+Core 的 code span 是平台中立 IR,`CODE` 同时表示行内命令和整行等宽内容。Telegram Channel 之前只做一对一
+tag 映射,没有识别“连续整行 code spans”这个平台级块结构。
+
+**解决方案 / 缓解措施**
+- Telegram Channel 仅在至少两个 code span 都占据完整行、彼此只差一个换行时,合并为单个 `<pre>`。
+- 单个整行 code 和普通行内 code 仍映射为 `<code>`,避免把 `/view` 等命令误放大。
+- payload 测试断言每张表恰好一个 `<pre>`,不含 `<code>Option...`,且 `/view` 位于块外。
+- 真实 Telegram Web DOM 确认为一个 `PRE > CODE`,并显示客户端复制控件。
+
+**如何避免再次踩中**
+- 不要把“HTML 中有 code tag”当成“Telegram 中是表格块”;payload 必须区分 `<pre>` 和多个 `<code>`。
+- 平台中立 renderer 负责生成对齐内容,Channel 负责生成平台原生块,不为此向 core 引入 Telegram 专用模型。
+
+**相关链接**
+- ROUNDS Round 191
+- P-043
+- P-047
+
+### [P-047] native `<pre>` 包 Markdown 表格会绕过紧凑表格 renderer
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 189
+**最后更新**:2026-07-09
+**影响范围**:`src/aico/core/native_output.py`, `src/aico/channel/telegram.py`,
+`tests/unit/test_native_output.py`, `tests/unit/test_telegram_channel.py`
+
+**症状**
+Round 188 已经让普通 Markdown table 渲染为紧凑 Telegram 表格,但 Round 189 端到端 mock Bot API 检查发现:
+如果 agent 在 native Telegram HTML 模式下输出:
+
+```html
+<pre>| Option | Decision | Owner | Evidence |
+|---|---|---|---|
+| Start v2 | Reject | lead | needs another full benchmark cycle |</pre>
+```
+
+`telegram_html_message()` 会把整段当作合法 native HTML 直通,最终 `sendMessage` payload 中仍包含 raw
+`|---|---|---|---|`。这会绕过紧凑表格截断和 `/view` 懒加载提示。
+
+**根因**
+native HTML validator 只检查标签白名单和原始文本中的 Markdown table 结构。`<pre>` 是允许标签,
+而第一行实际变成 `<pre>| Option ...`,不再匹配“行首是 `|` 的 Markdown table”正则。
+第一次修复只让这类内容回退,但因为 `<pre>` fallback 会转成 fenced code block,
+`详情: /view 查看完整表格` 也会被当作 code block 的一部分,Telegram 中不可点击也不可突出。
+
+**解决方案 / 缓解措施**
+- `_contains_markdown_structure()` 改为先生成去除允许 HTML tag 的检测文本,再判断 Markdown table。
+- `_telegram_html_to_light_markdown()` 对 `<pre>` 内容分流:
+  - 普通代码 / 日志仍转 fenced code block;
+  - Markdown table 内容直接交还给 rich text renderer,生成紧凑等宽表格和独立的 `详情: /view 查看完整表格`。
+- 新增 native output 回归和 Telegram Channel payload golden:
+  - `telegram_html_message()` 拒绝 `<pre>` 包 Markdown table;
+  - `agent_output_message(..., preferred_format=TELEGRAM_HTML)` 会回退到紧凑表格;
+  - mock Bot API `sendMessage` payload 不含 raw `|---|`,且 `/view` 单独作为 code slash command。
+
+**如何避免再次踩中**
+- native format 不是可信终态;即使 tag 合法,也要检查里面是否藏了当前 Channel 不适合直通的结构。
+- `<pre>` 只适合真正的代码 / 日志 / 已压缩表格;如果内容仍是 Markdown table,必须回到 renderer 统一处理。
+- Bot API payload golden 要覆盖 native HTML fallback 路径,不能只测普通 Markdown 输入。
+
+**相关链接**
+- ROUNDS Round 189
+- P-031
+- P-043
+
+### [P-048] Dream candidate experience 不能只藏在 `/experience review`
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 190
+**最后更新**:2026-07-09
+**影响范围**:`src/aico/core/dream.py`, `src/aico/core/inbox.py`, `src/aico/core/morning.py`,
+`src/aico/core/experience_commands.py`, `tests/unit/test_pop_culture_memory_dream_showcase.py`
+
+**症状**
+Round 185 已经修正 `/dream` 输出,让它产生 `kind=experience,status=candidate` 的候选经验,
+并提示 `/experience review` / `/experience promote`。但人类进一步指出:如果老板或 lead 不知道系统 dream 出了哪些候选,
+就无法决定是否把它赋给 role agent。候选经验虽然存在于 memory store,却没有进入老板恢复入口,动线仍不省心。
+
+**根因**
+`/experience review` 是显式管理命令,不是 boss-absent 的主动恢复入口。之前的实现把“候选经验已生成”和“老板知道需要确认”
+混为一谈,导致 `/dream` 后的状态只有主动查询才可见。对 absence-first 产品来说,隐藏在后台的 candidate 不能算闭环。
+
+**解决方案 / 缓解措施**
+- `/inbox` 新增“经验候选”区,显示候选 id、claim、`/experience promote <id> as <role>` 和 `/experience archive <id>`。
+- `/morning` 新增 `Experience candidates` 区,并把 `/experience review` 放进 Next actions。
+- Orchestrator 在当前项目 `/inbox`、`/morning` 和自动 morning push 时,查询 memory store 中 `status=candidate` 的 experience。
+- 端到端测试覆盖:
+  - 同意路径:候选出现在 `/inbox` / `/morning`,promote 后变 active,后续注入 role prompt;
+  - 不同意路径:候选出现在 `/inbox` / `/morning`,archive 后从待审队列消失,后续不注入 role prompt。
+
+**如何避免再次踩中**
+- 凡是系统/lead 产生需要老板确认的对象,都必须进入 `/inbox` 或 `/morning`,不能只提供后台查询命令。
+- candidate 状态可以不可自动注入,但必须可发现、可确认、可消失。
+- 新增候选类生命周期时,测试至少覆盖 accept 和 reject/archive 两条路。
+
+**相关链接**
+- ROUNDS Round 190
+- ADR-0031
+
+### [P-050] 已闭合 Markdown 表格后的粘连正文不能算额外列
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 192
+**最后更新**:2026-07-17
+**影响范围**:`src/aico/core/message_rendering.py`,`tests/unit/test_message_rendering.py`,Telegram 表格体感
+
+**症状**
+真实 reviewer 按要求输出四列表格和 `详情命令: /view`,但流式拼接后的末行形如
+`| 宽表 | 受控 | lead | ... |详情命令: /view`。旧 parser 按所有 pipe 切分,将详情文案当成第 5 列,
+最终 Telegram 显示虚假的 `补充1` 和被截断的 `详情命…`。
+
+**根因**
+`_table_cells()` 不区分表头声明的列数和完整表格闭合 pipe 后的普通正文。
+之前为了兼容真实行列不齐表格,renderer 会扩展缺失表头为 `补充1/补充2`,因此粘连正文被合理但错误地纳入该兼容路径。
+
+**解决方案 / 缓解措施**
+- 收集 body row 时以表头列数定位闭合 pipe;其后若是可识别的 `详情: /view` 或 `详情命令: /view` 提示,
+  将其拆回表格外。
+- 其他后续 cell 按真正额外业务列处理,即使省略末尾 pipe 也继续保留 `补充N` 兼容行为。
+- 拆出的正文与自动 `详情: /view 查看完整表格` 等价时去重。
+- 用真实四列表格坏签名做 red-green 回归,断言无 `补充1`、无 `详情命…` 且只出现一次 `/view`。
+
+**如何避免再次踩中**
+- 表格修复不能只看最大 cell 数;必须同时考虑表头契约和表格闭合边界。
+- 不要为消除 `补充1` 全局丢弃额外 cell,否则会破坏 P-043 的 malformed table 兼容。
+- 每次真实 provider 输出暴露新坏签名,先保留原始形态写回归,再调整 renderer。
+
+**相关链接**
+- ROUNDS Round 192
+- P-043
+- P-049
+
+### [P-051] Telegram TLS 建连超时会让已完成的 agent 结果丢在回执阶段
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 192
+**最后更新**:2026-07-17
+**影响范围**:`src/aico/channel/telegram.py`,`tests/unit/test_telegram_channel.py`,真实 `/ask` 链路
+
+**症状**
+真实 `/ask reviewer` 中,Codex Adapter 已 accepted 并最终 return code 0,但 Telegram 发送 accepted 回执时
+`httpx.ConnectTimeout` 从 `_post()` 直接向上抛出,handler 提前失败,最终 agent 正文没有进入 Telegram。
+
+**根因**
+Channel 对 long polling 有外层失败恢复,但单次出站 `sendMessage/editMessageText/sendDocument` 没有连接阶段重试。
+TLS 握手抖动因此会中断整个 orchestrator handler,即使 provider 任务本身已经完成。
+
+**解决方案 / 缓解措施**
+- JSON 和 multipart 出站请求共用 `_request_with_connect_retry()`。
+- 仅捕获 `httpx.ConnectTimeout`,最多重试一次;第二次失败继续向上抛出并保留日志。
+- 不重试 read/write timeout 或 Telegram API 业务错误,避免请求已送达时产生重复消息。
+- MockTransport 回归先让第一次连接失败、第二次成功,断言最终 message id 和两次尝试。
+
+**如何避免再次踩中**
+- 对 IM 出站重试要按故障阶段分类,不能笼统捕获 `HTTPError`。
+- 可靠性修复必须同时评估“结果丢失”和“重复消息”两侧风险。
+- 真实 E2E 要检查 `handler finished`,只看到 adapter return code 0 不能算闭环。
+
+**相关链接**
+- ROUNDS Round 192
+- P-037
+- P-046
+
+### [P-052] 项目标题不能代替 attachment 数据隔离
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 197
+**最后更新**:2026-07-21
+**影响范围**:`src/aico/view/snapshot.py`,`src/aico/core/offline_delegation.py`, `/view <project>`
+
+**症状**
+旧 `/view` HTML 标题显示当前项目,但 snapshot builder 全量读取 SQLite task snapshots 和 audit JSONL。
+当同一 runtime 管理多个项目时,另一个项目的任务描述、失败原因或 audit detail 可能出现在当前项目附件里。
+
+**根因**
+`ViewSettings.project_ids` 只约束 memory loader;task/audit 没有 project filter。渲染层把 project id 当作
+展示参数,没有把它当作所有 truth source 的强制查询边界。
+
+**解决方案 / 缓解措施**
+- task record/snapshot 先用 `aico.project_id` 严格筛选。
+- audit 只接收当前项目 task id 对应事件;memory 再校验 scope project;offline delegation 增加跨 IM scope 的 project loader。
+- 统一索引只从上述 project-scoped 数据重建,再渲染 Boss Brief、Timeline、Trace 和 Memory。
+- 回归同时种入另一个项目的 task reason、audit detail 和 overnight goal,断言附件完全不含这些 canary。
+
+**如何避免再次踩中**
+- 多源 read model 的 scope 必须在聚合前执行,不能靠标题、路由或最终模板暗示隔离。
+- 新增 truth source 时,project isolation canary 必须和正常展示测试一起补。
+
+**相关链接**
+- ROUNDS Round 197
+- B-009
+- ADR-0036
+
+### [P-053] 隐私提示文案不能代替商业输出硬门禁
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 198
+**最后更新**:2026-07-21
+**影响范围**:`projects/sme-agent/src/sme_agent/commercialization/workbench.py`,`live_commerce_delivery.py`
+
+**症状**
+SME Agent workbench 会提示先脱敏,但带 `手机号` 的 CSV 仍可能展示并复制诊断;同一证据进入 governed delivery runner 时却会正确阻断。
+
+**根因**
+UI 把隐私要求当说明文案,没有复用交付层的 readiness/redaction 状态,导致浏览面和持久化交付面产生安全漂移。
+
+**解决方案 / 缓解措施**
+- 抽出无副作用 delivery preview,与 runner 共用 intake assessment、redaction scanner 和状态判定。
+- `blocked_redaction` 统一隐藏指标、finding、报告、复制动作和付费验收控件,同时显示具体风险字段和下一动作。
+- 用 `手机号` 回归同时断言报告为空、copy disabled、diagnosis artifact 不生成。
+
+**如何避免再次踩中**
+- 合规/隐私文案只负责解释,不能作为 gate 的证据。
+- 同一输入经过 preview、UI 和 runner 必须得到相同 delivery status;新产品面必须用 blocked canary 做契约测试。
+
+**相关链接**
+- ROUNDS Round 198
+- SME Agent P-005
+- ADR-0003
+
+### [P-054] Standing charter 是提议范围,不是 lead 的隐式执行授权
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 199
+**最后更新**:2026-07-21
+**影响范围**:`src/aico/core/standing_proposal.py`,项目配置,`/inbox`,`/morning`
+
+**症状**
+如果把“老板不在时 lead 要主动”直接实现为定时创建任务,岗位职责会被误当成执行授权。即使 TaskBus 仍能拦截部分风险,只读或未识别动作也会在老板没有看到目标、验收和停止条件时启动。
+
+**根因**
+把 initiative、authorization 和 execution 合并成一个状态转换,没有给老板留下可审核的中间事实。
+
+**解决方案 / 缓解措施**
+- standing charter 只能生成 `candidate`,不能生成 task。
+- candidate 持久化并进入 inbox/morning;只有唯一候选被 `/proposal accept` 后才创建正常项目任务。
+- accept 不授予新权限,继续经过 risk/approval/audit/interrupt;reject 只写决定和 cooldown。
+- charter 必须显式写验收证据与停止条件,不得从 Markdown 或 LLM 即兴推断。
+
+**如何避免再次踩中**
+- 新主动触发器必须复用 candidate → human decision → governed task 三段式。
+- 任何外部发布、付款、客户数据和法律动作都需要独立授权,不得写进 charter 后视为已批准。
+
+**相关链接**
+- ROUNDS Round 199
+- ADR-0037
+
+### [P-055] Non-blocking Channel start 不能用局部 finally 管 scheduler 生命周期
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 200
+**最后更新**:2026-07-21
+**影响范围**:`src/aico/app/phase1.py`,morning push,boss-absent local runtime
+
+**症状**
+`Phase1Runtime.start()` 先启动 morning scheduler,再 `await channel.start()`;Telegram/Feishu Channel 的
+`start()` 负责创建后台任务后即可返回。旧实现用同一方法的 `finally` stop scheduler,因此 runtime 看似成功启动,
+但定时早报实际上会立刻被取消。
+
+**根因**
+把“启动调用结束”误当成“runtime 生命周期结束”。对 non-blocking component,start/stop 生命周期必须由
+外层 runtime owner 配对,不能用 start 方法内部的 unconditional cleanup。
+
+**解决方案 / 缓解措施**
+- `Phase1Runtime.start()` 只在 channel start 抛错时回滚 scheduler。
+- `Phase1Runtime.stop()` 才停止 scheduler 和 channel;`run_phase1()` 负责持有进程直到 shutdown。
+- 新增 fake non-blocking Channel 回归,断言 start 返回后 scheduler 仍在运行,stop 后恰好清理;启动失败也会回滚。
+- 同轮加入 launchd service + heartbeat,把“进程活着”和“IM/provider 健康”分开诊断。
+
+**如何避免再次踩中**
+- 所有后台组件必须明确谁拥有 lifetime;non-blocking `start()` 不能用 finally 做正常 stop。
+- 定时能力验收至少包含 start returned → still alive → explicit stop 三阶段,不能只断言 start 被调用。
+- heartbeat 只证明本地进程存活,真实 Channel/provider 仍需独立 E2E 样本。
+
+**相关链接**
+- ROUNDS Round 200
+- ADR-0038
+- B-010
+
+### [P-056] Fresh process heartbeat 不能代表后台组件仍可工作
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 201
+**最后更新**:2026-07-21
+**影响范围**:`src/aico/app/runtime_health.py`,`runtime_heartbeat.py`,`telegram.py`,`morning_scheduler.py`,`aico-service doctor`
+
+**症状**
+Round 200 的 heartbeat task 可以每 30 秒持续写 fresh,但它与 Telegram polling task、默认 Adapter 和
+morning scheduler 没有因果关系。polling task 因未预期异常退出后,Python event loop 仍活着,launchd 不会重启,
+doctor 仍可能显示 healthy,形成老板缺席时最危险的静默失联。
+
+**根因**
+只建立了 process liveness,没有建立 owned background component 与 primary business path 的健康模型;
+同时把所有 plugin 视为同等重要会走向另一个错误:一个可选 Adapter 离线就宣告整家公司不可用。
+
+**解决方案 / 缓解措施**
+- heartbeat schema v2 每轮并发检查 Channel、default/optional Adapter 和 enabled scheduler,每个检查受 timeout 限制。
+- active Channel、default Adapter、enabled scheduler 标 required;其失败聚合 FAILED,optional Adapter 失败聚合 DEGRADED。
+- Telegram `health_check()` 同时验证 owned polling task;polling/scheduler task 异常退出后 stop 安全消费异常。
+- 插件 exception 只转成 status,不持久化 exception text;doctor 分开报告 stale、failed、degraded 和 legacy unknown。
+
+**如何避免再次踩中**
+- 每个长期后台 task 必须回答谁拥有、如何判断已死、谁消费异常、怎样进入 operator health。
+- liveness、readiness、synthetic dependency health 和真实 E2E 是四层证据,文档/doctor 不得混写。
+- required/optional 必须由业务主路径决定;不要用“任一失败全红”制造告警疲劳。
+- 外部网络失败不要直接触发 crash loop;自动恢复必须另有阈值、退避和证据。
+
+**相关链接**
+- ROUNDS Round 201
+- ADR-0039
+- B-010
+
+### [P-057] Service supervisor 必须启动 Channel 的真实入站入口
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 201
+**最后更新**:2026-07-21
+**影响范围**:`src/aico/app/service_cli.py`,`phase1.py`,`feishu_webhook.py`
+
+**症状**
+Round 200 的 LaunchAgent 固定运行 `.venv/bin/aico-phase1`。Telegram 的入站是该进程内 long polling,
+但 Feishu 的入站必须由 `aico-feishu-webhook` 暴露 FastAPI callback。配置 `AICO_CHANNEL=feishu` 时服务可以
+进程存活、甚至拿到 tenant token,却没有任何 webhook listener 接收消息。
+
+**根因**
+把“Channel plugin”误当成“所有 Channel 共享同一个进程 entrypoint”。核心协议统一不代表部署入口相同;
+同时 heartbeat lifecycle 只写在 Telegram CLI 的 `run_phase1`,Feishu webhook lifespan 没有复用。
+
+**解决方案 / 缓解措施**
+- `ServiceContext` 从 `.env` 只读取非敏感 Channel selector,Telegram 选择 `aico-phase1`,Feishu 选择 `aico-feishu-webhook`。
+- 提取共享 `phase1_runtime_lifespan`,统一 runtime start → heartbeat start → runtime stop → heartbeat stop。
+- plist golden 覆盖 Feishu executable,FastAPI lifespan 回归覆盖 heartbeat running/stopped;plist 仍不包含 secret。
+
+**如何避免再次踩中**
+- 每个 Channel 上线时必须分别验证 plugin contract、入站 transport entrypoint 和 supervisor command,三者缺一不可。
+- 多入口 runtime 的 lifecycle/health 必须共享一个 owner,不要复制两套 start/stop。
+- “进程已启动”必须与“入站 socket/polling 已存在”分别取证。
+
+**相关链接**
+- ROUNDS Round 201
+- ADR-0039
+- B-010
+
+### [P-058] 持久化 RUNNING 不代表重启后仍有执行所有权
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 202
+**最后更新**:2026-07-21
+**影响范围**:`src/aico/core/task_state.py`,`src/aico/core/task_bus.py`,SQLite task state,老板恢复视图
+
+**症状**
+LaunchAgent crash/restart 后,新 TaskBus 从 SQLite 原样载入旧 `RUNNING`。但旧进程持有的 Adapter subprocess、
+stdout stream 和 interrupt handle 都无法恢复,所以 `/tasks`、`/inbox`、`/morning` 会永久显示一个无人拥有的
+ghost running task。
+
+**根因**
+把“最后一次持久化的业务状态”误当成“当前进程仍拥有执行控制权”。状态可恢复不等于进程、流和外部副作用可恢复;
+自动重新 dispatch 还可能重复写文件、发消息、发布或付款。
+
+**解决方案 / 缓解措施**
+- 新 runtime 加载持久化 snapshot 后,先把所有旧 `RUNNING` 写回 `INTERRUPTED`,再暴露 read model。
+- reason 明确 runtime restarted、execution ownership lost,并要求 retry 前核对外部副作用。
+- 每个本轮对账任务记录一次 `TASK_INTERRUPTED`;状态写回后再次 restart 不重复处理。
+- `WAITING_APPROVAL` 保持 pending,终态保持不变;task/Adapter/risk/metadata/created time 均保留。
+
+**如何避免再次踩中**
+- 每个持久化“运行中”状态都必须说明 lease/owner 是否也可恢复;没有 owner 就不能继续显示 active。
+- 没有 idempotency key 和 side-effect contract 时禁止 startup auto replay。
+- restart 测试必须覆盖 running、waiting approval、terminal、第二次 restart 和老板 read model,不能只测 SQLite round-trip。
+- 当前 SQLite 明确单 runtime owner;支持多 runtime 前必须先有 lease/leader election,不能复用本对账逻辑硬撑。
+
+**相关链接**
+- ROUNDS Round 202
+- ADR-0040
+- Goal Brief `docs/superpowers/specs/2026-07-21-restart-task-reconciliation.md`
+- B-010
+
+### [P-059] 状态恢复与审计顺序双写会在 crash 中永久分裂
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 203
+**最后更新**:2026-07-21
+**影响范围**:`task_store.py`,`audit.py`,`task_state.py`,`task_bus.py`,SQLite schema,JSONL audit
+
+**症状**
+Round 202 先把 `RUNNING` snapshot 提交为 `INTERRUPTED`,再追加 `TASK_INTERRUPTED` JSONL。若进程或 sink 在两步
+之间失败,业务状态已收口,但恢复审计永久缺失;后续 startup 看不到 `RUNNING`,也就不知道还应补写事件。
+
+**根因**
+把两个独立 truth source 的顺序调用误当成一个恢复动作。交换顺序只会把问题变成“有 audit、状态仍 running”或
+重复 audit;普通 try/retry 也无法判断 append 是否已成功后才抛错。
+
+**解决方案 / 缓解措施**
+- SQLite schema v3 增加专用 recovery audit outbox,在同一 `BEGIN IMMEDIATE` transaction 写 snapshot 与完整事件。
+- TaskBus startup 加载所有 pending event,投递成功后才标 delivered;sink 失败保留 intent。
+- outbox 保存完整 `AuditEvent` 和稳定 event id,重试不重建 timestamp/trace/actor。
+- `InMemoryAuditLog` 与内置 `JsonlAuditSink` 按 event id 幂等,同 id 不同内容报错;JSONL 启动建索引,后续 O(1)。
+- `aico-state` 显示 `pending_recovery_audits`,reset 同时清理 outbox。
+
+**如何避免再次踩中**
+- 任何“状态改变 + 外部证据”都要逐点画出 crash window,不能只测 happy-path 顺序。
+- outbox 必须保存完整、不可变的 delivery payload;只存 task id 会让 retry 内容漂移。
+- ack 必须发生在 sink 返回成功后;失败路径测试要证明 intent 仍 pending。
+- 幂等只对稳定 id 有意义;碰撞必须 fail loud,不能覆盖或吞掉不同内容。
+- 本方案只保证当前 single-runtime + built-in JSONL 路径,不得宣传为分布式 exactly-once。
+
+**相关链接**
+- ROUNDS Round 203
+- ADR-0041
+- Goal Brief `docs/superpowers/specs/2026-07-21-recovery-audit-outbox.md`
+- P-058
+- B-010
+
+### [P-060] 文档声明 single runtime 不能阻止第二进程破坏 live state
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 204
+**最后更新**:2026-07-21
+**影响范围**:`runtime_owner.py`,`phase1.py`,`task_bus.py`,`service_cli.py`,Telegram/Feishu runtime lifecycle
+
+**症状**
+Round 202/203 只在 ADR 中声明 SQLite 是 single-runtime owner。若 runtime A 仍在执行任务,runtime B 构造 TaskBus
+时会立即把 A 的 `RUNNING` 当 orphan 改为 `INTERRUPTED`;随后还可能启动第二个 Telegram poller、Feishu webhook 或
+morning scheduler。
+
+**根因**
+把部署假设当成了执行契约,并让 destructive startup reconciliation 发生在 ownership 证明之前。普通 PID file
+又会在 crash 后 stale,不能作为可靠 owner 事实。
+
+**解决方案 / 缓解措施**
+- 同 canonical state DB 派生同一 `.owner.lock`,以 kernel `flock(LOCK_EX|LOCK_NB)` 持有完整 runtime lifetime。
+- `TaskBus.__init__` 只加载状态,正式 Phase1 runtime acquire 成功后才显式 recovery。
+- competing owner 在任何 SQLite mutation/scheduler/Channel start 前 fail closed,不等待、不 kill。
+- normal stop/start failure 显式 release;process kill 由 kernel 自动 release,metadata file 可保留但不代表 active。
+- shutdown 顺序改为 heartbeat → Channel/scheduler → owner,避免旧 heartbeat 在 lock 释放后覆盖新 owner。
+- doctor 同时验证 kernel owner active、owner PID 与 launchd PID一致;manual owner/launchd mismatch 为 FAIL。
+
+**如何避免再次踩中**
+- 任何 startup recovery 都必须先回答“谁有权宣布旧 owner 已死”,不能把 process construction 当 authority。
+- 文件存在、PID 文本、fresh heartbeat、launchctl loaded 都不是单独充分证据;本机 owner 以 kernel lock 为准。
+- duplicate-start 测试必须断言 live state 没变化且 Channel 未启动,不能只断言第二进程报错。
+- shutdown 要按 start 的严格逆序释放 shared evidence 与 ownership。
+- 本实现只覆盖 local single-host;多主机必须使用 lease+TTL+fencing token,不能复用 `flock` 宣称分布式安全。
+
+**相关链接**
+- ROUNDS Round 204
+- ADR-0042
+- Goal Brief `docs/superpowers/specs/2026-07-21-single-runtime-ownership.md`
+- P-058
+- P-059
+- B-010
+
+### [P-061] Generic health failure 不能直接驱动无人值守重启
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 205
+**最后更新**:2026-07-21
+**影响范围**:`runtime_self_healing.py`,`runtime_heartbeat.py`,`telegram.py`,`morning_scheduler.py`,`aico-service doctor`
+
+**症状**
+Round 201 的 component health 能发现 Telegram polling/scheduler task 已死,但同一个 `FAILED` 也可能只是
+Telegram API、网络或 provider 暂时不可达。如果按 required failure 直接退出或重启,外部抖动会变成 crash-loop;
+如果完全不动作,本地 task 死亡又会在老板缺席时永久失联。
+
+**根因**
+把 synthetic dependency health 和本进程直接拥有的 background-task liveness 混成一个控制信号。前者只能用于
+诊断,后者才具备明确 owner、可安全 restart 的生命周期边界;同时没有稳定期、上限和冷却的“自动恢复”本身也是故障源。
+
+**解决方案 / 缓解措施**
+- app runtime 单独列举 Telegram polling 与 enabled morning scheduler 两个 owned task,不扩展 generic plugin protocol。
+- heartbeat 在 health probe 前运行 bounded supervisor;task 死亡时原地 restart,不重启进程、不重放业务 Task。
+- 单次 restart 最长 5 秒,存活 60 秒才清零;连续 3 次未稳定后熔断 15 分钟,冷却后低频重试。
+- heartbeat v3 只写稳定组件名、healthy/recovering/open、attempts 和时间;doctor 将 recovering/open 映射为 WARN/FAIL。
+- generic Channel/Adapter health 即使 FAILED 也不会进入 supervisor,shutdown 后 restart 方法不会复活 task。
+
+**如何避免再次踩中**
+- 自动恢复前必须证明 failure source、resource owner 和 repair action 一一对应;generic status 不是控制信号。
+- 每个 background-task restart 必须同时有 timeout、稳定期、尝试上限和 cooldown。
+- 恢复成功不能按“create_task 返回”判断,必须跨过稳定窗口;恢复失败也不能用 tight retry 掩盖。
+- 业务 Task 与 runtime task 必须分开:恢复 polling/scheduler 不代表可安全 replay 外部副作用。
+- 熔断是可诊断失败,不是最终告警闭环;完全无人值守仍需要后续 second-channel/out-of-band notification。
+
+**相关链接**
+- ROUNDS Round 205
+- ADR-0043
+- Goal Brief `docs/superpowers/specs/2026-07-21-bounded-owned-task-self-healing.md`
+- P-056
+- B-010
+
+### [P-062] Heartbeat 直发 webhook 不是可靠的缺席告警
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 206
+**最后更新**:2026-07-21
+**影响范围**:`runtime_alerts.py`,`runtime_heartbeat.py`,`sqlite_state.py`,`phase1.py`,`aico-service doctor`
+
+**症状**
+owned-task circuit open 已可被 heartbeat 发现,但若每次 refresh 直接 POST,同一 incident 会每 30 秒制造告警风暴;
+进程在远端 accepted 后、本地 ack 前 crash 会重发且没有幂等 identity,而 open 未送达时 resolved 还可能先到。
+若仍通过 primary Telegram/Feishu 通知,Channel 本身失败时告警也一起失效。
+
+**根因**
+把“故障事实”“事件身份”“可靠交付”和“外部 endpoint”混成一个 callback。heartbeat snapshot 是周期状态,
+不是 edge-triggered incident log；HTTP success 也不是跨两个系统的 exactly-once transaction。
+
+**解决方案 / 缓解措施**
+- 只把 owned component 的 first `open` 和 active incident 后的 `healthy` 转成 immutable open/resolved event;
+  recovering 保持 incident,重复 snapshot 和 runtime rebuild 均不重复建单。
+- active incident 与 outbox event 在同一 SQLite transaction 写入,与 Task recovery audit outbox 保持独立 truth boundary。
+- sink 按 row order 投递,未到期/失败队首阻止后续越序;失败状态持久化 1/5/15 分钟封顶退避。
+- HTTP event 使用稳定 event id 和 `Idempotency-Key`;accept-before-ack 可安全重投同一 identity,receiver 负责幂等。
+- `RuntimeAlertSink` 隔离外部系统,generic HTTPS 实现不把 URL/token/异常内容写入 SQLite、heartbeat、doctor 或日志。
+- heartbeat v4 / doctor 显式区分 disabled、healthy、pending、failed;启用 webhook 必须有 state DB 和 heartbeat loop。
+
+**如何避免再次踩中**
+- periodic state 变告警前必须先定义 incident edge、dedupe key 和 resolved 条件。
+- 两系统交付默认只能 at-least-once;没有 receiver 幂等证明时不得宣传 exactly-once。
+- retry 必须持久化 backoff,且队首顺序优先于吞吐,避免 resolved 越过 open。
+- primary notification path 不能充当自己的唯一 failure notification path。
+- runtime alert 与 business Task audit 必须分库表/模型,不能污染 `/audit`、metrics 或 Task recovery。
+
+**相关链接**
+- ROUNDS Round 206
+- ADR-0044
+- Goal Brief `docs/superpowers/specs/2026-07-21-durable-out-of-band-runtime-alerts.md`
+- P-061
+- B-011
+
+### [P-096] Fresh dead-man pulse不能证明secondary alert出口仍能送达
+
+**状态**:🟢 RESOLVED(machine contract;external receiver sample pending)
+**首次踩中**:Round 240
+**最后更新**:2026-07-22
+**影响范围**:`runtime_liveness.py`,`runtime_heartbeat.py`,`dead_man_receiver_*`,B-011/B-012
+
+**症状**
+runtime、heartbeat和liveness publisher全部正常，required component failure也已形成durable alert event；但secondary alert sink
+持续失败时，旧dead-man receiver仍因每分钟收到pulse而续租。老板缺席时primary路径已坏、secondary告警发不出，独立receiver却保持绿色。
+
+**根因**
+dead-man pulse只表达process/network reachability，续租条件没有包含系统已承诺的absence notification path健康。尝试让失败sink
+自报失败会形成循环依赖；完全停发pulse又丢失最新boot/sequence和故障类型。
+
+**解决方案 / 缓解措施**
+- pulse v2只增加bounded `alert_delivery_status`，不携带incident、异常、endpoint、target或正文。
+- disabled/healthy pulse排序并续租；pending/failed pulse只排序，保持最后成功续租anchor不变。
+- TTL到期按最近信号生成`alert_delivery_unhealthy`或`pulse_expired`，healthy/disabled新pulse同reason resolved。
+- receiver/evidence/recovery schema统一v2；v1迁移补保守默认，exact verifier拒绝partial checkpoint、非法enum和reason drift。
+- pending pulse在ACK前冻结exact payload；接受状态变化最迟到其ACK后下一interval传播的有界延迟。
+
+**如何避免再次踩中**
+- 每条“老板缺席仍能被通知”的链路都要审计出口自身失败时由谁观察；发送者不能作为唯一observer。
+- heartbeat顺序正确不等于通知闭环正确；必须把upstream detection、secondary delivery、dead-man renewal分别建模。
+- liveness协议升级必须同步publisher、HTTP request、persistent store migration、evidence和offline recovery verifier，不能只改payload。
+- `alert_delivery_unhealthy`只证明receiver观察到本地报告并停止续租，不证明真实老板已读、endpoint身份或业务损失。
+
+**相关链接**
+- ROUNDS Round 240
+- ADR-0078
+- Goal Brief `docs/superpowers/specs/2026-07-22-alert-delivery-aware-dead-man-renewal.md`
+- P-095
+- B-011
+- B-012
+
+### [P-098] Aggregate quorum成功会吞掉已失效fallback，形成通知冗余false green
+
+**状态**:🟢 RESOLVED(event-driven route edge;continuous canary由P-099收口)
+**首次踩中**:Round 242
+**最后更新**:2026-07-22
+**影响范围**:`dead_man_receiver.py`,`dead_man_receiver_store.py`,evidence/recovery,B-012
+
+**症状**
+双route配置为1-of-2时，primary ACK、fallback失败仍会把main event标为delivered。旧SQLite只保存aggregate结果，老板收到outage
+但不知道备用通知通道已失效；若primary之后也失效，系统才第一次暴露冗余早已丢失。
+
+**根因**
+把“本次达到minimum ACK”错误扩张成“通知系统健康”。availability quorum、逐route健康和human read是三类事实；只保存第一类
+会让成功路径抹掉重要失败。仅加被动admin字段也不符合absence-first，因为老板不会持续查询observer。
+
+**解决方案 / 缓解措施**
+- schema v4在main event保存最后一次ACK bitmask/time，并以slot 1/2维护unknown/healthy/degraded状态，不保存provider/URL/token。
+- main settle/defer、route状态和新edge同一事务提交；first failure开stable degraded，degraded后的真实ACK开stable recovered。
+- route-health edge使用独立outbox并按any-route ACK结算，通过尚存route主动触达老板；失败有界退避、restart不丢。
+- meta-alert本身不反向更新route健康，避免用observer自己的通知递归证明自己；单route全断不制造不可送达的自我告警。
+- evidence/recovery v4验证ACK mask、route checkpoint、edge trigger和pending policy fence；v3历史保持unknown。
+
+**如何避免再次踩中**
+- 每个quorum都分别回答aggregate success、member health、最终人类触点三份证据，不用一个boolean覆盖三层。
+- 冗余降级必须主动通知且durable；只放在dashboard、log或readiness都不满足老板缺席。
+- meta-monitor必须标清观察来源，不能把自身送达当成原route恢复证据，避免递归false green。
+- event-driven route observation不等于continuous health。若需要“无事故时也持续证明fallback可用”，必须新增silent canary或
+  provider-native probe合同，并单独控制噪声、identity与重试。
+
+**相关链接**
+- ROUNDS Round 242
+- ADR-0080
+- Goal Brief `docs/superpowers/specs/2026-07-22-durable-notification-route-health-edges.md`
+- P-097
+- B-012
+
+### [P-099] 普通webhook canary会在“证明通知健康”时制造老板噪声或测试错链路
+
+**状态**:🟢 RESOLVED(machine contract;real bridge silence sample pending)
+**首次踩中**:Round 243
+**最后更新**:2026-07-22
+**影响范围**:`dead_man_receiver_*`,receiver deployment,evidence/recovery,B-012
+
+**症状**
+Round 242已有逐route健康边沿，但长期无outage时坏fallback仍可能保持旧healthy。直接定时POST普通outage会把探测展示给老板或触发
+incident自动化；改做HEAD、另一probe URL或另一credential虽然安静，却没有验证真正事故通知的POST/auth/bridge链路。
+
+**根因**
+把“endpoint可连接”“探测旁路可ACK”和“真实owner notification wire contract可用”混成同一事实，也没有在协议层定义silent处理、
+幂等identity、confirmation threshold和跨restart intent。
+
+**解决方案 / 缓解措施**
+- schema v5增加默认disabled的字面合同`silent-route-probe-v1`；只在双route且两个bridge均承诺ACK但不展示/不触发incident时启用。
+- probe复用真实URL、token、POST与`Idempotency-Key`，payload使用独立event type；intent先落盘，ACK歧义重放exact event。
+- 一个失败窗口只保留suspect/PENDING，连续达到2-10的持久阈值才degraded并复用既有edge；ACK清零并按需recovered。
+- 不catch up历史窗口；全断时edge durable保留。meta-alert不反向证明route恢复，probe不获得restart/repair/restore权限。
+- evidence/recovery v5验证probe policy/pending/ACK mask、route probe checkpoint、source-tagged edge与canonical v4迁移。
+
+**如何避免再次踩中**
+- continuous canary必须验证与生产事件相同的transport和credential；旁路健康不能冒充主链路健康。
+- silent不是发送者单方面的字段，而是downstream bridge必须dogfood证明的协议承诺；不能证明就保持disabled。
+- confirmation window必须显式显示suspect/PENDING，不能在阈值前false green，也不能一次抖动就刷老板。
+- local probe ACK仍不证明provider故障域独立、手机展示或human read；B-012只能由真实双provider样本继续收口。
+
+**相关链接**
+- ROUNDS Round 243
+- ADR-0081
+- Goal Brief `docs/superpowers/specs/2026-07-22-durable-silent-notification-route-probes.md`
+- P-098
+- B-012
+
+### [P-100] 只阻止FAIL的服务安装会把absence关键WARN吞成配置级false green
+
+**状态**:🟢 RESOLVED(explicit strict machine admission;external dogfood pending)
+**首次踩中**:Round 244
+**最后更新**:2026-07-22
+**影响范围**:`aico-service doctor/install`,`.env.example`,B-010至B-014
+
+**症状**
+`runtime alerts`、`runtime liveness`、`recovery backup`和`standing autonomy`默认关闭时只显示WARN，而install只拒绝FAIL。
+operator可以成功安装一个会自启动的进程，却没有任何第二告警、死信号、恢复演练或主动工作合同，并把“plist installed”误读为
+“老板可以离开”。
+
+**根因**
+把开发配置合法性和absence部署准入压在同一severity阈值上。WARN对可选开发能力是正确语义，但没有显式deployment profile时，
+它也会成为production gate的隐式放行。反过来把所有WARN升级FAIL又会破坏最小dogfood，并把外部基础设施强加给每个开发者。
+
+**解决方案 / 缓解措施**
+- 新增默认`optional`、owner显式选择的`strict` absence admission；optional继续WARN，strict成为install前FAIL门禁。
+- strict复用同一轮真实readiness结果，不另写looser production checker；要求alert、liveness、backup、standing均OK。
+- strict额外要求disposable recovery drill启用；retention因具有删除权限继续保持独立opt-in。
+- 失败只列固定合同名，非法mode不回显；launchctl runner保持零调用。
+- 成功文案固定声明external evidence未认证，不能把URL、path、配置preflight或unit test写成commercial readiness。
+
+**如何避免再次踩中**
+- 每个“安装成功”都要区分process deploy、machine absence contract、external E2E和human read四层事实。
+- 可选能力若会决定无人值守是否成立，应提供显式聚合admission，而不是期待operator人工理解一串WARN。
+- 聚合门禁必须复用production preflight结果，不能复制一套更松的shadow validation。
+- strict配置也只能关闭机器侧false green；真实receiver/provider/storage/owner样本仍要由BLOCKERS跟踪。
+
+**相关链接**
+- ROUNDS Round 244
+- ADR-0082
+- Goal Brief `docs/superpowers/specs/2026-07-22-strict-absence-install-admission.md`
+- B-010/B-011/B-012/B-013/B-014
+
+### [P-101] 只在install执行strict门禁会被LaunchAgent自动重启绕过
+
+**状态**:🟢 RESOLVED(runtime startup contract;external evidence pending)
+**首次踩中**:Round 245
+**最后更新**:2026-07-22
+**影响范围**:`Phase1Settings`,`aico-phase1`,`aico-feishu-webhook`,`aico-service`,B-010至B-014
+
+**症状**
+Round 244的strict门禁只存在于`aico-service install`。LaunchAgent后续异常重启直接运行runtime entrypoint，而
+`Phase1Settings(extra="ignore")`没有admission字段，dotenv中的strict被静默忽略。配置漂移关闭关键合同时，进程仍按optional语义启动。
+
+**根因**
+把部署前检查误当成持续运行policy，且没有沿真实entrypoint验证新配置字段是否被settings模型消费。另一个审计发现是Pydantic
+model-level ValidationError会携带raw input；若直接让生产入口打印，fail-closed反而可能把dotenv token写进LaunchAgent stderr。
+
+**解决方案 / 缓解措施**
+- service与runtime共享固定合同名/gap聚合；Phase1Settings显式建模`optional|strict`，不再extra-ignore。
+- strict缺enable项在settings构造时失败；完整配置在build runtime第一步复用standing/recovery production preflight。
+- preflight在Channel、state/audit和owner lock构造前运行，失败不接IM、不调用provider、不创建本地业务状态。
+- Telegram/Feishu entrypoint统一使用secret-safe settings loader，原始ValidationError不进入process stderr。
+- optional开发路径不变；runtime gate仍不冒充外部ACK、storage class或human read。
+
+**如何避免再次踩中**
+- 新deployment policy必须沿所有真实entrypoint、supervisor restart与灾后启动路径验证，不能只测installer。
+- BaseSettings使用`extra=ignore`时，每个新增env key都要有dotenv回归，证明不是“doctor认识、runtime忽略”。
+- fail-closed错误也要审计secret exposure；validation framework的默认repr不能直接进入长期日志。
+- startup gate要尽早、无网络、无业务副作用；外部freshness另建receipt合同，不能在构造期随意发探针。
+
+**相关链接**
+- ROUNDS Round 245
+- ADR-0083
+- Goal Brief `docs/superpowers/specs/2026-07-22-runtime-enforced-strict-absence-admission.md`
+- P-100
+- B-010/B-011/B-012/B-013/B-014
+
+### [P-102] 文档声明webhook分离但机器准入不做跨字段校验仍会false green
+
+**状态**:🟢 RESOLVED(machine isolation;external independence pending)
+**首次踩中**:Round 246
+**最后更新**:2026-07-22
+**影响范围**:`runtime alerts`,`runtime liveness`,`aico-service`,`Phase1Settings`,P-064,B-011/B-012
+
+**症状**
+文档和P-064早已说明incident alert与pulse strict endpoint不能共用，但service/runtime只分别验证两个URL都是HTTPS。把同一个URL、
+甚至同一个bearer填给两侧仍会通过strict admission；strict receiver随后会因schema/route不匹配拒绝其中一路。
+
+**根因**
+把单字段合法性误当成跨协议兼容性，并以文档纪律代替machine admission。两个publisher各自健康不等于它们拥有分离的endpoint和
+authority；跨字段invariant没有进入共享policy，install/runtime都无法阻止错误组合。
+
+**解决方案 / 缓解措施**
+- 共享pure validator要求两URL exact-distinct，双方bearer均存在时也exact-distinct；不回显任何原值。
+- service新增`runtime endpoint isolation`并纳入strict aggregate；冲突在launchctl前FAIL。
+- Phase1Settings复用同一helper，Telegram/Feishu每次启动都在Channel/state前FAIL。
+- 允许same origin/different strict path；不同origin、provider和网络独立继续是外部证据，不由字符串规则伪造。
+
+**如何避免再次踩中**
+- 当两个独立组件分别校验通过时，继续审计它们之间的identity、endpoint、credential和protocol不变量。
+- “文档写了不能共用”不是机器合同；高影响配置隔离必须有cross-field test与runtime/install双入口验证。
+- distinct URL只证明路由字符串不同，distinct token只证明配置值不同；不能扩张为第二故障域或human read。
+- validator错误只能返回固定policy原因，不能为了排障打印endpoint/token。
+
+**相关链接**
+- ROUNDS Round 246
+- ADR-0084
+- Goal Brief `docs/superpowers/specs/2026-07-22-runtime-webhook-authority-isolation.md`
+- P-064
+- B-011/B-012
+
+### [P-103] 磁盘新配置通过doctor不能证明运行进程已经加载
+
+**状态**:🟢 RESOLVED(metadata generation health;external recommission pending)
+**首次踩中**:Round 247
+**最后更新**:2026-07-22
+**影响范围**:`Phase1Settings`,`RuntimeHealthProbe`,heartbeat,runtime alerts
+
+**症状**
+运行中编辑`.env`后，doctor按新文件验证，但进程仍持有旧settings；磁盘OK会掩盖旧endpoint/grant/recovery binding仍在生效。
+
+**解决方案 / 缓解措施**
+- production loader只捕获文件stat代际，不读取/哈希内容；strict heartbeat每轮比较。
+- 漂移投影为required `configuration:dotenv-generation` FAILED，进入既有confirmed alert且不暴露path/metadata。
+- 不自动reload/restart，保留known-good进程并要求显式recommission/restart。
+
+**如何避免再次踩中**
+- 配置文件readiness、进程loaded config与external E2E是三份事实。
+- secret-safe drift可以先比较文件代际；不要为方便持久化secret/content hash。
+- drift告警不等于新配置已验收，不能自动切换业务authority。
+
+**相关链接**
+- ROUNDS Round 247
+- ADR-0085
+- Goal Brief `docs/superpowers/specs/2026-07-22-runtime-dotenv-generation-drift-health.md`
+- P-101/P-102
+
+### [P-104] 历史bundle结构合法不能证明当前外部路径仍健康
+
+**状态**:🟢 RESOLVED(machine acceptance contract;external signed sample pending)
+**首次踩中**:Round 248
+**最后更新**:2026-07-22
+**影响范围**:`dead_man_evidence_cli.py`,receiver commissioning,B-012
+
+**症状**
+一个数小时前或数月前导出的bundle只要schema、runtime、outage和delivery仍合法，就能反复通过离线verifier；生成时fresh的probe也可能
+在operator验收时已经过期，unknown/degraded route不会影响旧的基础结论。
+
+**解决方案 / 缓解措施**
+- 保留默认历史审计语义，增加显式正有限最大年龄并拒绝future-generated artifact。
+- strict probe按verification time重算，要求enabled、无pending且至少完成一次；不能只信bundle生成时的fresh布尔值。
+- strict route gate要求所有slot healthy；commissioning命令必须组合三项，不修改schema、不联网。
+
+**如何避免再次踩中**
+- artifact validity、artifact freshness和external current health是三种结论；CLI成功必须标明启用了哪些验收条件。
+- producer生成时计算的freshness不能替代consumer验收时钟；TTL必须在使用边界再次判断。
+- exact-byte hash不是来源签名，local route状态也不是provider ACK、human read或物理故障动作证明。
+
+**相关链接**
+- ROUNDS Round 248
+- ADR-0086
+- Goal Brief `docs/superpowers/specs/2026-07-22-bounded-current-dead-man-evidence-acceptance.md`
+- B-012
+
+### [P-105] 独立绿灯不能证明当前runtime配置与当前外部证据属于同一代
+
+**状态**:🟢 RESOLVED(expiring commissioning binding;external signed sample pending)
+**首次踩中**:Round 249
+**最后更新**:2026-07-22
+**影响范围**:strict admission,runtime health,reviewed config,dotenv generation,dead-man evidence
+
+**症状**
+reviewed config、loaded dotenv和strict dead-man bundle可分别通过，但没有共同identity/expiry。A配置生成的历史证据可能被B配置用于安装，
+已运行进程也可能在bundle/probe过期后继续显示全绿。
+
+**解决方案 / 缓解措施**
+- owner先固定最终`.env`中的checkout-external evidence/receipt路径，再生成owner-only immutable receipt，避免SHA写回形成循环。
+- receipt绑定safe runtime id、canonical reviewed config evidence SHA、dotenv stat代际fingerprint和dead-man exact-byte SHA。
+- expiry取bundle maximum age与completed probe TTL较早值；strict doctor/startup复核，heartbeat持续required health。
+- 不记录dotenv path/metadata/content/content hash；漂移只告警，不自动reload/restart/replay。
+
+**如何避免再次踩中**
+- 多份preflight OK只有在同一receipt内绑定generation、identity和expiry后，才能形成一个组合准入事实。
+- expected receipt SHA不能写回它所绑定的同一`.env`；否则创建后修改配置会让receipt立即自我失效。
+- local receipt/hash不是detached owner signature，更不是receiver origin、provider ACK、fault action或human read证明。
+- 持续有效性必须进入runtime health；只在install时验证会被长时间运行和supervisor restart绕过。
+
+**相关链接**
+- ROUNDS Round 249
+- ADR-0087
+- Goal Brief `docs/superpowers/specs/2026-07-22-expiring-runtime-commissioning-receipt.md`
+- P-103/P-104
+- B-010/B-012
+
+### [P-063] 进程内告警无法证明发送者自身仍存活
+
+**状态**:🟢 RESOLVED(machine contract;external deployment pending)
+**首次踩中**:Round 207
+**最后更新**:2026-07-21
+**影响范围**:`runtime_liveness.py`,`runtime_heartbeat.py`,`phase1.py`,`aico-service doctor`
+
+**症状**
+durable incident outbox 能覆盖“event loop 仍活着但 owned task 熔断”,却无法在 event loop 卡死、LaunchAgent
+持续启动失败或 Mac 断电时创建告警。若在 clean shutdown 自动发送 stopped/disarm,一次 stop 后未成功重启还会被
+错误静音。若把每个 heartbeat pulse 写进 durable outbox,则会制造无限历史和无意义重放。
+
+**根因**
+把 sender delivery health 当成 service availability,并让被监控对象决定何时解除监控。缺席监控必须在独立失效域
+根据“预期信号未按期到达”形成事实；intentional permanent stop 也只能由 receiver owner 明确声明。
+
+**解决方案 / 缓解措施**
+- AICO 只发送低频 ephemeral pulse:stable runtime id、fresh per-process boot id、sequence、interval 和 TTL。
+- failed send 在内存保留同一 pulse/`Idempotency-Key` 有界重试,成功后才推进 sequence；不写 SQLite/outbox。
+- receiver 必须先显式 arm,按 acceptance time + TTL 判 stale；首次超时 open,新有效 pulse 后 resolved。
+- arm 后从未收到首个 pulse 也会在 TTL 后 open；duplicate/out-of-order pulse 不延期。
+- 普通 stop/restart 不自动 disarm；永久卸载前由 owner 在 receiver 显式 disarm。Mac sleep/网络分区超过 TTL
+  默认就是 unavailable。
+- heartbeat v5 / doctor 只显示 publisher disabled/healthy/degraded/failed,不能作为外部 receiver 存活证明。
+
+**如何避免再次踩中**
+- “故障发送者主动报告自己已死”是逻辑悖论；整进程/整机故障必须有独立 observer。
+- periodic liveness 默认是覆盖型状态,不要当永久审计事件持久化；只保留 bounded retry identity。
+- 自动 disarm 必须 fail closed:除非 owner 在独立 receiver 明确永久停用,任何本机 stop 都继续等待 TTL。
+- receiver expiry 使用本地 acceptance time,避免 sender clock skew 决定 outage；sender timestamp 只用于保守拒绝旧 boot。
+- 本机单测只能验证协议和 state machine,不能替代独立部署后的 kill/launch-failure/network sample。
+
+**相关链接**
+- ROUNDS Round 207
+- ADR-0045
+- Goal Brief `docs/superpowers/specs/2026-07-21-external-runtime-dead-man-liveness.md`
+- P-062
+- B-012
+
+### [P-064] 不同 strict webhook 协议不能因共用 HTTPS 而复用 endpoint
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 208
+**最后更新**:2026-07-21
+**影响范围**:`phase1.py`,`service_cli.py`,`dead_man_receiver_app.py`,receiver deployment
+
+**症状**
+Round 207 把 liveness pulse 配置复用了 `AICO_RUNTIME_ALERT_WEBHOOK_URL`。两者虽都通过 HTTPS POST,但 alert
+endpoint 接收 `incident_opened/resolved`,pulse endpoint 接收 schema v1 liveness envelope；strict receiver 会正确
+以 422 拒绝另一协议。结果可能是 pulse 可达但 incident outbox 永远 pending,或反之。同期的 in-memory tracker
+即使 state machine 正确,receiver restart 后仍会忘记 armed monitor,不能作为可部署 dead-man service。
+
+**根因**
+把 transport similarity 当成 wire compatibility,又把 reference algorithm 当成 independent service。URL/token 的
+存在只能证明配置非空,不能证明 endpoint 接受 caller 的 schema、authority 和 retry contract。
+
+**解决方案 / 缓解措施**
+- AICO 增加专用 `AICO_RUNTIME_LIVENESS_WEBHOOK_URL` / bearer / timeout；incident alert transport 保持独立。
+- strict ASGI integration 证明 AICO publisher 可以进入 pulse route,同时证明 incident payload 会被该 route 拒绝。
+- standalone receiver 用专用 SQLite 持久化 arm/current/outage/outbox；restart immediate reconcile,admin 与 pulse
+  credential 分离,且启动时拒绝长度足够但仍是示例值的 placeholder token。
+- 部署文档明确两个 strict endpoint 不能共用 URL,并把第二故障域/TLS/真实 outage sample 留作外部证据。
+
+**如何避免再次踩中**
+- provider/receiver 替换必须验证 endpoint、wire schema、auth scope、idempotency 和 caller contract；同为 webhook
+  或存在 nonempty secret 不是兼容证据。
+- reference state machine 升级为运维能力前,必须补 persistence、restart reconciliation、delivery outbox、auth、
+  packaging 和 deployment boundary。
+- strict protocols 应 fail closed；不要为了掩盖错误复用而放宽 extra/event validation。
+
+**相关链接**
+- ROUNDS Round 208
+- ADR-0046
+- Goal Brief `docs/superpowers/specs/2026-07-21-deployable-dead-man-receiver.md`
+- B-012
+
+### [P-065] HTTP process 存活和核心 worker 正在推进不是同一个健康事实
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 209
+**最后更新**:2026-07-21
+**影响范围**:`dead_man_receiver_app.py`,`/healthz`,`/readyz`,receiver Compose healthcheck
+
+**症状**
+receiver 的 `/readyz` 只执行 SQLite ping。expiry/delivery worker即使连续异常或永久不再调度,HTTP server仍返回
+200；Compose healthcheck因此不会 restart。负责发现 AICO 静默失联的 observer会自己静默失效,形成二阶假健康。
+
+**根因**
+把 request-path liveness、storage readiness和 owned background-loop progress合成一个“服务能响应”事实；同时
+没有区分 worker内部失败与 downstream notification已进入持久 backoff的受控降级。
+
+**解决方案 / 缓解措施**
+- `/healthz` 只表达 process/event-loop可响应；`/readyz` 同时要求 SQLite ping和 worker progress。
+- startup 先完成 immediate coordinator pass；每次 pass用 monotonic clock记录 success/failure,不依赖 wall clock。
+- 允许两个连续内部失败；第三次或三个 sweep interval无成功进展时返回无细节 503。后续成功立即恢复。
+- notification rejection已被 coordinator持久化为 pending/backoff时仍算 pass成功,避免 receiver restart storm。
+- progress只保存在当前进程；restart后旧健康不继承,新进程必须重新建立证据。
+
+**如何避免再次踩中**
+- 每个 owned background loop都必须回答“外部 supervisor如何知道它还在推进”,不能只探测端口/DB。
+- liveness、readiness、dependency degradation和业务 E2E必须分层,不能用一个 HTTP 200代表全部。
+- progress elapsed time使用 monotonic clock；wall-clock校时不能延长健康窗口或制造假 stale。
+- public health endpoint只返回稳定状态,异常详情留在脱敏日志,不得泄露路径、identity、event或secret。
+
+**相关链接**
+- ROUNDS Round 209
+- ADR-0047
+- Goal Brief `docs/superpowers/specs/2026-07-21-dead-man-receiver-worker-readiness.md`
+- B-012
+
+### [P-066] 通知截图和直接查库都不是可移植、可机器复核的 outage 验收证据
+
+**状态**:🟢 RESOLVED(machine evidence contract;external exercise pending)
+**首次踩中**:Round 210
+**最后更新**:2026-07-21
+**影响范围**:dead-man receiver evidence endpoint、offline verifier、B-012 outage exercise
+
+**症状**
+receiver已经持久化open/resolved与delivery retry,但真实演练只能靠owner看下游通知截图或登录主机查询SQLite。
+截图不能严格验证event identity/order/retry,直查DB会暴露路径/内部schema并让验收脚本与存储实现耦合。反过来,
+只给JSON加一个hash又容易被误写成来源签名或独立部署证明。
+
+**根因**
+运行事实已有,但缺少稳定、bounded、authority-separated的evidence projection和离线invariant verifier；同时没有
+明确区分artifact完整性、receiver来源认证、物理故障动作与第二故障域部署四种证据。
+
+**解决方案 / 缓解措施**
+- admin-only endpoint按最近完整outage group导出versioned JSON；pulse/public authority无读取权限。
+- bundle只含safe runtime、optional monitor、open/resolved identity/time和local delivered/attempt/next-retry,
+  不含URL/token/path/exception/request/operator note。
+- 按outage数量截断,不把resolved与opened切开；disarm后immutable event仍可导出。
+- offline CLI严格验证schema、runtime、unique identity、chronology、open-before-resolved、delivery order、minimum
+  complete outages和all-delivered；不联网、不接credential、不改变receiver。
+- CLI输出exact artifact byte SHA-256供与已记录digest比对；文档明确它不是origin signature。
+
+**如何避免再次踩中**
+- 外部验收先拆证据层：机器事实、artifact完整性、来源/TLS、物理操作、最终业务效果分别证明,不能相互替代。
+- 可导出证据必须有strict schema、bounded response、authority boundary和offline verifier,不能只“提供一个JSON”。
+- hash只有在先前digest由可信通道记录时才能检测后续改动；没有签名key就不得宣称不可否认来源。
+- valid bundle只能收窄B-012,不能关闭B-012；独立host与真实kill/network sample仍需当前外部证据。
+
+**相关链接**
+- ROUNDS Round 210
+- ADR-0048
+- Goal Brief `docs/superpowers/specs/2026-07-21-dead-man-evidence-bundle.md`
+- B-012
+
+### [P-067] SQLite 持久化和直接复制主文件都不等于可恢复
+
+**状态**:🟢 RESOLVED(local recovery primitive;off-device drill pending)
+**首次踩中**:Round 211
+**最后更新**:2026-07-21
+**影响范围**:`AICO_STATE_DB_PATH`、WAL、`aico-state` backup/verify/restore、reset、B-013
+
+**症状**
+AICO 已把核心业务状态持久化到 SQLite，但 daily ops 的“数据备份与恢复”只有空注释。operator若直接复制
+`state.db`，可能遗漏 WAL 中已提交事务；若在 runtime active时 restore/reset，旧连接和sidecar仍可能继续写入，
+造成“文件替换成功但运行事实不可解释”。
+
+**根因**
+把“进程重启后能重新读状态”误当成“有备份、可校验、可恢复”。恢复还需要一致快照、artifact identity、
+schema/integrity gate、独占 mutation fence、安全回退点和真实 drill，这些都不是 SQLite 持久化自动提供的。
+
+**解决方案 / 缓解措施**
+- backup使用SQLite online backup API，live source也生成transaction-consistent standalone artifact；不复制raw DB/WAL。
+- artifact必须new path、`0600`、current schema、integrity ok，并输出exact-byte SHA-256。
+- verify用read-only immutable connection，不调用会bootstrap/migrate schema的业务DB helper。
+- restore先验证artifact/hash，再取得canonical runtime owner lock；active owner fail closed。
+- target存在时先生成verified pre-restore safety backup，再通过same-directory temp + fsync + atomic replace恢复；sidecar
+  仅在owner fence内清理。reset也复用同一fence。
+
+**如何避免再次踩中**
+- 对任何持久化truth source都分别回答：如何一致备份、如何只读校验、如何选择准确artifact、谁拥有restore权限、
+  如何回退、多久做一次真实drill。
+- WAL数据库禁止把raw `cp main.db`写进runbook；优先使用数据库原生online backup/export contract。
+- destructive maintenance必须复用runtime ownership边界，不能另造“服务大概停了”的检查。
+- 本机round trip只能证明local primitive；没有off-device artifact、加密/retention和disposable restore sample时，
+  不得写成disaster recovery complete。
+
+**相关链接**
+- ROUNDS Round 211
+- ADR-0049
+- Goal Brief `docs/superpowers/specs/2026-07-21-aico-state-backup-restore.md`
+- B-013
+
+### [P-068] 备份 integrity/哈希校验不等于生产恢复路径已演练
+
+**状态**:🟢 RESOLVED(local disposable drill;off-device exercise pending)
+**首次踩中**:Round 212
+**最后更新**:2026-07-21
+**影响范围**:`aico-state verify/drill/restore`、DR evidence、B-013
+
+**症状**
+Round 211能证明artifact字节、SQLite integrity、schema和table counts，但这些检查没有执行production restore的
+临时物化、owner lock、atomic replace和sidecar cleanup。把verify输出直接写成“恢复演练通过”，会让商用DR证据
+比实际验证范围更宽。
+
+**根因**
+混淆了三层事实：artifact可读、restore implementation可运行、off-device全资产业务恢复成功。前一层是后一层的
+必要条件，不是替代品。
+
+**解决方案 / 缓解措施**
+- `aico-state drill`先verify exact SHA，再在私有临时目录调用同一`restore_state_backup()`。
+- materialized DB重新read-only verify并比较schema/known-table counts；不是复制一套假的restore逻辑。
+- CLI全局`--db`在drill路径完全不打开/创建/lock，live runtime可以保持active。
+- success/failure都由`TemporaryDirectory`清除DB、lock和sidecar；optional report为`0600`、new-path、atomic
+  no-overwrite JSON，只包含bounded machine facts。
+- report明确只证明local artifact + restore code，不证明off-device origin、credentials、JSONL/config或IM E2E。
+
+**如何避免再次踩中**
+- 每个“备份已验证”claim要写清是verify、materialization drill还是business restore exercise。
+- recovery test必须调用production restore primitive，不能维护第二份测试专用实现。
+- drill默认使用disposable target且自动清理；live state只在owner明确恢复窗口中操作。
+- verifier/report都不能提升自身证据等级；独立故障域和业务可用性必须由对应范围的真实样本证明。
+
+**相关链接**
+- ROUNDS Round 212
+- ADR-0050
+- Goal Brief `docs/superpowers/specs/2026-07-21-aico-state-disposable-restore-drill.md`
+- B-013
+
+### [P-069] Standing charter、chat target 和只读文案都不等于 owner 预授权
+
+**状态**:🟢 RESOLVED(local hard-read-only contract;external owner sample pending)
+**首次踩中**:Round 213
+**最后更新**:2026-07-21
+**影响范围**:standing proposal、scheduled morning、TaskBus、Adapter sandbox、B-014
+
+**症状**
+为了让 boss-absent loop 真正前进，最短路径看似是让定时晨报自动 accept 当前 standing proposal。但项目 charter
+可能被工作 Agent 修改，chat target 只是结果目的地，prompt 中的 `read_only` 也不能阻止 broad-permission CLI 写盘、
+联网、续接旧 session 或发起协作。这样得到的是无人看守的执行，不是 owner 授权的自治。
+
+**根因**
+把 intent、routing、identity、authorization 和 enforcement 五层事实混成一个字段。缺席执行还需要 expiry、总次数、
+单次时长和 crash-consistent consumption；否则即使单次看似安全，也没有商业可接受的损失上限。
+
+**解决方案 / 缓解措施**
+- 独立 owner-only external grant 精确绑定 owner、target/thread、project/charter、expiry、max runs/duration。
+- runtime 启动时拒绝 repo 内文件、symlink、宽权限、占位符、未知 charter、晨报目标漂移和非 hard-safe Adapter。
+- 只有 scheduled morning 可消费；交互 read surfaces 不触发执行。
+- TaskBus 再次检查 read-only risk、无 collaboration、无 provider resume 和 Adapter-owned boundary。
+- Codex 预授权任务丢弃用户配置命令，固定 read-only/no-network/ephemeral command；预算先持久化再 dispatch。
+
+**如何避免再次踩中**
+- 对每个“自动执行”分别回答：谁授权、授权放在哪、如何防工作 Agent 自改、工具层如何强制、预算如何跨重启扣除。
+- prompt/role/charter 只能缩小意图，不能作为 sandbox 或 requester identity 的证据。
+- fail closed 后应保留 manual decision path，不能为了无人值守而静默放宽边界。
+- `0600` 仍不是密码学 owner signature；更强同用户威胁模型必须单独设计，不得在产品口径中省略。
+
+**相关链接**
+- ROUNDS Round 213
+- ADR-0051
+- Goal Brief `docs/superpowers/specs/2026-07-21-owner-bound-readonly-standing-autonomy.md`
+- B-014
+
+### [P-093] 持续验证备份字节不等于持续验证恢复路径
+
+**状态**:🟢 RESOLVED(durable scheduled disposable production drill)
+**首次踩中**:Round 237
+**最后更新**:2026-07-22
+**影响范围**:`RecoveryBackupScheduler`、`drill_recovery_set`、runtime health、retention、B-013
+
+**症状**
+Round 234-236已经自动capture、deep verify、custody和retention。所有SHA都可能长期绿色，但state/audit/memory production
+materializer若因代码回归或内部语义变化无法工作，只有operator手工运行drill时才会发现；无人值守期间恢复信心仍会腐化。
+
+**根因**
+把“artifact现在还能完整读取”误当成“事故时能实际materialize”。verify检查格式/完整性，drill还必须执行replace、sidecar、
+checkpoint和production restore helper；两者是不同证据。手工命令存在也不等于cadence受控。
+
+**解决方案 / 缓解措施**
+- 默认关闭的scheduled drill为每次到期先写durable intent，再对最新VERIFIED + custody VERIFIED artifact运行既有production drill。
+- drill只在private disposable workspace进行；可选workspace与checkout/output隔离，不触碰live state或自动restore。
+- success receipt绑定artifact/backup receipt/policy SHA和component evidence，保留post-restore缺项与business readiness=false。
+- 失败有界重试、crash同ID恢复；due/open/exhausted/stale进入health，失败目标受retention保护。
+
+**如何避免再次踩中**
+- 备份运营必须分别报告capture、verify、custody、materialization drill和live business recovery，不能用任一层覆盖其他层。
+- 自动drill只能获得non-destructive disposable权限；不能顺手扩成live restore或自动业务切换。
+- feature toggle与retention组合必须检查durable历史，不能因为当前drill关闭就遗忘旧失败intent并删除现场。
+- local drill不证明artifact来自off-device，也不覆盖checkout、credential、provider、receiver或代表性IM业务恢复。
+
+**相关链接**
+- ROUNDS Round 237
+- ADR-0075
+- Goal Brief `docs/superpowers/specs/2026-07-22-durable-scheduled-recovery-drill.md`
+- B-013
+
+### [P-092] 永不自动删除不等于长期无人值守更安全
+
+**状态**:🟢 RESOLVED(explicit bounded retention + durable prune reconciliation)
+**首次踩中**:Round 236
+**最后更新**:2026-07-22
+**影响范围**:`RecoveryBackupScheduler`、SQLite recovery state、runtime health、B-013
+
+**症状**
+Round 234/235为了避免误删，scheduler只capture和custody、永不清理。短期安全，但长期boss-absent会无界堆积daily artifact；目标盘
+耗尽后新恢复点无法生成，最终把“禁止删除”变成更高RPO和隐藏的运营依赖。
+
+**根因**
+把“没有设计安全删除合同”简化成“永远不给机器删除权限”，没有区分默认授权、候选资格、删前验真、单轮损失上限、崩溃恢复和
+可审计tombstone。直接依赖operator定期清盘又与human-absent目标冲突。
+
+**解决方案 / 缓解措施**
+- retention独立默认关闭；owner同时选择age、至少两个最新代际、check cadence与单轮最大删除数。
+- 候选必须是同一binding的VERIFIED + custody VERIFIED；SQLite先落PRUNING/policy SHA，随后再次deep verify。
+- artifact和sidecar按固定顺序删除并fsync；PRUNED保留receipt/artifact/policy SHA与时间，不删除审计事实。
+- restart按pair存在矩阵收敛；artifact-only或验真漂移保留现场并使health FAILED，关闭开关也不取消既有intent。
+
+**如何避免再次踩中**
+- “不做破坏性动作”必须同时回答资源是否会无界增长；若会，要设计窄授权和可恢复状态机，而不是把工作留给缺席的人。
+- retention不能扫描目录或按mtime猜候选；durable state、custody与策略证据缺一不可。
+- feature flag只控制新授权，不能撤销已开始的破坏性事务或让半删除状态恢复绿色。
+- 本地PRUNED tombstone不是storage provider lifecycle/WORM、off-device或商业DR证据。
+
+**相关链接**
+- ROUNDS Round 236
+- ADR-0074
+- Goal Brief `docs/superpowers/specs/2026-07-22-bounded-recovery-retention.md`
+- B-013
+
+### [P-091] 创建时deep verify不等于无人值守期间artifact仍受保管
+
+**状态**:🟢 RESOLVED(periodic custody attestation + destination continuity)
+**首次踩中**:Round 235
+**最后更新**:2026-07-22
+**影响范围**:`RecoveryBackupScheduler`、runtime health、`aico-state`、B-013
+
+**症状**
+Round 234在capture后立即deep verify并持久VERIFIED receipt，但后续若目标盘掉线、目录被替换、artifact/sidecar被删或篡改，
+heartbeat直到下一次capture仍只看到旧receipt和RPO age，可能错误保持OK。
+
+**根因**
+把point-in-time verification当成持续custody；没有独立回答“现在还能重新打开同一字节吗”“目标目录还是同一identity吗”“最近
+一次复验是什么时候”。
+
+**解决方案 / 缓解措施**
+- receipt绑定secret-free destination fingerprint；后续capture和health必须保持目录device/filesystem/inode identity连续。
+- 独立custody cadence在worker thread重新校验文件类型/权限、sidecar receipt SHA、artifact SHA与完整production verifier。
+- custody status/time/failure count持久化；FAILED、stale、missing、drift、unsafe permission和identity change进入required health FAILED。
+- heartbeat只做cheap stat/identity gate，避免每30秒hash大artifact；deep verify由scheduler独立节奏执行。
+
+**如何避免再次踩中**
+- 每个“verified backup”都要区分created-at verification与latest custody attestation；没有后者只能说明过去曾经可读。
+- 备份cadence和custody cadence必须独立：低频RPO不能成为长时间不检查artifact是否仍在的理由。
+- 目录指纹只证明本机连续性，不得写成volume UUID、云存储durability、off-device或encryption evidence。
+- custody发现问题只能fail health并保留现场；不得顺势自动restore/delete/rebind。
+
+**相关链接**
+- ROUNDS Round 235
+- ADR-0073
+- Goal Brief `docs/superpowers/specs/2026-07-22-continuous-recovery-artifact-custody.md`
+- B-013
+
+### [P-090] 有可用的手动备份命令不等于boss-absent期间RPO受控
+
+**状态**:🟢 RESOLVED(local scheduled capture + verify;external storage policy pending)
+**首次踩中**:Round 234
+**最后更新**:2026-07-22
+**影响范围**:`aico-recovery`、Phase1 scheduler/heartbeat、SQLite state、B-013
+
+**症状**
+core recovery set已经能capture、verify和drill，但所有入口都要求operator主动运行。长期无人值守时，命令本身全绿也不能说明
+最近恢复点有多新；普通cron还可能在artifact已发布而状态未提交后覆盖文件，或在外部mount缺失时悄悄写入本机目录。
+
+**根因**
+把“恢复primitive存在”误当成“备份运营闭环存在”，没有为scheduled intent、crash reconciliation、bounded retry、RPO age和
+runtime health建立同一durable contract。
+
+**解决方案 / 缓解措施**
+- 默认关闭的scheduler先写SQLite intent，再以稳定ID生成new-path set，capture后立即运行production verifier并写receipt。
+- artifact/sidecar四种存在组合逐一fail closed或复验收敛；open intent有界重试，exhausted/stale RPO进入required health failure。
+- output必须是已存在的absolute owner-only真实目录且位于checkout外；缺失mount不创建，doctor不声称off-device/encrypted。
+- restore保持独立owner动作；retention必须是独立显式owner授权。Round 236只在该开关下让scheduler处理已验真旧代际。
+
+**如何避免再次踩中**
+- 每个“已支持备份”声明都要同时回答：谁触发、失败如何重试、崩溃如何对账、最新verified age是多少、谁会收到失败信号。
+- 路径在checkout外只是一项本机安全条件，不是第二故障域、加密、WORM、retention或restore rehearsal证据。
+- capture自动化不得顺带获得restore/delete权限；恢复仍必须停机、owner fence、显式选择artifact和独立SHA。
+
+**相关链接**
+- ROUNDS Round 234
+- ADR-0072
+- Goal Brief `docs/superpowers/specs/2026-07-22-durable-scheduled-core-recovery-backup.md`
+- B-013
+
+### [P-094] 自治dispatch不盲重跑不等于老板一定收到终态
+
+**状态**:🟢 RESOLVED(durable exact-outcome outbox + required health)
+**首次踩中**:Round 238
+**最后更新**:2026-07-22
+**影响范围**:`MorningPushScheduler`、standing autonomy、SQLite state、runtime health、B-010/B-014
+
+**症状**
+scheduled autonomy已有intent和accepted evidence，能在崩溃后避免重复provider dispatch；但result/invalid/blocked通知仍是直接
+`send_message`。平台失败或ACK前崩溃后intent会保守SETTLED，老板只能等下一次`/morning`/`/inbox`才看到结果或
+`evidence_missing`。同时started提示在TaskBus submit前失败，会留下accepted proposal却根本没有开始provider任务。
+
+**根因**
+把“provider不能盲重跑”当成整个absence loop已经收口，遗漏了独立的terminal outcome transport状态；进度提示还错误地位于
+业务dispatch的关键路径。dispatch decision、provider/task evidence、结果投影、平台ACK和human read是五种事实。
+
+**解决方案 / 缓解措施**
+- 从authoritative proposal/task/result投影bounded outcome envelope，绑定run receipt/content SHA且不保存provider正文。
+- 发送前写独立outbox；同一notification按1/5/15/15分钟最多五次，重启立即恢复，wrong-target ACK拒绝落DELIVERED。
+- 重试只发送exact content，不调用provider、不消费grant；open进入DEGRADED，EXHAUSTED进入FAILED。
+- settled intent缺outbox时在新工作前补建；started提示普通发送异常只脱敏记录，不阻断TaskBus submit。
+- RUNNING/WAITING不冻结为terminal通知；TaskBus dispatch后的IM异常要interrupt本地RUNNING task，否则保持DEGRADED轮询。
+- `aico-state`只输出status/attempt/content SHA/source/outcome/ACK time，不显示target、正文或raw message id。
+
+**如何避免再次踩中**
+- 每个异步工作都要画清`intent -> dispatch evidence -> terminal evidence -> delivery ACK -> human read`，不能用其中一段代替全链。
+- “不重跑下游”必须同时提供“主动交付不确定终态”的路径，否则保守安全会变成静默失败。
+- progress hint不能成为business effect的前置依赖；只有安全授权/adapter ACK等真实门禁可以阻止dispatch。
+- at-least-once notification允许有界重复，但必须冻结exact content、稳定ID并把歧义暴露给operator。
+
+**相关链接**
+- ROUNDS Round 238
+- ADR-0076
+- Goal Brief `docs/superpowers/specs/2026-07-22-durable-autonomy-outcome-delivery.md`
+- B-010
+- B-014
+
+### [P-089] 晨报平台ACK不等于后置自治已被安全触发
+
+**状态**:🟢 RESOLVED(durable intent + accepted-evidence reconciliation)
+**首次踩中**:Round 233
+**最后更新**:2026-07-22
+**影响范围**:`MorningPushScheduler`、standing proposal/task、SQLite state、B-010/B-014
+
+**症状**
+Round 232把平台ACK先落DELIVERED再运行standing autonomy，避免自治失败重发晨报。但进程若在ACK后、自治调用前崩溃，
+DELIVERED记录不会再进入发送路径，自治永久漏掉；若重启时无条件重跑，又可能重复消费已被provider接受的任务。
+
+**根因**
+正确拆开transport和business事实后，没有为两者之间的后置动作建立独立durable intent；同时缺少“provider dispatch前必须先落哪份
+业务证据”的恢复判据。
+
+**解决方案 / 缓解措施**
+- 在任何晨报外发前创建稳定scheduled autonomy intent，独立记录状态、attempt、backoff和结算receipt。
+- standing coordinator在provider dispatch前持久accepted proposal/task并绑定intent；恢复时有该证据就结算，不再调用provider。
+- 没有accepted证据才允许最多五次重试；中断后标记notification可能重复，EXHAUSTED使health失败。
+- `aico-state`把delivery与autonomy分栏，只输出secret-free状态和identity hash。
+
+**如何避免再次踩中**
+- 所有“ACK后再做X”都要单独回答：X的intent何时落盘、dispatch证据何时落盘、重启如何判断可否重试。
+- 下游缺乏幂等事务时，不能用“函数已返回/可能已调用”猜测执行事实；只信可验证的durable evidence。
+- notification重复与provider重复是不同风险；前者可有界暴露，后者必须由dispatch前证据阻断。
+
+**相关链接**
+- ROUNDS Round 233
+- ADR-0071
+- Goal Brief `docs/superpowers/specs/2026-07-22-durable-scheduled-autonomy-intent.md`
+- B-010
+- B-014
+
+### [P-088] Scheduler task存活不等于scheduled message已送达
+
+**状态**:🟢 RESOLVED(durable exact-envelope outbox + bounded ambiguity)
+**首次踩中**:Round 232
+**最后更新**:2026-07-22
+**影响范围**:`MorningPushScheduler`、runtime health、SQLite state、standing autonomy、B-010/B-014
+
+**症状**
+原scheduler在`send_message`异常后只写日志并继续循环；后台task仍存活，所以heartbeat返回OK。进程也可能在平台已接受消息后、
+AICO记录前崩溃。这样boss-absent runtime会静默漏报，或在重启后无法说明是否可能重复。
+
+**根因**
+把process liveness、transport acknowledgement、human read和business result混成一个“晨报成功”；同时重试前没有冻结exact content，
+重新渲染会让同一逻辑投递随状态变化。
+
+**解决方案 / 缓解措施**
+- 发送前持久化稳定daily delivery id、exact content/content SHA和所含standing receipt SHA；重试只复用该envelope。
+- 1/5/15/15分钟最多五次；发送中崩溃或未确认尝试标记`duplicate_possible`，耗尽使scheduler health FAILED。
+- 平台ACK先落DELIVERED与raw message id SHA，再触发standing autonomy；自治失败不能让已确认晨报重发。
+- `aico-state`只展示secret-free delivery摘要；target、正文与raw message id不进入operator输出。
+
+**如何避免再次踩中**
+- 所有scheduled outbound都必须分别报告task liveness、pending/retry/exhausted和platform ACK，不能用绿色进程替代delivery。
+- 平台没有端到端幂等事务时只能声明bounded at-least-once；accept-before-ack窗口必须显式暴露，不能伪造exactly-once。
+- platform ACK不等于人类已读或消息长期可见；content/result fingerprint也不证明业务语义正确。
+- 需要重试的动态报告必须先冻结内容；同一logical id下重新渲染属于identity drift，应fail closed。
+
+**相关链接**
+- ROUNDS Round 232
+- ADR-0070
+- Goal Brief `docs/superpowers/specs/2026-07-22-durable-scheduled-morning-delivery.md`
+- B-010
+- B-014
+
+### [P-070] Grant 文件安全不等于 runtime autonomy binding 已就绪
+
+**状态**:🟢 RESOLVED(non-mutating deployment preflight)
+**首次踩中**:Round 214
+**最后更新**:2026-07-21
+**影响范围**:`aico-service doctor`、Phase 1 config、standing autonomy、B-014
+
+**症状**
+一个external、owner-only、strict JSON grant可通过旧doctor，但它可能指向另一个morning target、不存在的charter、
+未任命persona，或Codex Adapter根本没启用/已被wrapper替换。operator会在install前看到OK，runtime后台启动后才失败。
+
+**根因**
+readiness只检查credential/artifact形状，没有沿真实routing graph验证“grant -> scheduled target -> project -> charter
+-> appointment -> persona -> Adapter hard boundary”。文件合法是输入证据，不是可执行部署证据。
+
+**解决方案 / 缓解措施**
+- Phase 1提供non-mutating preflight，复用真实Adapter/persona/project/grant binding validator。
+- doctor只投影相关`.env`字段，相对config path按launchd repo WorkingDirectory解析。
+- empty、mismatch、unknown、missing、disabled、wrapper与parser failure全部fail closed。
+- preflight只构造内存control plane，不打开SQLite/JSONL/log/lock/heartbeat，不spawn CLI、不联网。
+- 所有失败统一安全文案，禁止回显owner/target/grant/path/command/raw parser input。
+
+**如何避免再次踩中**
+- readiness必须覆盖下一步真实启动使用的同一validation path；不能只对某个配置文件做lint。
+- doctor/preflight不得通过“试运行完整服务”获得证据，诊断本身应无状态、无网络、可重复。
+- 每个OK claim写清证明层级：artifact、binding、runtime health、provider E2E、external receipt不能互相替代。
+- 配置规则若影响authorization或sandbox，优先复用production implementation，不维护looser shadow policy。
+
+**相关链接**
+- ROUNDS Round 214
+- ADR-0052
+- Goal Brief `docs/superpowers/specs/2026-07-21-standing-autonomy-deployment-preflight.md`
+- B-014
+
+### [P-071] 复用执行runner时不能连同另一种业务意图的grader一起复用
+
+**状态**:🟢 RESOLVED(intent-specific preauthorized runner + derived receipts)
+**首次踩中**:Round 215
+**最后更新**:2026-07-21
+**影响范围**:standing autonomy、offline delegation、TaskBus terminal state、inbox/morning evidence
+
+**症状**
+Round 213的preauthorized standing task复用了`_run_delegated_task`。该runner在普通TaskBus stream结束后会执行
+`/overnight`专属handoff completeness检查；一个正常的`inspection complete`因此先DONE、随后又被标成FAILED。
+原测试只断言Adapter收到task和timeout可interrupt，没有断言成功终态，缺陷直到receipt E2E才暴露。
+
+**根因**
+把“提交/流式收集”的通用机制和“overnight输出必须包含handoff结构”的业务grader封装在同一runner中。调用方想复用
+前者，却无意继承后者。没有结果receipt时，这类终态覆盖又很难在老板视图被识别。
+
+**解决方案 / 缓解措施**
+- preauthorized runner直接调用普通`_run_task`并保留自己的wall-clock timeout/interrupt，不经过overnight grader。
+- 新增derived receipt，用proposal/task/grant metadata和authoritative snapshot投影done/failed/interrupted等状态。
+- accepted但无task或metadata不一致显示`evidence_missing`，不自动retry/refund。
+- scheduled success/timeout都在第二次morning tick验证receipt且Adapter不重复接活。
+
+**如何避免再次踩中**
+- 复用runner前拆分mechanism与intent-specific policy：streaming、timeout可复用，handoff grading不可跨意图复用。
+- E2E不能只断言“任务已派发”；必须断言最终TaskStatus和下一次恢复视图。
+- 任何终态后处理都要有测试证明不会把已完成状态改成另一业务合同的失败。
+- 老板缺席链路必须显式投影accepted-without-evidence crash window，不能依赖人工跨表猜测。
+
+**相关链接**
+- ROUNDS Round 215
+- ADR-0053
+- Goal Brief `docs/superpowers/specs/2026-07-21-standing-autonomy-execution-receipts.md`
+- B-014
+
+### [P-072] Terminal usage receipt 不能冒充当前调用的硬 token / cost 上限
+
+**状态**:🟢 RESOLVED(post-run cumulative circuit breaker;provider-native hard cap pending)
+**首次踩中**:Round 216
+**最后更新**:2026-07-21
+**影响范围**:Codex Adapter、TaskBus audit、standing grant、commercial cost boundary、B-014
+
+**症状**
+standing grant已有run次数和wall-clock timeout，直觉上再加一个`max_tokens`字段就像获得了商用成本上限。但Codex
+machine-readable usage只在terminal `turn.completed`出现；当前调用的token已经消耗，且事件不提供可证明的美元账单。
+项目原有`TASK_USAGE_RECORDED`也只有fixture/解析器，没有Adapter真正写入。
+
+**根因**
+混淆了pre-run enforcement、in-flight telemetry和post-run accounting。完成后的实际usage能约束下一次授权，不能倒流
+阻止本次越界；cached/reasoning字段还是output的细分，不能随意重复相加或套公开价表。
+
+**解决方案 / 缓解措施**
+- preauthorized Codex使用`--json`，只解析terminal usage并让TaskBus写结构化audit。
+- accepted proposal持久化usage；grant用`token_stop_threshold`在下一次dispatch前按同grant累计实测量熔断。
+- 任何已消费run缺usage都fail closed，receipt显示`evidence_missing`，不按0继续。
+- 明确称post-run cumulative circuit breaker；不声称per-run hard cap，不自行填`cost_usd`。
+
+**如何避免再次踩中**
+- 每个预算字段都回答：数据在调用前、调用中还是调用后可得；谁真正执行中断。
+- provider-native limit不存在时，字段名、UI和ADR必须写清overshoot窗口。
+- usage schema漂移或崩溃导致缺证时保守停授，不能用估算值修补authorization truth。
+- 美元成本必须绑定model、auth/billing tier和provider bill evidence；token receipt只是用量事实。
+
+**相关链接**
+- ROUNDS Round 216
+- ADR-0054
+- Goal Brief `docs/superpowers/specs/2026-07-21-post-run-provider-usage-circuit-breaker.md`
+- B-014
+
+### [P-073] Transport DONE 不能冒充 standing charter 结果通过
+
+**状态**:🟢 RESOLVED(structured result contract + local source verification)
+**首次踩中**:Round 217
+**最后更新**:2026-07-21
+**影响范围**:scheduled standing autonomy、proposal receipt、老板早报、无人继续执行
+
+**症状**
+TaskBus显示DONE且usage存在时，老板视图会把任务看成成功；但provider可能只返回空泛总结、blocked结果、自相矛盾的
+complete，或引用不存在的仓库证据。若下一次调度只看transport与预算，它仍会继续消耗无人授权。
+
+**根因**
+混淆了transport completion、result contract acceptance与业务真值。JSON形状、charter覆盖、本地文件位置和语义正确性
+是不同证据层；前两层缺失不应继续，后一层也不能由“路径存在”伪造。
+
+**解决方案 / 缓解措施**
+- Codex固定使用versioned output schema；prompt将charter条目编号为`A*`/`S*`。
+- 本地验证精确覆盖、状态一致性、repo-relative path边界和file/line存在，形成complete/blocked/invalid receipt。
+- raw JSON不进老板IM；inbox/morning分开展示task status与outcome coverage。
+- prior result missing、invalid或blocked全部停授，不自动retry/refund。
+
+**如何避免再次踩中**
+- 所有无人链路都必须分别回答“进程结束了吗”“结果合同通过了吗”“业务事实是真的吗”。
+- deterministic verifier只能声明它实际验证的shape/coverage/location，不扩大成语义或时效性证明。
+- 结果不健康时先恢复/人工核对，不能让scheduled loop用下一次provider调用替代验收。
+- schema enforcement与本地validation必须同时存在；任一层漂移都fail closed。
+
+**相关链接**
+- ROUNDS Round 217
+- ADR-0055
+- Goal Brief `docs/superpowers/specs/2026-07-21-standing-result-contract.md`
+- B-014
+
+### [P-074] JSON Schema 不能单独充当无人结果的资源预算
+
+**状态**:🟢 RESOLVED(fixed result envelope across config/adapter/capture/validator)
+**首次踩中**:Round 218
+**最后更新**:2026-07-22
+**影响范围**:standing charter、Codex Adapter、Orchestrator capture、result receipt、runtime memory/state
+
+**症状**
+standing result已经要求JSON Schema，但原schema没有`maxLength/maxItems`，Orchestrator也会把所有provider正文加入
+`captured`。超长summary、海量source或忽略schema的final message可能在无人运行时放大内存，并把错误恢复变成大正文。
+
+**根因**
+把“结构合法”误当成“资源有界”。字段schema、总序列化长度、Adapter返回值、编排capture和durable receipt属于不同
+边界；只限制其中一层无法对schema drift、测试Adapter或恶意输出fail closed。
+
+**解决方案 / 缓解措施**
+- 固定32K total result、criteria/stop/source/list/text/path上限，并同步到schema和Pydantic。
+- charter配置入口拒绝超过结果合同的criteria/stop/text，避免生成不可满足任务。
+- Codex Adapter与Orchestrator最多保留上限+1，validator将其稳定分类为`result_too_large`。
+- 重复key/字段越界与语法错误分开分类；只持久化bounded receipt，不保存raw正文。
+
+**如何避免再次踩中**
+- 每个外部/AI payload都分别检查shape、field cardinality、total bytes/chars、stream capture与durable state。
+- schema enforcement不能替代consumer-side limit；provider遵守只是第一层。
+- 超限必须显式invalid并停授，不能静默截断后继续当业务结果。
+- 本地接收上限不是provider token/cost cap，产品口径必须保留时间边界。
+
+**相关链接**
+- ROUNDS Round 218
+- ADR-0056
+- Goal Brief `docs/superpowers/specs/2026-07-22-bounded-standing-result-envelope.md`
+- B-014
+
+### [P-075] 完成时 file/line 存在不能证明老板接手时证据仍然有效
+
+**状态**:🟢 RESOLVED(bounded source fingerprint + handoff revalidation)
+**首次踩中**:Round 219
+**最后更新**:2026-07-22
+**影响范围**:standing result、SQLite restart、老板早报、下一次scheduled autonomy
+
+**症状**
+standing result在完成时已经验证repository-relative file/line存在，但文件之后可能被修改或删除。若老板面和下一次
+调度继续沿用旧的`outcome=complete`，系统会把一个可变路径误当成仍然成立的证据。
+
+**根因**
+混淆了point-in-time location validation与handoff-time evidence integrity。只保存path/line无法判断内容是否变化；
+反过来，无界重hash全部历史和任意大小文件又会让完整性检查成为新的IO风险。
+
+**解决方案 / 缓解措施**
+- complete receipt保存最多16个source的canonical path、line、size和full-file SHA-256，不保存正文。
+- 单文件最多256KiB；同文件多行只hash一次。下一次dispatch只复核最近成功结果，老板面只复核最近5份。
+- 内容变化投影`drifted`，文件/root/legacy manifest缺失投影`missing`；两者都停止后续scheduled dispatch。
+- path/hash只留在owner-local SQLite，不进入老板IM；owner核对后通过新的人工运行生成新receipt，不自动重跑。
+
+**如何避免再次踩中**
+- 所有跨时间使用的AI证据都要回答“当时存在”和“现在仍是同一份”是否分别有证据。
+- revalidation必须同时有历史窗口、文件数量和单文件大小上限，不能用安全名义引入无界IO。
+- hash只证明字节漂移，不是来源签名、Git attestation或业务语义真值。
+- drift后不能让下一次provider调用替代owner判断；先检查变更，再决定是否重新验收。
+
+**相关链接**
+- ROUNDS Round 219
+- ADR-0057
+- Goal Brief `docs/superpowers/specs/2026-07-22-standing-evidence-fingerprint-drift.md`
+- B-014
+
+### [P-076] Pending approval 不是可以永久保存的能力票据
+
+**状态**:🟢 RESOLVED(frozen deadline + transactional expiry)
+**首次踩中**:Round 220
+**最后更新**:2026-07-22
+**影响范围**:风险审批、SQLite restart、老板inbox/morning、audit recovery
+
+**症状**
+写文件、shell和destructive任务虽然会停在`waiting_approval`，但原实现没有deadline。老板数天后批准旧task时，
+repository、外部条件和意图上下文可能已经变化，系统仍会直接dispatch。若只在内存加timer，restart又会重置边界。
+
+**根因**
+把“等待人工决定”误当成“永久授权尚未消费”。approval本质是针对一份具体上下文的短期能力票据；其deadline、
+terminal task状态和audit intent还必须在同一crash-consistent边界内变化。
+
+**解决方案 / 缓解措施**
+- 新approval创建时冻结aware `expires_at`，默认24小时，只允许owner配置5分钟到7天。
+- startup、老板视图和approval action前lazy sweep；精确到期即`expired/rejected`且不dispatch。
+- SQLite在一个事务里更新approval/task并写`approval_expired` outbox；sink失败保留pending重投。
+- legacy无deadline记录按当前bounded policy推导，naive timestamp fail closed；配置变化不延长新格式旧票据。
+
+**如何避免再次踩中**
+- 所有可延后消费的authorization都要区分创建时间、冻结deadline和消费时间。
+- deadline必须随票据持久化，不能在restart时按新配置重新生成。
+- time-based状态若同时影响业务状态和audit，必须走事务/outbox，不能三次独立写。
+- expiry只能要求重新确认，不得自动批准、重提或复用旧副作用上下文。
+
+**相关链接**
+- ROUNDS Round 220
+- ADR-0058
+- Goal Brief `docs/superpowers/specs/2026-07-22-bounded-approval-lease.md`
+- B-010
+
+### [P-077] Requester 自审批只有在 IM requester 先被认证时才安全
+
+**状态**:🟢 RESOLVED(owner sender + trusted target ingress gate)
+**首次踩中**:Round 221
+**最后更新**:2026-07-22
+**影响范围**:Telegram/Feishu ingress、普通任务、状态命令、风险审批、scheduled morning
+
+**症状**
+`RequesterOrListedApproverPolicy`允许task requester处理自己触发的approval，这符合单owner体验；但Phase 1此前把任何
+Bot来信都直接交给Orchestrator。陌生sender因此可以读取状态、消耗provider，甚至提交风险任务后以同一sender批准。
+只加sender allowlist后，合法owner在公共群发送`/inbox`仍会让AICO把公司状态回复到该群。
+
+**根因**
+把IM平台传来的`sender_id`当成已经授权的老板身份，却没有在业务入口建立显式authentication/authorization边界；
+同时只考虑“谁发的”，没有考虑“结果将回到哪里”。approval policy不能替代控制面ingress policy。
+
+**解决方案 / 缓解措施**
+- 正式Phase 1在command解析前要求configured channel、owner sender和trusted target同时精确匹配；空配置deny all。
+- 未授权消息不回复、不创建task、不读写业务audit/memory、不调用Adapter；陌生`/approve`不能改变既有approval。
+- reviewer必须是owner，morning target必须trusted；identity list/cardinality/长度/placeholder均有界。
+- 默认拒绝日志脱敏并按2的幂限流；显式foreground discovery仍deny业务，doctor禁止安装。
+- Channel transport不得在guard之前记录raw sender；Telegram入口只保留update/raw ref/字符数。
+
+**如何避免再次踩中**
+- requester/actor字段是业务归属，不等于入口认证；所有外部Channel都必须在解析和副作用前统一授权。
+- sender和reply target要同时绑定，避免合法owner把敏感结果带到错误会话。
+- bootstrap不能靠永久开放命令；discovery必须显式、短时、local-only并被production preflight拒绝。
+- IM sender ID依赖平台账号安全，不是密码学owner signature；账号接管必须在平台侧撤销。
+
+**相关链接**
+- ROUNDS Round 221
+- ADR-0059
+- Goal Brief `docs/superpowers/specs/2026-07-22-owner-bound-im-ingress.md`
+- B-010
+
+### [P-078] 有deadline不等于系统时间回拨时授权仍然有界
+
+**状态**:🟢 RESOLVED(persisted high-water + monotonic rollback fence)
+**首次踩中**:Round 222
+**最后更新**:2026-07-22
+**影响范围**:approval lease、standing autonomy、SQLite restart、scheduled morning
+
+**症状**
+Approval和standing grant都有aware expiry，但若系统wall clock向后调整，`now < expires_at`会更久成立。只检查
+approval `created_at`无法保护standing grant，也无法发现创建后已经经过、但wall没有体现的进程内时间。
+
+**根因**
+把timezone-aware timestamp误当成monotonic/trusted time。aware只消除时区歧义，不保证时间不会倒退；单进程timer
+又不能跨restart保存，联网NTP则会把授权安全边界耦合到外部服务。
+
+**解决方案 / 缓解措施**
+- SQLite保存单行authorization high-water；所有approval/preauthorization敏感入口先推进并检查该锚点。
+- 同进程把monotonic elapsed叠加到最近安全wall baseline，覆盖长时间空闲后的回拨；重启后继续使用持久锚点。
+- 允许5秒校时容差；超过后废止pending approval并停standing/new risk，high-water不回退，追平后只接受新授权。
+- 复用approval事务/outbox留下稳定审计，不自动改系统时间、重提task或重新消费grant。
+
+**如何避免再次踩中**
+- 任何expiry/budget窗口都要分别回答wall clock是否可回拨、进程restart后时间锚点是否保留。
+- timezone-aware、NTP enabled和monotonic分别解决不同问题，不能互相冒充。
+- 时间异常时优先废止旧能力并要求新上下文，不要通过扩大TTL或降低high-water恢复执行。
+- 本地锚点不是TPM、签名或外部可信时间；恶意主机和owner-fenced restore/reset仍是独立安全边界。
+
+**相关链接**
+- ROUNDS Round 222
+- ADR-0060
+- Goal Brief `docs/superpowers/specs/2026-07-22-authorization-clock-rollback-fence.md`
+- B-010 / B-014
+
+### [P-079] 追加写JSONL不等于审计历史防篡改
+
+**状态**:🟢 RESOLVED(hash chain + sealed checkpoint + fail-closed replay)
+**首次踩中**:Round 223
+**最后更新**:2026-07-22
+**影响范围**:`JsonlAuditSink`、runtime replay、metrics、recovery outbox、service doctor、B-013
+
+**症状**
+审计sink只通过`open("a")`追加，但磁盘文件仍能被有效JSON替换、整行删除或重排。旧reader只验证schema，因此修改后的
+历史会被安静地重放到`/metrics`、`/audit`和runtime startup；“append-only”只是writer行为，不是证据属性。
+
+**根因**
+把API调用方式、Unix文件权限和历史完整性混为一谈。单条checksum也只能发现内容变化，不能证明顺序或tail没有被删除；
+仅做hash chain又无法发现删除最后若干条。
+
+**解决方案 / 缓解措施**
+- 每个新event包含canonical payload的previous/head SHA-256 link；独立checkpoint锚定count、byte size与head。
+- writer用process lock串行化，先append+fsync再原子更新checkpoint；只允许完整有效链的checkpoint lag自动收敛。
+- replay、runtime和doctor统一拒绝mutation/reorder/insertion/truncation/torn tail/duplicate id/symlink/宽权限。
+- legacy由owner核对后显式seal，不重写event bytes；ledger/checkpoint/lock收紧为owner-only。
+
+**如何避免再次踩中**
+- 写“append-only”前分别回答：谁阻止内容修改、谁检测顺序变化、谁检测tail删除、crash在哪一步恢复。
+- migration seal只能锚定当前baseline，不能追溯证明旧历史；不得把seal称为repair或签名。
+- 本地hash/checkpoint不抵抗能同时改ledger与checkpoint的同主机攻击者；更强声明必须有独立签名/WORM authority。
+- 备份与恢复必须把audit JSONL和checkpoint作为一组，不能只复制其中一个。
+
+**相关链接**
+- ROUNDS Round 223
+- ADR-0061
+- Goal Brief `docs/superpowers/specs/2026-07-22-tamper-evident-audit-ledger.md`
+- B-013
+
+### [P-080] 两个完整文件不等于一个一致的审计恢复点
+
+**状态**:🟢 RESOLVED(writer-locked snapshot + single-file verified artifact)
+**首次踩中**:Round 224
+**最后更新**:2026-07-22
+**影响范围**:audit ledger/checkpoint、off-device export、B-013、operator backup
+
+**症状**
+Round 223要求audit JSONL与checkpoint成组备份，但人工先后复制仍有时间窗口：runtime可在中间追加event并推进checkpoint，
+最终两个副本分别可读却不是同一point-in-time。把它们放进同一目录或事后压缩，不能追溯消除复制窗口。
+
+**根因**
+把“资产清单完整”误当成“快照一致”。多文件恢复点需要明确writer barrier；manifest如果只记录复制后的文件，也只能证明
+artifact内部当前字节，不能证明复制时live source没有跨版本。
+
+**解决方案 / 缓解措施**
+- 复用audit process lock，在同一锁持有期内验证、收敛合法checkpoint lag并复制ledger/checkpoint。
+- 固定三member的ZIP_STORED避免漏文件与解压攻击面；member size/hash、ledger chain/checkpoint和outer SHA分层校验。
+- 输出采用owner-only new-path + fsync，不覆盖既有artifact；offline verify不依赖live path并实际materialize验证。
+- manifest/summary不含source path或payload，但artifact本身含完整审计正文，必须由外部层加密。
+
+**如何避免再次踩中**
+- 每个多文件backup都要回答：一致性barrier在哪里、复制期间谁还能写、发布是否no-overwrite、失败是否有半成品。
+- “ZIP/manifest/hash”只解决包装与检测，不自动提供source point-in-time或签名；必须先锁住/冻结source。
+- outer SHA应存于独立信任位置；artifact与SHA同盘同权限不抵抗同主机重写。
+- writer-locked全量copy的延迟随ledger增长；未有rotation/增量前不要把它静默放进高频scheduler。
+
+**相关链接**
+- ROUNDS Round 224
+- ADR-0062
+- Goal Brief `docs/superpowers/specs/2026-07-22-portable-audit-recovery-point.md`
+- B-013
+
+### [P-081] 可验证备份不等于可安全覆盖 live 审计
+
+**状态**:🟢 RESOLVED(owner fence + mandatory preservation + fail-closed retry)
+**首次踩中**:Round 225
+**最后更新**:2026-07-22
+**影响范围**:`aico-audit restore|drill-backup`、audit ledger/checkpoint、事故取证、B-013
+
+**症状**
+一个ZIP能离线verify后，最直觉的恢复做法是解压并依次覆盖live ledger/checkpoint。但active runtime可能同时写入；当前
+live可能已损坏而无法生成普通backup；进程还可能在只替换一个文件后退出。直接删live或重新seal会进一步销毁现场证据。
+
+**根因**
+把artifact integrity、live mutation authorization和multi-file publication混为一件事。ZIP内部自洽只证明source可用，
+不证明何时能覆盖、覆盖前保存了什么，也不提供跨两个文件的filesystem transaction。
+
+**解决方案 / 缓解措施**
+- restore强制expected SHA、真实AICO state DB identity、runtime owner fence、new preservation path和显式`--yes`。
+- live有效时先创建标准verified safety backup；无效时原样复制到标记为`unverified_quarantine`的取证artifact。
+- staged pair先完整验证，再按ledger/checkpoint顺序replace+directory fsync；中断后严格reader fail closed，同一备份可重跑。
+- disposable drill调用同一production materializer，不触碰live并输出bounded owner-only evidence。
+
+**如何避免再次踩中**
+- 每个restore都要分别回答：谁批准覆盖、谁冻结writer、如何保留当前现场、第二个replace失败后系统读到什么。
+- “原子恢复”不能用于描述两个独立文件的两次rename；准确口径是中断可检测、启动拒绝、重跑可收敛。
+- 损坏现场只能quarantine，不能给它verified/backup标签；安全留存失败时宁可不恢复。
+- 自动backup/verify可调度，destructive restore不可调度，也不能自动选择latest artifact。
+
+**相关链接**
+- ROUNDS Round 225
+- ADR-0063
+- Goal Brief `docs/superpowers/specs/2026-07-22-owner-fenced-audit-restore.md`
+- B-013
+
+### [P-082] 两个验证通过的 component artifact 不等于一次业务恢复集合
+
+**状态**:🟢 RESOLVED(bounded capture window + fixed coverage ledger + combined drill)
+**首次踩中**:Round 226
+**最后更新**:2026-07-22
+**影响范围**:`aico-recovery`、state/audit component RPO、off-device transfer、B-013
+
+**症状**
+State backup和audit backup都能独立verify后，operator很容易按相似文件名把它们当作“一次备份”。但两者可能来自不同日期，
+也没有任何机器证据说明memory、配置、secret、standing grant或receiver state是否覆盖。两个绿色结果制造了全资产DR假阳性。
+
+**根因**
+把component integrity、capture-time relationship与asset coverage混为一谈。独立SHA只能绑定各自字节，不能绑定另一artifact、
+采集窗口或未出现的资产；停止runtime也不会让SQLite/JSONL/独立receiver自动获得一个共享transaction。
+
+**解决方案 / 缓解措施**
+- 一次capture按state→audit生成两个既有格式artifact，并以outer recovery set绑定其hash/size/summary和时间窗口。
+- schema强制`global_transaction=false`与`business_restore_ready=false`，不能通过正常manifest把局部集合升级成完整DR。
+- 固定coverage ledger列出captured、snapshot missing、source-control restore、secret reinjection、external backup与ephemeral排除。
+- verify深入调用两个production verifier；drill再实际调用两个production materializer，不以top manifest解析成功代替恢复演练。
+
+**如何避免再次踩中**
+- 每个多组件DR声明都要分别回答：字节如何绑定、时间关系是什么、哪些资产明确缺失、是否真的走过restore路径。
+- “同一目录/同一日期/同一命令生成”不是global consistency；没有shared transaction就必须暴露capture window与skew。
+- coverage清单必须包含缺项，不能只列“包里有什么”；readiness字段不能由operator凭感觉改true。
+- 合并transport artifact不等于授权合并restore；破坏性恢复仍按component fence和隔离业务验收执行。
+
+**相关链接**
+- ROUNDS Round 226
+- ADR-0064
+- Goal Brief `docs/superpowers/specs/2026-07-22-bounded-window-core-recovery-set.md`
+- B-013
+
+### [P-083] Append-only memory JSONL 不等于可恢复的可信记忆
+
+**状态**:🟢 RESOLVED(process lock + hash chain/checkpoint + portable recovery)
+**首次踩中**:Round 227
+**最后更新**:2026-07-22
+**影响范围**:`JsonlMemoryStore`、prompt/experience continuity、`aico-memory`、`aico-recovery`、B-013
+
+**症状**
+旧memory store把“每次写一行JSONL”当作durable：两个runtime各自持有陈旧索引，写失败前内存状态已更新；历史字段修改、
+记录重排、tail截断和只复制一半恢复资产都可能继续被加载，影响后续agent决策却没有证据告警。
+
+**根因**
+Append-only只描述预期写法，不提供writer serialization、durable commit顺序、历史完整性或恢复点边界。MemoryAtom允许同ID多版本，
+也不能用“拒绝duplicate ID”代替版本语义和chain校验。
+
+**解决方案 / 缓解措施**
+- writer在process lock内刷新ledger，先append+fsync，再原子发布tail checkpoint；索引只在durable append返回后重建。
+- 独立memory hash domain覆盖canonical envelope，checkpoint锚定record count/byte size/head；legacy必须owner显式seal。
+- backup在writer lock内复制matching pair，offline verify还加载MemoryAtom/MemoryEdge domain model；restore保留或隔离旧现场。
+- recovery-set v2只在上述component primitive完成后把memory标为captured，仍不提升full DR readiness。
+
+**如何避免再次踩中**
+- 任何会进入prompt或授权判断的append-only文件，都要分别回答并发writer、half-commit、tail truncation和portable recovery point。
+- 写入顺序必须是durable truth先于进程视图；失败后不能留下只在内存可见的phantom状态。
+- legacy migration不能自动seal未知字节；owner核对与显式命令是信任边界。
+- 同ID新版本是业务语义，不得在完整性层误判为collision；完整性层只验证字节序列和checkpoint。
+
+**相关链接**
+- ROUNDS Round 227
+- ADR-0065
+- Goal Brief `docs/superpowers/specs/2026-07-22-tamper-evident-memory-recovery.md`
+- B-013
+
+### [P-084] Capture 时的当前 HEAD 不等于 reviewed recovery revision
+
+**状态**:🟢 RESOLVED(independent expected revision + clean checkout/config parity)
+**首次踩中**:Round 228
+**最后更新**:2026-07-22
+**影响范围**:`aico-recovery`、Project/Persona config、deployment review、B-013
+
+**症状**
+数据组件都能恢复后，最直接的配置合同是把capture时`git rev-parse HEAD`写进manifest。但这会把任意本地commit自动称为
+“reviewed”；dirty tracked/untracked文件、active config指向checkout外文件或配置字节与commit blob不同也可能被忽略。
+
+**根因**
+把“可识别当前版本”与“由独立authority选择了允许恢复的版本”混为一谈。commit SHA只绑定Git对象，不绑定operator选择、
+worktree cleanliness、实际读取的配置文件或恢复时checkout状态。
+
+**解决方案 / 缓解措施**
+- capture强制接收独立的完整expected commit，并与HEAD精确比较；manifest明确authority仅是operator-supplied revision。
+- 同时绑定HEAD tree、Git object format和active config的relative path/blob OID/size/SHA，不复制正文。
+- capture/verify-checkout都要求worktree root与clean tracked/untracked状态；config必须在checkout内、非symlink且等于commit blob。
+- recovery set区分物理`included`与`recovery_contract_ready`，配置可从revision恢复但不能伪称已嵌入bundle。
+
+**如何避免再次踩中**
+- 任何“reviewed/approved revision”都必须说明谁在artifact之外选择了它；当前HEAD、自生成时间或文件名都不是authority。
+- 恢复代码版本要验证worktree，不只验证commit：dirty文件和active config path同样会改变运行行为。
+- 不把source-control restore偷换成复制当前配置；secret与源码正文应保持各自边界。
+- commit/hash不是平台review签名或remote availability证明，外部clone和业务演练仍需单独取证。
+
+**相关链接**
+- ROUNDS Round 228
+- ADR-0066
+- Goal Brief `docs/superpowers/specs/2026-07-22-reviewed-config-revision-recovery.md`
+- B-013
+
+### [P-085] Secret hash不是安全的恢复回执，presence也不是远端认证
+
+**状态**:🟢 RESOLVED(slot/mode contract + owner decision receipt + external-auth gap)
+**首次踩中**:Round 229
+**最后更新**:2026-07-22
+**影响范围**:`aico-recovery`、`.env`、standing grant、AI provider auth、B-013/B-014
+
+**症状**
+为证明灾后secret与grant已恢复，最直接的做法是把`.env`/grant放进bundle，或只保存它们的SHA-256。但前者直接扩大泄露面；
+后者会为低熵token/ID产生离线猜测和稳定关联，还会把合规轮换后的新secret误判为不一致。反过来，只检查环境变量非空又可能
+被写成“Claude/Codex认证已恢复”，把本地presence偷换成远端事实。
+
+**根因**
+混淆了三类证据：需要恢复哪些槽位、当前本地material是否通过binding preflight、外部服务是否真实接受credential。它们的
+authority、敏感性和验证时机不同，不能用一个hash或一个绿色doctor结论替代。
+
+**解决方案 / 缓解措施**
+- capture只读取owner-only且Git未跟踪的`.env`，记录control-plane secret slot名称、channel和standing grant enabled mode，不记录值、hash、owner/target或grant正文。
+- 灾后允许secret轮换与grant重新签发，但必须提供safe owner decision reference；receipt绑定set SHA、revision、当前slot/count和时间。
+- receipt复用production service/grant preflight，并以owner-only、atomic new-path发布；verify再次校验独立receipt SHA和当前material。
+- AI provider认证单列为required unresolved asset，receipt固定`external_authentication_live_verified=false`，等待真实provider样本。
+
+**如何避免再次踩中**
+- 不要为“避免保存secret”就默认保存普通hash；先判断输入熵、轮换语义与谁持有独立authority。
+- “configured/present/preflight passed”不能写成“远端认证成功”；需要实际外部请求的事实必须单独验收。
+- owner decision reference是审计关联，不是数字签名；不要借它声称owner身份已被密码学证明。
+- secret/grant恢复工具必须先验证exact checkout和runtime binding，不能只看文件存在或JSON可解析。
+
+**相关链接**
+- ROUNDS Round 229
+- ADR-0067
+- Goal Brief `docs/superpowers/specs/2026-07-22-secret-free-runtime-reinjection-receipts.md`
+- B-013
+- B-014
+
+### [P-086] 第二故障域receiver不能随主系统恢复集同步回滚
+
+**状态**:🟢 RESOLVED(independent receiver recovery contract + shared worker fence)
+**首次踩中**:Round 230
+**最后更新**:2026-07-22
+**影响范围**:`aico-dead-man-receiver`、`aico-dead-man-recovery`、core recovery set、B-012/B-013
+
+**症状**
+主AICO的state/audit/memory恢复工具完成后，最直观的补缺方式是把receiver SQLite也加进同一个ZIP和combined restore。这样看似
+“全资产”，实际会在AICO故障恢复时回滚仍正常工作的外部monitor、active outage和pending notification，抹掉事故证据。
+
+**根因**
+把“业务恢复需要知道该资产有合同”误解为“所有资产必须同一时刻snapshot并一起restore”。receiver有独立host、worker、RPO和
+事故条件；两个主机没有共享事务。主机故障和receiver故障也不是同一个事件。
+
+**解决方案 / 缓解措施**
+- receiver使用独立online backup、exact schema/domain deep verify、disposable production restore drill与worker owner fence。
+- 有效live恢复前生成verified safety；无法验证的DB/WAL/SHM原字节进入owner-only unverified quarantine。
+- core schema v5只记录`external_component_recovery`合同就绪，保持`included=false`，不嵌入字节或声称同步时间点。
+- restore只由receiver自身事故触发，要求独立SHA和显式确认；AICO恢复、scheduler或“latest”选择都不能触发。
+
+**如何避免再次踩中**
+- 每个外部observer/alert sink都先问：被观察者故障时它是否必须继续运行；若是，就不能绑定到被观察者的combined restore。
+- coverage ledger的`recovery_contract_ready`不等于artifact captured、off-device存在或RPO通过，必须分别报告。
+- 通用SQLite integrity/table count不能替代domain invariants；恢复后仍需验证monitor/outage/outbox与delivery语义。
+- lock文件存在不是worker active；service与restore必须竞争同一kernel lock，不能靠删pid/lock文件绕过。
+
+**相关链接**
+- ROUNDS Round 230
+- ADR-0068
+- Goal Brief `docs/superpowers/specs/2026-07-22-independent-dead-man-receiver-recovery.md`
+- B-012
+- B-013
+
+### [P-087] Provider CLI存在与credential已被远端接受不是同一事实
+
+**状态**:🟢 RESOLVED(constrained live challenge + short-lived bound receipt)
+**首次踩中**:Round 231
+**最后更新**:2026-07-22
+**影响范围**:`aico-recovery`、Claude/Codex adapter、runtime reinjection、B-013/B-014
+
+**症状**
+灾后最容易把`which claude/codex`、`--version`、环境变量非空或adapter health绿色写成“provider认证恢复”。这些检查都不联系
+远端；反过来，直接跑一条普通业务任务又可能加载customization、调用工具、持久化session，并把prompt/output/error带入证据。
+
+**根因**
+混淆了本地binary readiness、远端authentication、业务执行质量和持续可用性四种事实；同时没有为恢复探测单独设计最小权限、
+可判定response和privacy contract。
+
+**解决方案 / 缓解措施**
+- recovery contract记录required provider集合，恢复后逐一发送随机challenge；只接受exact response、terminal success和usage齐备。
+- 内建Claude/Codex probe重新构造safe command，在private empty cwd运行，关闭tools/customization/session/user rules/network，限制
+  process group时长与输出；不复用runtime中的bypass/yolo参数。
+- 30分钟owner-only receipt绑定set/reinjection SHA、revision、owner decision、provider scope和probe executable hash；只存challenge SHA，
+  不存challenge、prompt、output、stderr或credential。
+- offline verify明确不replay live probe；receipt过期、command/scope/reinjection漂移都要求重新探测。
+
+**如何避免再次踩中**
+- 任何`authenticated/accepted by provider`声明都必须有真实远端请求，binary presence和local config不能替代。
+- 恢复probe使用可判定随机challenge，不使用业务数据；provider没有安全结构化协议时fail closed，不猜文本。
+- `recovery_contract_ready`与`post_restore evidence supplied`必须分字段报告；合同存在不等于本次恢复已经执行。
+- receipt SHA是外部authority binding，不是数字签名；executable hash也不证明binary provenance或账号identity。
+
+**相关链接**
+- ROUNDS Round 231
+- ADR-0069
+- Goal Brief `docs/superpowers/specs/2026-07-22-live-provider-authentication-receipts.md`
+- B-013
+- B-014
+
+### [P-095] Process alive 与 dead-man pulse fresh 不能证明 required 业务组件仍可用
+
+**状态**:🟢 RESOLVED(machine contract;external endpoint sample pending)
+**首次踩中**:Round 239
+**最后更新**:2026-07-22
+**影响范围**:`runtime_alerts.py`,`runtime_heartbeat.py`,scheduled outcome/recovery health,B-011
+
+**症状**
+morning outcome delivery耗尽、recovery artifact损坏或default adapter持续失败时，runtime component health已经FAILED；但后台task、
+event loop和dead-man pulse仍可能正常。旧alert只观察owned-task recovery circuit，因此老板缺席时不会收到secondary incident，除非
+以后主动运行doctor。
+
+**根因**
+把“进程/后台task仍活着”当成“商业主路径仍可用”，同时为了避免generic health驱动危险重启，把generic health也完全排除在
+通知边界之外。repair signal和notification signal被错误绑定：前者需要精确owner/action，后者可以对稳定、required failure保守告警。
+
+**解决方案 / 缓解措施**
+- 仅required组件连续三份、时间递增的FAILED snapshot进入durable confirmation；optional、DEGRADED和瞬时失败不open。
+- 第三次确认、incident和outbox同SQLite transaction提交；计数跨restart保留，重复/倒退snapshot不放大。
+- OK才resolved，DEGRADED保持open；owned-task circuit与同名health incident去重。
+- outbound component只含safe name或hash，不带异常、endpoint、secret、target或业务正文；该incident不授权任何自动repair。
+- state schema v13把confirmation table纳入backup/reset，CLI只显示candidate count。
+
+**如何避免再次踩中**
+- liveness、owned-task recovery、dependency/component health和业务E2E必须分层取证；任一绿色不能替代其它层。
+- “generic health不能驱动restart”不等于“generic health永远不能通知”；先定义required范围、稳定边沿和噪声预算。
+- periodic snapshot变事件必须有durable confirmation、dedupe identity、同事务outbox与明确resolved条件。
+- 对外alert只表达组件状态，不自动推导human read、业务损失、repair权限或provider replay安全性。
+
+**相关链接**
+- ROUNDS Round 239
+- ADR-0077
+- Goal Brief `docs/superpowers/specs/2026-07-22-confirmed-required-component-runtime-alerts.md`
+- P-061
+- P-062
+- B-011
+
+### [P-097] 独立receiver形成outage不等于缺席老板一定有可用通知出口
+
+**状态**:🟢 RESOLVED(machine failover contract;external route sample pending)
+**首次踩中**:Round 241
+**最后更新**:2026-07-22
+**影响范围**:`dead_man_receiver.py`,`dead_man_receiver_app.py`,receiver deployment,B-012
+
+**症状**
+receiver位于第二故障域、monitor/outage/outbox和worker都正常，甚至evidence能看到pending retry；但唯一owner notification webhook
+长期失败时，老板不会主动查询admin endpoint，`/readyz`也按设计保持绿色以避免restart storm，事故因此仍可静默。
+
+**根因**
+把“独立发现故障”和“独立触达老板”合并为一个可用性结论。receiver与被监控Mac失效域独立，不代表receiver下游通知provider、
+credential、账号或网络没有单点；让readiness失败只会重启sender，不能创造第二条送达路径。
+
+**解决方案 / 缓解措施**
+- 可选配置different-origin fallback，两路并发发送相同immutable event和stable idempotency key。
+- 默认1-of-2 ACK结算以提高触达可用性；owner可显式要求2-of-2，quorum不得超过route count。
+- quorum miss继续复用既有SQLite outbox、队首顺序和1/5/15分钟backoff；不因外部失败restart receiver。
+- fallback token必须存在对应URL，route token彼此不同且不复用pulse/admin authority；错误保持通用、无URL/token/response正文。
+- receiver schema v3持久化当前策略，并在event创建事务内冻结逐事件route count/quorum；pending期间配置变化fail closed，不能让
+  原2-of-2事件在重启后按1-of-2结算。历史delivered event保留原策略，v1/v2保守迁移为1-of-1。
+- evidence/recovery schema v3验证当前与逐事件策略；delivered只表示该事件冻结的local quorum，不保存或推断per-route/human-read事实。
+
+**如何避免再次踩中**
+- 对每个observer继续向下画到最终人类触点；“observer独立”与“notification path冗余”必须分开验收。
+- 不用进程restart解决外部provider故障；重启不增加authority、网络路径或收件渠道。
+- 1-of-2与2-of-2是不同产品策略：前者优化availability，后者优化双ACK证据，不得在故障时偷偷降级。
+- 运行时settings不是durable authority；影响outbox结算的策略必须随event持久化，并用事务围栏拒绝pending期间漂移。
+- different-origin只是静态最低门槛；真实商业声明仍要验证provider、账号、credential、网络与终端展示。
+- 未出现稳定route-level成功/失败历史需求前，不提前引入per-route SQLite receipt；结算所需的逐事件策略不属于可省略的抽象。
+
+**相关链接**
+- ROUNDS Round 241
+- ADR-0079
+- Goal Brief `docs/superpowers/specs/2026-07-22-quorum-dead-man-notification-routes.md`
+- P-096
+- B-012

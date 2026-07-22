@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from aico.channel import IMChannel
 from aico.core.message_rendering import rich_text_message
@@ -10,6 +11,25 @@ from aico.core.models import ChannelTarget, MessageNativeFormat, SentMessage
 from aico.core.native_output import agent_output_message, normalize_agent_output_for_im
 
 STREAM_MESSAGE_TEXT_LIMIT = 1400
+_TINY_TAIL_LIMIT = 80
+_SEMANTIC_CARD_HEADINGS = frozenset(
+    {
+        "acceptance",
+        "decision",
+        "done",
+        "evidence",
+        "findings",
+        "missing tests",
+        "next",
+        "next actions",
+        "recommendation",
+        "risks",
+        "status",
+        "summary",
+        "verdict",
+        "why",
+    }
+)
 log = logging.getLogger(__name__)
 
 
@@ -81,6 +101,21 @@ class StreamedMessageWriter:
 
 
 def _readable_segments(text: str, max_length: int) -> tuple[str, ...]:
+    if len(text) <= max_length + _TINY_TAIL_LIMIT:
+        return (text,)
+    semantic_cards = _semantic_cards(text)
+    if len(semantic_cards) > 1:
+        segments: list[str] = []
+        for card in semantic_cards:
+            if len(card) <= max_length + _TINY_TAIL_LIMIT:
+                segments.append(card)
+            else:
+                segments.extend(_length_segments(card, max_length))
+        return tuple(segment for segment in segments if segment)
+    return _length_segments(text, max_length)
+
+
+def _length_segments(text: str, max_length: int) -> tuple[str, ...]:
     remaining = text
     segments: list[str] = []
     while len(remaining) > max_length:
@@ -92,6 +127,37 @@ def _readable_segments(text: str, max_length: int) -> tuple[str, ...]:
     if remaining or not segments:
         segments.append(remaining)
     return tuple(segments)
+
+
+def _semantic_cards(text: str) -> tuple[str, ...]:
+    lines = text.splitlines()
+    cards: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        if _is_semantic_card_heading(line) and _has_content(current):
+            card = "\n".join(current).strip()
+            if card:
+                cards.append(card)
+            current = [line]
+            continue
+        current.append(line)
+    final_card = "\n".join(current).strip()
+    if final_card:
+        cards.append(final_card)
+    return tuple(cards)
+
+
+def _has_content(lines: list[str]) -> bool:
+    return any(line.strip() for line in lines)
+
+
+def _is_semantic_card_heading(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    plain = re.sub(r"</?(?:b|strong)>", "", stripped, flags=re.IGNORECASE)
+    plain = plain.rstrip(":").strip().casefold()
+    return plain in _SEMANTIC_CARD_HEADINGS
 
 
 def _readable_split_index(text: str, max_length: int) -> int:

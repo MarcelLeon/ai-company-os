@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from datetime import datetime
+from time import monotonic
 
-from aico.adapter import AIAdapter
+from aico.adapter import AIAdapter, TaskUsageReportingAdapter
 from aico.core.adapter_registry import AdapterRegistry
-from aico.core.approval import ApprovalPolicy, RequesterOrListedApproverPolicy
+from aico.core.approval import (
+    DEFAULT_APPROVAL_MAX_AGE_SECONDS,
+    ApprovalLeaseCoordinator,
+    ApprovalPolicy,
+    RequesterOrListedApproverPolicy,
+)
 from aico.core.audit import InMemoryAuditLog
+from aico.core.authorization_clock import AuthorizationClockGuard
+from aico.core.metrics import usage_audit_detail
 from aico.core.models import (
     AckStatus,
     AdapterSnapshot,
@@ -24,8 +33,14 @@ from aico.core.models import (
     TaskOutput,
     TaskSnapshot,
     TaskStatus,
+    TaskUsage,
+    utc_now,
 )
 from aico.core.persona_registry import PersonaRegistry
+from aico.core.preauthorized_execution import (
+    preauthorized_execution_mode,
+    preauthorized_submission_refusal,
+)
 from aico.core.risk import TextRiskAssessor
 from aico.core.risk_capability import unsupported_risk_reason
 from aico.core.task_state import TaskStateRepository
@@ -42,7 +57,10 @@ class TaskBus:
         risk_assessor: TextRiskAssessor | None = None,
         audit_log: InMemoryAuditLog | None = None,
         approval_policy: ApprovalPolicy | None = None,
+        approval_max_age_seconds: int = DEFAULT_APPROVAL_MAX_AGE_SECONDS,
         task_store: TaskStateStore | None = None,
+        clock: Callable[[], datetime] = utc_now,
+        monotonic_clock: Callable[[], float] = monotonic,
     ) -> None:
         self._single_adapter_mode = not isinstance(adapter, AdapterRegistry)
         self._registry = (
@@ -54,6 +72,24 @@ class TaskBus:
         self._approval_policy = approval_policy or RequesterOrListedApproverPolicy()
         self._task_store = task_store
         self._state = TaskStateRepository(task_store)
+        authorization_clock = AuthorizationClockGuard(
+            task_store,
+            clock=clock,
+            monotonic_clock=monotonic_clock,
+        )
+        self._approval_leases = ApprovalLeaseCoordinator(
+            self._state,
+            self._audit_log,
+            max_age_seconds=approval_max_age_seconds,
+            durable=task_store is not None,
+            clock=clock,
+            authorization_clock=authorization_clock,
+        )
+
+    def recover_startup_state(self) -> None:
+        """Reconcile persisted execution state after runtime ownership is acquired."""
+        self._approval_leases.deliver_reconciliation_events(self._state.reconcile_startup())
+        self.expire_stale_approvals()
 
     async def submit(self, task: Task) -> TaskAck:
         adapter_name = self._adapter_name_for_task(task)
@@ -85,29 +121,17 @@ class TaskBus:
             adapter_name=adapter.name,
             risk_level=risk.risk_level,
         )
+        preauthorized_refusal = self.preauthorized_refusal(task)
+        if preauthorized_refusal is not None:
+            return self._reject_submission(task, adapter.name, risk, preauthorized_refusal)
         unsupported_reason = unsupported_risk_reason(adapter, risk)
         if unsupported_reason is not None:
-            self._record_task(
-                task,
-                adapter_name=adapter.name,
-                status=TaskStatus.REJECTED,
-                reason=unsupported_reason,
-                risk_level=risk.risk_level,
-            )
-            self._audit_log.record(
-                AuditEventType.TASK_REJECTED,
-                task,
-                adapter_name=adapter.name,
-                risk_level=risk.risk_level,
-                detail=unsupported_reason,
-            )
-            return TaskAck(
-                task_id=task.task_id,
-                status=AckStatus.REJECTED,
-                reason=unsupported_reason,
-            )
+            return self._reject_submission(task, adapter.name, risk, unsupported_reason)
         if risk.requires_approval:
-            self._state.save_approval(ApprovalRequest(task=task, risk=risk))
+            clock_refusal = self.authorization_time_refusal()
+            if clock_refusal is not None:
+                return self._reject_submission(task, adapter.name, risk, clock_refusal)
+            self._state.save_approval(self._approval_leases.new_request(task, risk))
             self._record_task(
                 task,
                 adapter_name=adapter.name,
@@ -130,19 +154,25 @@ class TaskBus:
 
         return await self._dispatch(task, adapter, risk)
 
+    def preauthorized_refusal(self, task: Task) -> str | None:
+        refusal = _preauthorized_refusal(
+            task, self._adapter_for_pending_task(task), self._risk_assessor
+        )
+        if refusal is not None or preauthorized_execution_mode(task) is None:
+            return refusal
+        return self.authorization_time_refusal()
+
+    def authorization_time_refusal(self) -> str | None:
+        """Reconcile time-based authority and return a stable fail-closed reason."""
+        return self._approval_leases.authorization_time_refusal()
+
     async def approve(self, task_id: str | None, reviewer_id: str) -> TaskAck:
+        self.expire_stale_approvals()
         approval = self._state.resolve_pending_approval(task_id)
         if isinstance(approval, TaskAck):
             return approval
 
         task_id = approval.task.task_id
-        if approval.status is not ApprovalStatus.PENDING:
-            return TaskAck(
-                task_id=task_id,
-                status=AckStatus.REJECTED,
-                reason="unknown pending approval",
-            )
-
         task = approval.task
         decision = self._approval_policy.can_review(approval, reviewer_id)
         if not decision.allowed:
@@ -168,13 +198,10 @@ class TaskBus:
                 reason="adapter unavailable",
             )
 
-        self._state.save_approval(
-            approval.model_copy(
-                update={
-                    "status": ApprovalStatus.APPROVED,
-                    "reviewer_id": reviewer_id,
-                }
-            )
+        self._approval_leases.resolve(
+            approval,
+            ApprovalStatus.APPROVED,
+            reviewer_id=reviewer_id,
         )
         self._audit_log.record(
             AuditEventType.APPROVAL_APPROVED,
@@ -192,18 +219,12 @@ class TaskBus:
         *,
         reason: str | None = None,
     ) -> TaskAck:
+        self.expire_stale_approvals()
         approval = self._state.resolve_pending_approval(task_id)
         if isinstance(approval, TaskAck):
             return approval
 
         task_id = approval.task.task_id
-        if approval.status is not ApprovalStatus.PENDING:
-            return TaskAck(
-                task_id=task_id,
-                status=AckStatus.REJECTED,
-                reason="unknown pending approval",
-            )
-
         task = approval.task
         decision = self._approval_policy.can_review(approval, reviewer_id)
         if not decision.allowed:
@@ -221,14 +242,11 @@ class TaskBus:
             )
 
         reject_reason = reason or "approval rejected"
-        self._state.save_approval(
-            approval.model_copy(
-                update={
-                    "status": ApprovalStatus.REJECTED,
-                    "reviewer_id": reviewer_id,
-                    "reason": reject_reason,
-                }
-            )
+        self._approval_leases.resolve(
+            approval,
+            ApprovalStatus.REJECTED,
+            reviewer_id=reviewer_id,
+            reason=reject_reason,
         )
         self._update_task(task_id, TaskStatus.REJECTED, reason=reject_reason)
         self._audit_log.record(
@@ -330,9 +348,11 @@ class TaskBus:
         return self._registry.snapshots()
 
     def task_snapshots(self, *, limit: int | None = 5) -> tuple[TaskSnapshot, ...]:
+        self.expire_stale_approvals()
         return self._state.task_snapshots(limit=limit)
 
     def task_snapshot(self, task_ref: str) -> TaskSnapshot | TaskAck:
+        self.expire_stale_approvals()
         return self._state.resolve_known_task(task_ref)
 
     def audit_events(self, *, limit: int | None = 10) -> tuple[AuditEvent, ...]:
@@ -373,18 +393,20 @@ class TaskBus:
         return self._state.task_records.get(task_id)
 
     def pending_approvals(self) -> tuple[ApprovalRequest, ...]:
+        self.expire_stale_approvals()
         return self._state.pending_approvals()
+
+    def expire_stale_approvals(self) -> int:
+        """Fail closed when a risky task outlives its bounded approval lease."""
+        return self._approval_leases.sweep()
 
     def _cancel_waiting_approval(self, task_id: str) -> None:
         approval = self._state.approvals.get(task_id)
         if approval is not None and approval.status is ApprovalStatus.PENDING:
-            self._state.save_approval(
-                approval.model_copy(
-                    update={
-                        "status": ApprovalStatus.REJECTED,
-                        "reason": "interrupted before approval",
-                    }
-                )
+            self._approval_leases.resolve(
+                approval,
+                ApprovalStatus.REJECTED,
+                reason="interrupted before approval",
             )
             self._audit_log.record(
                 AuditEventType.APPROVAL_REJECTED,
@@ -452,6 +474,29 @@ class TaskBus:
             risk_level=risk_level,
         )
 
+    def _reject_submission(
+        self,
+        task: Task,
+        adapter_name: str,
+        risk: RiskAssessment,
+        reason: str,
+    ) -> TaskAck:
+        self._record_task(
+            task,
+            adapter_name=adapter_name,
+            status=TaskStatus.REJECTED,
+            reason=reason,
+            risk_level=risk.risk_level,
+        )
+        self._audit_log.record(
+            AuditEventType.TASK_REJECTED,
+            task,
+            adapter_name=adapter_name,
+            risk_level=risk.risk_level,
+            detail=reason,
+        )
+        return TaskAck(task_id=task.task_id, status=AckStatus.REJECTED, reason=reason)
+
     def _update_from_output(self, task_id: str, output: TaskOutput) -> None:
         if self._state.task_status(task_id) is TaskStatus.INTERRUPTED:
             return
@@ -468,6 +513,7 @@ class TaskBus:
             self._update_task(task_id, TaskStatus.RUNNING)
         elif output.type is OutputType.DONE:
             self._update_task(task_id, TaskStatus.DONE)
+            _record_task_usage(self, task_id)
             self._record_audit_for_task(task_id, AuditEventType.TASK_COMPLETED)
 
     def _update_task(
@@ -506,6 +552,41 @@ async def _unknown_task_output(task_id: str) -> AsyncIterator[TaskOutput]:
         type=OutputType.ERROR,
         content="unknown task id",
     )
+
+
+def _record_task_usage(task_bus: TaskBus, task_id: str) -> None:
+    usage = task_usage_for_task(task_bus, task_id)
+    if usage is None:
+        return
+    task_bus._record_audit_for_task(  # noqa: SLF001
+        task_id,
+        AuditEventType.TASK_USAGE_RECORDED,
+        detail=usage_audit_detail(
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            total_tokens=usage.total_tokens,
+            cached_input_tokens=usage.cached_input_tokens,
+            cache_write_input_tokens=usage.cache_write_input_tokens,
+            reasoning_output_tokens=usage.reasoning_output_tokens,
+        ),
+    )
+
+
+def task_usage_for_task(task_bus: TaskBus, task_id: str) -> TaskUsage | None:
+    adapter = task_bus._adapter_for_task(task_id)  # noqa: SLF001
+    if not isinstance(adapter, TaskUsageReportingAdapter):
+        return None
+    return adapter.task_usage(task_id)
+
+
+def _preauthorized_refusal(
+    task: Task,
+    adapter: AIAdapter | None,
+    risk_assessor: TextRiskAssessor,
+) -> str | None:
+    if adapter is None:
+        return "preauthorized execution target is unavailable"
+    return preauthorized_submission_refusal(task, adapter, risk_assessor.assess(task))
 
 
 def _approval_reason(risk: RiskAssessment) -> str:

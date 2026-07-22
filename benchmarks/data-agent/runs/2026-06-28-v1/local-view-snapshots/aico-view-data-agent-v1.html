@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AICO view snapshot — data-agent-v1</title>
+  <style>
+:root {
+  --bg:#0b1020; --card:#141a2e; --text:#e6e9f5; --muted:#9aa3c0;
+  --accent:#7dd3fc; --warn:#fbbf24; --danger:#f87171; --ok:#34d399;
+}
+* { box-sizing: border-box; }
+body { margin:0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.45; }
+header { padding:.75rem 1rem; background: var(--card); position: sticky; top:0; }
+header .home { color: var(--accent); text-decoration: none; font-weight: 600; }
+header .sep { color: var(--muted); margin: 0 .5rem; }
+main { padding: .75rem 1rem; max-width: 720px; margin: 0 auto; }
+footer { padding: 1rem; text-align: center; color: var(--muted); font-size: .85em; }
+.empty, .hint { color: var(--muted); }
+h2 { margin: 1.25rem 0 .5rem; font-size: 1rem; color: var(--accent); }
+ul { list-style: none; padding: 0; margin: 0; }
+li { padding: .5rem .6rem; background: var(--card); margin: .35rem 0; border-radius: 6px;
+  display: grid; grid-template-columns: auto auto 1fr; gap: .4rem; align-items: baseline; }
+li time { color: var(--muted); font-size: .8em; grid-column: 1 / -1; }
+.src { font-size: .7em; padding: 1px 5px; border-radius: 3px; background: #222b48; }
+.src.audit { background:#1e3a5c; }
+.src.memory { background:#3b2a5c; }
+.src.task { background:#5c3a1e; }
+.kind { color: var(--muted); font-size: .85em; }
+.summary { grid-column: 1 / -1; }
+.atom.archived { opacity:.55; }
+.atom .id { color: var(--accent); font-family: ui-monospace, monospace; }
+.atom .status { font-size: .7em; padding: 1px 5px; border-radius: 3px; background:#2a3251; }
+.atom .confidence { color: var(--muted); font-size: .8em; }
+.atom .claim { grid-column: 1 / -1; }
+.atom .meta { grid-column: 1 / -1; color: var(--muted); font-size: .8em; }
+a { color: var(--accent); }
+.id { color: var(--accent); font-family: ui-monospace, monospace; }
+.trace .summary { color: var(--text); }
+.cmd-links { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0; }
+.cmd-link, .cmd-copy { display: inline-block; padding: .35rem .7rem; border-radius: 999px;
+  background: var(--card); border: 1px solid var(--accent); color: var(--accent);
+  text-decoration: none; font-size: .85em; font-family: ui-monospace, monospace; }
+.cmd-link.telegram::before { content: "→ "; }
+.cmd-copy::before { content: "⌘ "; }
+.cmd-copy { color: var(--muted); border-color: var(--muted); cursor: text; }
+
+h1 { margin: .5rem 0 .25rem; font-size: 1.25rem; }
+h3 { margin: .9rem 0 .35rem; color: var(--muted); font-size: .9rem; }
+section { margin-bottom: 1.1rem; }
+.snapshot-brief { padding: .75rem; background: var(--card); border-radius: 6px; }
+.snapshot-brief .meta { color: var(--muted); margin: 0 0 .7rem; }
+.brief-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }
+.brief-grid div { background: #0f1528; border-radius: 6px; padding: .55rem; }
+.brief-grid b { display: block; color: var(--accent); font-size: 1.15rem; }
+.brief-grid span { color: var(--muted); font-size: .78rem; }
+.latest { margin-bottom: 0; }
+details { background: var(--card); border-radius: 6px; margin: .45rem 0; padding: .55rem; }
+summary { cursor: pointer; color: var(--accent); }
+details ul { margin-top: .5rem; }
+</style>
+</head>
+<body>
+<header><span class="home">AICO view</span><span class="sep">·</span>data-agent-v1</header>
+<main><section class='snapshot-brief'><h1>data-agent-v1 boss brief</h1><p class='meta'>generated: 2026-06-30 14:34:18Z</p><div class='brief-grid'><div><b>0</b><span>recent events</span></div><div><b>0</b><span>experiences</span></div><div><b>0</b><span>facts</span></div></div><p class='latest'><b>Latest:</b> No events yet.</p><div class="cmd-links"><span class="cmd-copy" title="copy this command into IM">/inbox</span><span class="cmd-copy" title="copy this command into IM">/morning</span><span class="cmd-copy" title="copy this command into IM">/undo</span></div></section><section><h2>recent timeline</h2><p class='empty'>No events yet.</p></section><section><h2>trace details</h2><p class='empty'>No trace yet.</p></section><section><h2>memory</h2><p class='empty'>No memory recorded.</p></section></main>
+<footer>read-only snapshot · no inbound server required · write through IM</footer>
+</body>
+</html>

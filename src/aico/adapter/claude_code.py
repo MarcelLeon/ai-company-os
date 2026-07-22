@@ -338,7 +338,7 @@ class ClaudeCodeAdapter:
                 continue
             last_adapter_output_at = loop.time()
             last_status_at = last_adapter_output_at
-            content = self._process_stdout_line(_decode(line))
+            content = self._process_stdout_line_for_task(task_id, _decode(line))
             if content is None:
                 continue
             await queue.put(_output(task_id, sequence, OutputType.TEXT, content))
@@ -347,6 +347,10 @@ class ClaudeCodeAdapter:
 
     def _process_stdout_line(self, content: str) -> str | None:
         return content
+
+    def _process_stdout_line_for_task(self, task_id: str, content: str) -> str | None:
+        _ = task_id
+        return self._process_stdout_line(content)
 
     def _process_error_content(self, stderr_text: str, return_code: int) -> str:
         return stderr_text or f"Claude Code exited with code {return_code}"

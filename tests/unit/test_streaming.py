@@ -135,3 +135,50 @@ async def test_streamed_writer_splits_long_output_at_readable_boundary() -> None
     assert all(len(message.text) <= 120 for message in channel.sent_messages)
     assert "\n\n• High" in channel.edited_messages[-1].text
     assert any("• Medium" in message.text for message in channel.sent_messages)
+
+
+async def test_streamed_writer_avoids_tiny_tail_fragment_near_limit() -> None:
+    channel = RecordingChannel()
+    target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+    writer = StreamedMessageWriter(
+        channel,
+        target,
+        SentMessage(message_id="message-1", target=target),
+        max_text_length=120,
+    )
+
+    await writer.append("x" * 123)
+
+    assert channel.edited_messages[-1].text == "x" * 123
+    assert channel.sent_messages == []
+
+
+async def test_streamed_writer_splits_long_output_by_boss_semantic_cards() -> None:
+    channel = RecordingChannel()
+    target = ChannelTarget(channel_name="telegram", target_id="chat-1")
+    writer = StreamedMessageWriter(
+        channel,
+        target,
+        SentMessage(message_id="message-1", target=target),
+        max_text_length=260,
+    )
+
+    await writer.append(
+        "Summary\n"
+        "Lead accepted the narrow docs-only slice and kept product "
+        "and orchestration scores separate.\n\n"
+        "Decision\n"
+        "Do not start data-agent-v2 until the Telegram baseline is scored by the boss.\n\n"
+        "Risks\n"
+        "If we keep adding product features now, AICO orchestration weakness will be hidden.\n\n"
+        "Next Actions\n"
+        "Run /inbox, inspect /task abcdef12, and open /view only when trace detail is needed."
+    )
+
+    sent_texts = [message.text for message in channel.sent_messages]
+    assert channel.edited_messages[-1].text.startswith("Summary\n")
+    assert "Decision\n" not in channel.edited_messages[-1].text
+    assert sent_texts[0].startswith("Decision\n")
+    assert sent_texts[1].startswith("Risks\n")
+    assert sent_texts[2].startswith("Next Actions\n")
+    assert all(len(message.text) <= 260 for message in channel.sent_messages)

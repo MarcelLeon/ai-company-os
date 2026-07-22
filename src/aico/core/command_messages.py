@@ -39,6 +39,28 @@ def ack_failure_message(status: AckStatus, reason: str | None) -> MessageContent
     return rich_text_message(f"Task {status.value}{reason_text}")
 
 
+def task_error_text(task_id: str, error: str) -> str:
+    """Render known provider failures for the boss without weakening the raw task trace."""
+    if _is_provider_session_busy(error):
+        short_id = short_id_text(task_id)
+        return (
+            "\nRole is busy with another task\n"
+            "This role's provider session is still in use, so this request did not run.\n\n"
+            "Next:\n"
+            "- /tasks - find the running task\n"
+            "- wait for it to finish, or /interrupt <task_id>\n"
+            "- retry the original request\n\n"
+            f"Details: /task {short_id}"
+        )
+    return f"\nERROR: {error}"
+
+
+def task_error_summary(error: str) -> str:
+    if _is_provider_session_busy(error):
+        return "role session busy; wait for the running task or inspect /tasks"
+    return error
+
+
 def approval_required_message(task_id: str, reason: str | None) -> MessageContent:
     reason_text = f"\n{reason}" if reason else ""
     short_id = short_id_text(task_id)
@@ -219,6 +241,18 @@ def short_id_text(value: str) -> str:
     return value[:8]
 
 
+def _is_provider_session_busy(error: str) -> bool:
+    normalized = " ".join(error.casefold().split())
+    return "session id " in normalized and any(
+        marker in normalized
+        for marker in (
+            "already in use",
+            "currently in use",
+            "is in use",
+        )
+    )
+
+
 def _metrics_window_block(summary: MetricsSummary) -> str:
     lines = [
         summary.window.label,
@@ -286,7 +320,7 @@ def _task_status_line(snapshot: TaskSnapshot) -> str:
     if snapshot.risk_level is not RiskLevel.READ_ONLY:
         line = f"{line} ({snapshot.risk_level.value})"
     if snapshot.reason:
-        line = f"{line} - {snapshot.reason}"
+        line = f"{line} - {task_error_summary(snapshot.reason)}"
     return line
 
 
@@ -362,7 +396,7 @@ def _audit_event_block(event: AuditEvent) -> str:
     if event.adapter_name:
         lines.append(f"  adapter: {event.adapter_name}")
     if event.detail:
-        lines.append(f"  detail: {event.detail}")
+        lines.append(f"  detail: {task_error_summary(event.detail)}")
     return "\n".join(lines)
 
 

@@ -1,0 +1,38 @@
+[project]
+name = "sme-agent"
+version = "0.1.0"
+description = "Governed agent platform for small and medium businesses"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.0"]
+
+[project.scripts]
+sme-agent-live-commerce-deliver = "sme_agent.commercialization.live_commerce_delivery_cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.8",
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sme_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true

@@ -26,6 +26,14 @@ from aico.core.collaboration import (
     parse_collaboration_directive,
 )
 from aico.core.commands import Command, CommandName, parse_command, reject_parts
+from aico.core.ingress_authorization import (
+    AllowAllIngressAuthorizer,
+    IngressAuthorizer,
+    IngressBindingError,
+    IngressGuard,
+    OwnerBoundIngressAuthorizer,
+    parse_ingress_ids,
+)
 from aico.core.language import (
     DEFAULT_LANGUAGE_CODE,
     RESPONSE_LANGUAGE_METADATA_KEY,
@@ -62,6 +70,12 @@ from aico.core.memory import (
 )
 from aico.core.memory_broadcast import MemoryBroadcastReceipt, MemoryBroadcastService
 from aico.core.memory_capture import MemoryCaptureService
+from aico.core.memory_ledger import (
+    MemoryIntegrityError,
+    MemoryLedgerSummary,
+    seal_legacy_memory_ledger,
+    verify_memory_ledger,
+)
 from aico.core.metrics import (
     MetricsGlance,
     MetricsReport,
@@ -105,6 +119,7 @@ from aico.core.models import (
     TaskOutput,
     TaskSnapshot,
     TaskStatus,
+    TaskUsage,
 )
 from aico.core.native_output import (
     NATIVE_OUTPUT_FORMAT_METADATA_KEY,
@@ -134,11 +149,21 @@ from aico.core.project_assignment import (
     ProjectRoleProfile,
     RoleProfile,
     RoleScope,
+    StandingCharterItem,
     task_with_assignment_context,
 )
 from aico.core.prompt_stack import render_appointment_prompt
 from aico.core.risk import TextRiskAssessor
 from aico.core.router import MessageRouter
+from aico.core.standing_proposal import (
+    InMemoryStandingProposalStore,
+    SQLiteStandingProposalStore,
+    StandingProposal,
+    StandingProposalCoordinator,
+    StandingProposalDecisionMode,
+    StandingProposalStatus,
+    StandingProposalStore,
+)
 from aico.core.status_island import (
     StatusIslandSnapshot,
     StatusIslandTask,
@@ -161,6 +186,7 @@ from aico.core.unified_event import (
 
 __all__ = [
     "AckStatus",
+    "AllowAllIngressAuthorizer",
     "AdapterRegistry",
     "AdapterSnapshot",
     "AdapterStatus",
@@ -183,6 +209,9 @@ __all__ = [
     "CompanyAgentProfile",
     "HealthStatus",
     "IncomingMessage",
+    "IngressAuthorizer",
+    "IngressBindingError",
+    "IngressGuard",
     "InMemoryAgentSessionStore",
     "InMemoryAuditLog",
     "JsonlAuditSink",
@@ -211,6 +240,8 @@ __all__ = [
     "MemoryGraphMatch",
     "MemoryGovernor",
     "MemoryKind",
+    "MemoryIntegrityError",
+    "MemoryLedgerSummary",
     "ExperienceMeta",
     "MemoryPacket",
     "MemoryPacketItem",
@@ -225,10 +256,13 @@ __all__ = [
     "MemoryStatus",
     "MemoryStore",
     "MemoryCaptureService",
+    "seal_legacy_memory_ledger",
+    "verify_memory_ledger",
     "NATIVE_OUTPUT_FORMAT_METADATA_KEY",
     "DEFAULT_LANGUAGE_CODE",
     "RESPONSE_LANGUAGE_METADATA_KEY",
     "Orchestrator",
+    "OwnerBoundIngressAuthorizer",
     "OFFLINE_DELEGATION_INTENT",
     "OFFLINE_DELEGATION_INTENT_KEY",
     "OfflineDelegationCommandHandler",
@@ -254,6 +288,14 @@ __all__ = [
     "RiskLevel",
     "RoleProfile",
     "RoleScope",
+    "StandingCharterItem",
+    "StandingProposal",
+    "StandingProposalCoordinator",
+    "StandingProposalDecisionMode",
+    "StandingProposalStatus",
+    "StandingProposalStore",
+    "InMemoryStandingProposalStore",
+    "SQLiteStandingProposalStore",
     "STREAM_MESSAGE_TEXT_LIMIT",
     "SentMessage",
     "SQLiteTaskStateStore",
@@ -267,6 +309,7 @@ __all__ = [
     "TaskSnapshot",
     "TaskStateStore",
     "TaskStatus",
+    "TaskUsage",
     "TokenCostSummary",
     "UnifiedEvent",
     "UnifiedEventIndex",
@@ -287,6 +330,7 @@ __all__ = [
     "normalize_agent_output_for_im",
     "parse_collaboration_directive",
     "parse_command",
+    "parse_ingress_ids",
     "parse_response_language",
     "native_output_format_from_task",
     "provider_session_from_task",

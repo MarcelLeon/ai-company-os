@@ -1,0 +1,13 @@
+customer_id,region,customer_segment,industry
+C001,East,new,retail
+C002,East,returning,retail
+C003,East,returning,manufacturing
+C004,East,vip,enterprise
+C005,East,new,retail
+C006,East,vip,enterprise
+C007,South,new,retail
+C008,South,returning,manufacturing
+C009,South,vip,enterprise
+C010,North,new,retail
+C011,North,returning,manufacturing
+C012,North,vip,enterprise

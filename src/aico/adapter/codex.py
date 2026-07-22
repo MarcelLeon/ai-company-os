@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
+from typing import Any
 
 from aico.adapter.claude_code import (
     DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS,
@@ -11,7 +13,12 @@ from aico.adapter.claude_code import (
     ProcessFactory,
 )
 from aico.core.agent_session import ProviderSessionMode, provider_session_from_task
-from aico.core.models import Capability, Task
+from aico.core.models import Capability, Task, TaskUsage
+from aico.core.preauthorized_execution import (
+    PreauthorizedExecutionMode,
+    preauthorized_execution_mode,
+)
+from aico.core.standing_result import MAX_STANDING_RESULT_CHARS
 
 DEFAULT_CODEX_COMMAND = (
     "codex",
@@ -23,6 +30,7 @@ DEFAULT_CODEX_COMMAND = (
     "--color",
     "never",
 )
+STANDING_RESULT_SCHEMA_PATH = Path(__file__).with_name("schemas") / "standing-result-v1.schema.json"
 
 
 class CodexAdapter(ClaudeCodeAdapter):
@@ -47,6 +55,9 @@ class CodexAdapter(ClaudeCodeAdapter):
             output_idle_timeout_seconds=output_idle_timeout_seconds,
             max_concurrent_tasks=max_concurrent_tasks,
         )
+        self._json_tasks: set[str] = set()
+        self._bounded_result_tasks: set[str] = set()
+        self._task_usage: dict[str, TaskUsage] = {}
 
     def capabilities(self) -> frozenset[Capability]:
         return frozenset(
@@ -58,17 +69,65 @@ class CodexAdapter(ClaudeCodeAdapter):
             }
         )
 
+    def supports_preauthorized_execution(self, mode: str) -> bool:
+        return (
+            mode == PreauthorizedExecutionMode.READ_ONLY.value
+            and Path(self._command[0]).name == "codex"
+            and STANDING_RESULT_SCHEMA_PATH.is_file()
+        )
+
+    def task_usage(self, task_id: str) -> TaskUsage | None:
+        return self._task_usage.get(task_id)
+
     def _command_for_task(self, task: Task) -> tuple[str, ...]:
+        if preauthorized_execution_mode(task) is not None:
+            command = _preauthorized_read_only_command(self._command[0], task.payload)
+            self._json_tasks.add(task.task_id)
+            self._bounded_result_tasks.add(task.task_id)
+            return command
         provider_session = provider_session_from_task(task)
         if (
             provider_session is None
             or provider_session.provider_name != self.name
             or provider_session.mode is ProviderSessionMode.NEW
         ):
-            return (*self._command, task.payload)
+            command = (*self._command, task.payload)
+            if "--json" in command:
+                self._json_tasks.add(task.task_id)
+            return command
 
         command = _codex_exec_resume_command(self._command)
-        return (*command, provider_session.session_id, task.payload)
+        command = (*command, provider_session.session_id, task.payload)
+        if "--json" in command:
+            self._json_tasks.add(task.task_id)
+        return command
+
+    def _process_stdout_line_for_task(self, task_id: str, content: str) -> str | None:
+        if task_id not in self._json_tasks:
+            return self._process_stdout_line(content)
+        try:
+            event = json.loads(content)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(event, dict):
+            return None
+        if event.get("type") == "turn.completed":
+            usage = _task_usage_from_event(event)
+            if usage is not None:
+                self._task_usage[task_id] = usage
+            return None
+        if event.get("type") != "item.completed":
+            return None
+        item = event.get("item")
+        if not isinstance(item, dict) or item.get("type") != "agent_message":
+            return None
+        text = item.get("text")
+        if not isinstance(text, str) or not text:
+            return None
+        normalized = text if text.endswith("\n") else f"{text}\n"
+        if task_id in self._bounded_result_tasks:
+            return normalized[: MAX_STANDING_RESULT_CHARS + 1]
+        return normalized
 
     def _process_stdout_line(self, content: str) -> str | None:
         return None if _is_codex_noise(content) else content
@@ -80,6 +139,29 @@ class CodexAdapter(ClaudeCodeAdapter):
         if cleaned:
             return cleaned
         return f"Codex exited with code {return_code}"
+
+
+def _preauthorized_read_only_command(executable: str, payload: str) -> tuple[str, ...]:
+    return (
+        executable,
+        "--ask-for-approval",
+        "never",
+        "--sandbox",
+        "read-only",
+        "exec",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--ephemeral",
+        "--strict-config",
+        "-c",
+        "experimental_network.enabled=false",
+        "--output-schema",
+        str(STANDING_RESULT_SCHEMA_PATH),
+        "--color",
+        "never",
+        "--json",
+        payload,
+    )
 
 
 def _codex_exec_resume_command(command: tuple[str, ...]) -> tuple[str, ...]:
@@ -163,3 +245,27 @@ def _is_codex_noise(content: str) -> bool:
     if "thread/resume failed:" in stripped:
         return True
     return False
+
+
+def _task_usage_from_event(event: dict[str, Any]) -> TaskUsage | None:
+    usage = event.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    input_tokens = _non_negative_int(usage.get("input_tokens"))
+    output_tokens = _non_negative_int(usage.get("output_tokens"))
+    if input_tokens is None or output_tokens is None:
+        return None
+    return TaskUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=input_tokens + output_tokens,
+        cached_input_tokens=_non_negative_int(usage.get("cached_input_tokens")) or 0,
+        cache_write_input_tokens=(_non_negative_int(usage.get("cache_write_input_tokens")) or 0),
+        reasoning_output_tokens=(_non_negative_int(usage.get("reasoning_output_tokens")) or 0),
+    )
+
+
+def _non_negative_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value

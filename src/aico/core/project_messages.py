@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from datetime import timedelta
 
+from aico.core.command_messages import task_error_summary
 from aico.core.models import (
     AuditEvent,
     AuditEventType,
@@ -792,7 +793,7 @@ def _task_status_line(snapshot: TaskSnapshot) -> str:
     if snapshot.risk_level is not RiskLevel.READ_ONLY:
         line = f"{line} ({snapshot.risk_level.value})"
     if snapshot.reason:
-        line = f"{line} - {snapshot.reason}"
+        line = f"{line} - {task_error_summary(snapshot.reason)}"
     return line
 
 
@@ -869,7 +870,7 @@ def _decision_blocker_lines(task_snapshots: tuple[TaskSnapshot, ...]) -> tuple[s
         if snapshot.status is not TaskStatus.WAITING_APPROVAL:
             continue
         short_id = short_id_text(snapshot.task_id)
-        reason = f" - {snapshot.reason}" if snapshot.reason else ""
+        reason = f" - {task_error_summary(snapshot.reason)}" if snapshot.reason else ""
         lines.append(
             f"- task {short_id} [{snapshot.target_persona}] needs decision "
             f"({snapshot.risk_level.value}){reason}; use /approve {short_id} or /reject {short_id}"
@@ -887,7 +888,7 @@ def _failed_blocker_lines(task_snapshots: tuple[TaskSnapshot, ...]) -> tuple[str
     for snapshot in task_snapshots:
         if snapshot.status not in blocked_statuses:
             continue
-        reason = f" - {snapshot.reason}" if snapshot.reason else ""
+        reason = f" - {task_error_summary(snapshot.reason)}" if snapshot.reason else ""
         lines.append(
             f"- task {snapshot.task_id} [{snapshot.target_persona}] {snapshot.status.value}{reason}"
         )
@@ -955,13 +956,13 @@ def _project_task_risk_lines(task_snapshots: tuple[TaskSnapshot, ...]) -> tuple[
         if _is_system_noise(snapshot.reason):
             continue
         if snapshot.status in {TaskStatus.FAILED, TaskStatus.INTERRUPTED}:
-            reason = f" - {snapshot.reason}" if snapshot.reason else ""
+            reason = f" - {task_error_summary(snapshot.reason)}" if snapshot.reason else ""
             lines.append(
                 f"- task {snapshot.task_id} [{snapshot.target_persona}] "
                 f"{snapshot.status.value}{reason}"
             )
         elif snapshot.risk_level is RiskLevel.DESTRUCTIVE:
-            reason = f" - {snapshot.reason}" if snapshot.reason else ""
+            reason = f" - {task_error_summary(snapshot.reason)}" if snapshot.reason else ""
             lines.append(
                 f"- destructive task {snapshot.task_id} [{snapshot.target_persona}] "
                 f"{snapshot.status.value}{reason}"
@@ -978,7 +979,7 @@ def _project_audit_risk_lines(audit_events: tuple[AuditEvent, ...]) -> tuple[str
     for event in audit_events:
         if event.event_type not in risky_events or _is_system_noise(event.detail):
             continue
-        detail = f" - {event.detail}" if event.detail else ""
+        detail = f" - {task_error_summary(event.detail)}" if event.detail else ""
         lines.append(f"- audit {event.event_type.value}: {event.target_persona}{detail}")
     return tuple(lines)
 

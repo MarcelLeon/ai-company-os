@@ -67,7 +67,9 @@ class ViewSnapshotCommandHandler:
         )
         filename = f"aico-view-{_safe_filename(project.id)}.html"
         content = html.encode("utf-8")
+        summary = _snapshot_summary(project.id)
         if isinstance(self._channel, DocumentChannel):
+            await self._channel.send_message(message.source, MessageContent(text=summary))
             await self._channel.send_document(
                 message.source,
                 filename=filename,
@@ -81,8 +83,7 @@ class ViewSnapshotCommandHandler:
             message.source,
             MessageContent(
                 text=(
-                    f"AICO view snapshot written locally: {path}\n"
-                    "This channel cannot send document attachments yet."
+                    f"{summary}\n本地文件: {path}\n当前 IM 通道不能发送附件,请在本机打开这个 HTML。"
                 )
             ),
         )
@@ -103,3 +104,11 @@ class ViewSnapshotCommandHandler:
 def _safe_filename(value: str) -> str:
     safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in value.strip())
     return safe or "project"
+
+
+def _snapshot_summary(project_id: str) -> str:
+    return (
+        f"已生成 AICO view: {project_id}\n"
+        "用途: 只读查看项目状态、审计、记忆和交接线索。\n"
+        "如果手机不方便打开附件,先用 /inbox 看下一步,用 /task <id> 看原文。"
+    )

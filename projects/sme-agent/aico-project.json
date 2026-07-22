@@ -1,0 +1,124 @@
+{
+  "agents": {
+    "claude": {
+      "id": "claude",
+      "provider": "claude-code",
+      "title": "Build Lead",
+      "capabilities": ["code_edit", "shell_exec", "long_running", "stream_output", "interruptible"],
+      "max_concurrent_tasks": 5,
+      "recommended_max_appointments": 5
+    },
+    "codex": {
+      "id": "codex",
+      "provider": "codex",
+      "title": "Independent Review Lead",
+      "capabilities": ["code_review", "web_browse", "stream_output", "interruptible"],
+      "max_concurrent_tasks": 5,
+      "recommended_max_appointments": 5
+    }
+  },
+  "roles": {
+    "lead": {
+      "id": "lead",
+      "title": "SME Agent Product Lead",
+      "summary": "Own outcome framing, Goal Briefs, bounded decisions, delegation, evidence, and handoff continuity.",
+      "default_permissions": ["docs", "audit"],
+      "inline_prompt": "Keep STATUS.md, the active handoff, and acceptance evidence aligned. Enforce one active writer per bounded slice. Ask a named human business/data steward to approve enterprise semantics; ask the boss for product trade-offs, risky actions, or subjective acceptance."
+    },
+    "metadata-engineer": {
+      "id": "metadata-engineer",
+      "title": "Metadata Domain Engineer",
+      "summary": "Own terminology, metrics, dimensions, warehouse assets, entities, and governed relationships.",
+      "default_permissions": ["code", "tests", "docs"],
+      "approval_required": ["shell_exec", "destructive"],
+      "inline_prompt": "Protect domain semantics. Prefer explicit immutable models and repository ports; add evidence-backed tests for every relationship rule."
+    },
+    "knowledge-engineer": {
+      "id": "knowledge-engineer",
+      "title": "Knowledge and Retrieval Engineer",
+      "summary": "Own ingestion, citations, retrieval policy, permissions, and evaluation datasets.",
+      "default_permissions": ["code", "tests", "docs"],
+      "approval_required": ["shell_exec", "destructive"]
+    },
+    "runtime-engineer": {
+      "id": "runtime-engineer",
+      "title": "Agent Runtime Engineer",
+      "summary": "Own skills, tools, bounded loops, memory, context compression, and LLM ports.",
+      "default_permissions": ["code", "tests", "docs"],
+      "approval_required": ["shell_exec", "destructive"]
+    },
+    "tester": {
+      "id": "tester",
+      "title": "Contract and Evaluation Lead",
+      "summary": "Turn product claims into deterministic tests and representative business evaluations.",
+      "default_permissions": ["code", "tests", "audit"],
+      "inline_prompt": "Report exact evidence and gaps. Never accept model prose as proof."
+    },
+    "reviewer": {
+      "id": "reviewer",
+      "title": "Maintainability Reviewer",
+      "summary": "Review correctness, security, module boundaries, test gaps, and handoff quality.",
+      "default_permissions": ["code", "docs", "audit"],
+      "inline_prompt": "Findings first. Reject hidden coupling, provider leakage, missing evidence, and stale project artifacts."
+    },
+    "challenger": {
+      "id": "challenger",
+      "title": "Independent Product Challenger",
+      "summary": "Challenge scope, assumptions, evidence quality, human value, and long-term cost before lead decisions.",
+      "default_permissions": ["docs", "audit"],
+      "inline_prompt": "End with oppose, conditional support, or support, and state what evidence would change the verdict."
+    }
+  },
+  "projects": {
+    "sme-agent": {
+      "id": "sme-agent",
+      "name": "SME Agent",
+      "repo": "projects/sme-agent",
+      "north_star": "NORTH_STAR.md",
+      "status_doc": "STATUS.md",
+      "journal": "docs/journal/ROUNDS.md",
+      "blockers_doc": "docs/journal/BLOCKERS.md",
+      "pitfalls_doc": "docs/journal/PITFALLS.md",
+      "current_phase": "Commercialization sprint - merchant-owner delivery acceptance",
+      "brief": "Build a governed, maintainable SME agent platform with metadata, knowledge, skills, tools, bounded agent execution, memory, context compression, and provider-independent LLM access.",
+      "default_role": "lead",
+      "default_assignment": "sme-agent-lead",
+      "roles": {
+        "lead": {"role": "lead", "resources": ["STATUS.md", "docs/goals/phase-1-metadata.md", "docs/operating-model/alignment.md", "docs/handoffs/current.md"]},
+        "metadata-engineer": {"role": "metadata-engineer", "resources": ["docs/architecture/system.md", "src/sme_agent/metadata", "tests/unit/test_catalog.py"]},
+        "knowledge-engineer": {"role": "knowledge-engineer", "resources": ["docs/architecture/system.md", "STATUS.md"]},
+        "runtime-engineer": {"role": "runtime-engineer", "resources": ["docs/architecture/system.md", "docs/decisions/0001-project-boundary-and-modular-monolith.md"]},
+        "tester": {"role": "tester", "resources": ["tests", "STATUS.md", "docs/handoffs/current.md"]},
+        "reviewer": {"role": "reviewer", "resources": ["AGENTS.md", "docs/architecture/system.md", "docs/journal/PITFALLS.md"]},
+        "challenger": {"role": "challenger", "resources": ["NORTH_STAR.md", "STATUS.md", "docs/operating-model/alignment.md"]}
+      },
+      "standing_charter": [
+        {
+          "id": "commercial-evidence-loop",
+          "objective": "Inspect current SME Agent acceptance evidence, identify the highest-confidence gap, and recommend one bounded non-external follow-up for merchant clarity or governed delivery.",
+          "role": "reviewer",
+          "acceptance_evidence": [
+            "one concrete gap tied to the current Goal Brief and STATUS",
+            "specific local evidence supporting the finding",
+            "one bounded recommendation with explicit verification and stop conditions"
+          ],
+          "stop_conditions": [
+            "stop before external publication or messaging",
+            "stop before real merchant data or payment",
+            "stop before accepting the 199 RMB offer for the owner"
+          ],
+          "cooldown_hours": 168
+        }
+      ]
+    }
+  },
+  "appointments": [
+    {"project": "sme-agent", "agent": "claude", "role": "lead", "seat": "sme-agent-lead", "session_policy": "project_scoped", "risk_policy": "approval_required", "permissions": ["docs", "audit"], "workspace": "projects/sme-agent"},
+    {"project": "sme-agent", "agent": "claude", "role": "metadata-engineer", "seat": "sme-agent-metadata", "session_policy": "project_scoped", "risk_policy": "approval_required", "permissions": ["code", "tests", "docs"], "workspace": "projects/sme-agent"},
+    {"project": "sme-agent", "agent": "claude", "role": "knowledge-engineer", "seat": "sme-agent-knowledge", "session_policy": "project_scoped", "risk_policy": "approval_required", "permissions": ["code", "tests", "docs"], "workspace": "projects/sme-agent"},
+    {"project": "sme-agent", "agent": "claude", "role": "runtime-engineer", "seat": "sme-agent-runtime", "session_policy": "project_scoped", "risk_policy": "approval_required", "permissions": ["code", "tests", "docs"], "workspace": "projects/sme-agent"},
+    {"project": "sme-agent", "agent": "codex", "role": "tester", "seat": "sme-agent-tester", "session_policy": "bind_or_resume", "risk_policy": "read_only", "permissions": ["code", "tests", "audit"], "workspace": "projects/sme-agent"},
+    {"project": "sme-agent", "agent": "codex", "role": "reviewer", "seat": "sme-agent-reviewer", "session_policy": "bind_or_resume", "risk_policy": "read_only", "permissions": ["code", "docs", "audit"], "workspace": "projects/sme-agent"},
+    {"project": "sme-agent", "agent": "codex", "role": "challenger", "seat": "sme-agent-challenger", "session_policy": "bind_or_resume", "risk_policy": "read_only", "permissions": ["docs", "audit"], "workspace": "projects/sme-agent"}
+  ]
+}

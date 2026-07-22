@@ -1,0 +1,25 @@
+order_id,date,month,region,channel,customer_id,customer_segment,product_id,product_name,gross_revenue,paid_revenue,status
+M-E-001,2026-05-03,2026-05,East,Douyin,C001,new,P100,Smart Camera,40000,40000,paid
+M-E-002,2026-05-04,2026-05,East,Douyin,C002,returning,P200,Edge Router,5000,5000,paid
+M-E-003,2026-05-07,2026-05,East,Kuaishou,C003,returning,P100,Smart Camera,12000,12000,paid
+M-E-004,2026-05-09,2026-05,East,Kuaishou,C004,vip,P300,Data Console,18000,18000,paid
+M-E-005,2026-05-12,2026-05,East,Search,C005,new,P200,Edge Router,25000,25000,paid
+M-E-006,2026-05-16,2026-05,East,Referral,C006,vip,P300,Data Console,20000,20000,paid
+M-S-001,2026-05-05,2026-05,South,Douyin,C007,new,P100,Smart Camera,30000,30000,paid
+M-S-002,2026-05-11,2026-05,South,Search,C008,returning,P200,Edge Router,20000,20000,paid
+M-S-003,2026-05-20,2026-05,South,Referral,C009,vip,P300,Data Console,15000,15000,paid
+M-N-001,2026-05-05,2026-05,North,Douyin,C010,new,P100,Smart Camera,24000,24000,paid
+M-N-002,2026-05-11,2026-05,North,Search,C011,returning,P200,Edge Router,18000,18000,paid
+M-N-003,2026-05-20,2026-05,North,Referral,C012,vip,P300,Data Console,18000,18000,paid
+J-E-001,2026-06-03,2026-06,East,Douyin,C001,new,P100,Smart Camera,22000,22000,paid
+J-E-002,2026-06-04,2026-06,East,Douyin,C002,returning,P200,Edge Router,6000,6000,paid
+J-E-003,2026-06-07,2026-06,East,Kuaishou,C003,returning,P100,Smart Camera,12000,12000,paid
+J-E-004,2026-06-09,2026-06,East,Kuaishou,C004,vip,P300,Data Console,9000,9000,paid
+J-E-005,2026-06-12,2026-06,East,Search,C005,new,P200,Edge Router,20000,20000,paid
+J-E-006,2026-06-16,2026-06,East,Referral,C006,vip,P300,Data Console,15000,15000,paid
+J-S-001,2026-06-05,2026-06,South,Douyin,C007,new,P100,Smart Camera,31000,31000,paid
+J-S-002,2026-06-11,2026-06,South,Search,C008,returning,P200,Edge Router,28000,28000,paid
+J-S-003,2026-06-20,2026-06,South,Referral,C009,vip,P300,Data Console,20000,20000,paid
+J-N-001,2026-06-05,2026-06,North,Douyin,C010,new,P100,Smart Camera,22000,22000,paid
+J-N-002,2026-06-11,2026-06,North,Search,C011,returning,P200,Edge Router,19000,19000,paid
+J-N-003,2026-06-20,2026-06,North,Referral,C012,vip,P300,Data Console,20000,20000,paid

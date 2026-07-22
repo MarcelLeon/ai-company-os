@@ -16,6 +16,8 @@ from aico.core.models import (
     IncomingMessage,
     MessageContent,
     MessageNativeFormat,
+    MessageTextSpan,
+    MessageTextStyle,
     SentMessage,
 )
 
@@ -71,16 +73,14 @@ class TelegramChannel:
             return
 
         self._running = True
-        self._poll_task = asyncio.create_task(self._poll_loop())
+        self._start_polling_task()
 
     async def stop(self) -> None:
         self._running = False
         if self._poll_task is not None:
-            self._poll_task.cancel()
-            try:
-                await self._poll_task
-            except asyncio.CancelledError:
-                pass
+            if not self._poll_task.done():
+                self._poll_task.cancel()
+            await self._consume_polling_task()
             self._poll_task = None
 
         for task in tuple(self._handler_tasks):
@@ -172,11 +172,24 @@ class TelegramChannel:
         self._handler = handler
 
     async def health_check(self) -> HealthStatus:
+        if self._running and (self._poll_task is None or self._poll_task.done()):
+            return HealthStatus.FAILED
         try:
             await self._post("getMe", {})
         except (httpx.HTTPError, KeyError, TelegramAPIError):
             return HealthStatus.FAILED
         return HealthStatus.OK
+
+    def owned_task_alive(self) -> bool:
+        return self._running and self._poll_task is not None and not self._poll_task.done()
+
+    async def restart_owned_task(self) -> None:
+        if not self._running or self.owned_task_alive():
+            return
+        if self._poll_task is not None:
+            await self._consume_polling_task()
+        if self._running:
+            self._start_polling_task()
 
     async def poll_once(self) -> None:
         payload: dict[str, int] = {"timeout": self._poll_timeout_seconds}
@@ -190,10 +203,9 @@ class TelegramChannel:
             message = _to_incoming_message(self._name, update)
             if message is not None and self._handler is not None:
                 log.info(
-                    "Telegram incoming text: update_id=%s raw_ref=%s sender=%s chars=%s",
+                    "Telegram incoming text: update_id=%s raw_ref=%s chars=%s",
                     update_id,
                     message.raw_ref,
-                    message.sender_id,
                     len(message.content.text),
                 )
                 self._schedule_handler(message)
@@ -214,8 +226,27 @@ class TelegramChannel:
                 log.warning("Telegram polling failed: %s", exc)
                 await asyncio.sleep(1)
 
+    def _start_polling_task(self) -> None:
+        self._poll_task = asyncio.create_task(
+            self._poll_loop(),
+            name="aico-telegram-polling",
+        )
+
+    async def _consume_polling_task(self) -> None:
+        if self._poll_task is None:
+            return
+        try:
+            await self._poll_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            log.error(
+                "Telegram polling task had stopped unexpectedly: type=%s",
+                type(exc).__name__,
+            )
+
     async def _post(self, method: str, payload: dict[str, Any]) -> Any:
-        response = await self._client.post(self._method_url(method), json=payload)
+        response = await self._request_with_connect_retry(method, payload)
         data = _telegram_response_json(response)
         if not data.get("ok"):
             description = data.get("description", "unknown Telegram API error")
@@ -229,17 +260,35 @@ class TelegramChannel:
         payload: dict[str, Any],
         files: dict[str, tuple[str, bytes, str]],
     ) -> Any:
-        response = await self._client.post(
-            self._method_url(method),
-            data=payload,
-            files=files,
-        )
+        response = await self._request_with_connect_retry(method, payload, files=files)
         data = _telegram_response_json(response)
         if not data.get("ok"):
             description = data.get("description", "unknown Telegram API error")
             raise TelegramAPIError(str(description))
         response.raise_for_status()
         return data["result"]
+
+    async def _request_with_connect_retry(
+        self,
+        method: str,
+        payload: dict[str, Any],
+        *,
+        files: dict[str, tuple[str, bytes, str]] | None = None,
+    ) -> httpx.Response:
+        for attempt in range(2):
+            try:
+                if files is None:
+                    return await self._client.post(self._method_url(method), json=payload)
+                return await self._client.post(
+                    self._method_url(method),
+                    data=payload,
+                    files=files,
+                )
+            except httpx.ConnectTimeout:
+                if attempt == 1:
+                    raise
+                log.warning("Telegram %s connect timed out; retrying once", method)
+        raise RuntimeError("unreachable Telegram retry state")
 
     def _method_url(self, method: str) -> str:
         return f"{self._api_base_url}/bot{self._bot_token}/{method}"
@@ -397,7 +446,20 @@ def _html_text(content: MessageContent) -> str:
     parts: list[str] = []
     cursor = 0
     text = content.text
-    for span in sorted(content.spans, key=lambda item: item.offset):
+    spans = sorted(content.spans, key=lambda item: item.offset)
+    index = 0
+    while index < len(spans):
+        preformatted = _preformatted_run(spans, index, text, cursor)
+        if preformatted is not None:
+            next_index, start, end = preformatted
+            parts.append(html.escape(text[cursor:start], quote=False))
+            parts.append(f"<pre>{html.escape(text[start:end], quote=False)}</pre>")
+            cursor = end
+            index = next_index
+            continue
+
+        span = spans[index]
+        index += 1
         start = span.offset
         end = min(span.offset + span.length, len(text))
         if start < cursor or start >= len(text) or end <= start:
@@ -407,6 +469,49 @@ def _html_text(content: MessageContent) -> str:
         cursor = end
     parts.append(html.escape(text[cursor:], quote=False))
     return "".join(parts)
+
+
+def _preformatted_run(
+    spans: list[MessageTextSpan],
+    start_index: int,
+    text: str,
+    cursor: int,
+) -> tuple[int, int, int] | None:
+    first = spans[start_index]
+    first_end = min(first.offset + first.length, len(text))
+    if (
+        first.style is not MessageTextStyle.CODE
+        or first.offset < cursor
+        or not _is_full_line(text, first.offset, first_end)
+    ):
+        return None
+
+    index = start_index + 1
+    block_end = first_end
+    while index < len(spans):
+        span = spans[index]
+        span_end = min(span.offset + span.length, len(text))
+        if (
+            span.style is not MessageTextStyle.CODE
+            or span.offset != block_end + 1
+            or text[block_end : span.offset] != "\n"
+            or not _is_full_line(text, span.offset, span_end)
+        ):
+            break
+        block_end = span_end
+        index += 1
+
+    if index - start_index < 2:
+        return None
+    return index, first.offset, block_end
+
+
+def _is_full_line(text: str, start: int, end: int) -> bool:
+    if start < 0 or end <= start or end > len(text):
+        return False
+    starts_line = start == 0 or text[start - 1] == "\n"
+    ends_line = end == len(text) or text[end] == "\n"
+    return starts_line and ends_line
 
 
 def _html_tag(style: str, text: str) -> str:

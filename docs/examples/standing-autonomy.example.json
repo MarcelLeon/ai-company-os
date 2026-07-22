@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "grants": [
+    {
+      "grant_id": "replace-with-new-owner-grant-id",
+      "owner_id": "replace-with-exact-im-sender-id",
+      "channel_name": "telegram",
+      "target_id": "replace-with-exact-chat-id",
+      "thread_id": null,
+      "project_id": "aico",
+      "charter_id": "absence-evidence-audit",
+      "mode": "read_only",
+      "expires_at": "2026-07-28T09:00:00+08:00",
+      "max_runs": 1,
+      "max_duration_seconds": 900,
+      "token_stop_threshold": 200000
+    }
+  ]
+}
