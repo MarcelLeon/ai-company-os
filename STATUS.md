@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-07-22
-**当前轮次**:Round 250 proposal(Signed dead-man evidence envelope;awaiting owner confirmation)
+**当前轮次**:Round 251(Unified local onboarding + real LaunchAgent dogfood)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是owner-bound standing autonomy、
@@ -14,9 +14,30 @@ receipt继续不冒充off-device来源、full business recovery或老板已读�
 recovery-set schema v6仍固定`business_restore_ready=false`。默认与交互入口不自执行；Round 200-249累计补齐durable runtime、
 recovery/alert/dead-man、component DR primitive和bounded/auditable autonomy，Team Karpathy Loop仍在Future。
 
+公开用户默认形态现已固定为checkout内的本机Runtime：`aico init|doctor|run`完成前台验证，macOS再用
+`aico service install`进入用户级LaunchAgent。Dead-Man Receiver只在用户主动要求整机失联检测时作为异机/云端高级能力，
+不再是普通Quickstart或`optional`模式安装前提。
+
 Round 241为独立receiver增加可选different-origin fallback与1-of-2/2-of-2 ACK quorum；schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝配置漂移，原2-of-2事件不能在重启后被1-of-2降级结算。单通知provider或credential失效不再必然切断老板通知，但不同URL、local ACK和unit test仍不冒充真实provider/账号/网络独立或human read。
 
 Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增加默认关闭、显式opt-in的`silent-route-probe-v1`：复用真实双route URL/token/POST，exact intent跨restart；一个失败窗口为suspect/PENDING，连续达到阈值才通过既有edge主动告警，ACK后恢复。bridge不能证明silent handling时必须保持disabled，local ACK不冒充human read或commercial HA。Round 244新增strict install admission，Round 245让它贯穿每次runtime启动；Round 246再要求incident alert与dead-man pulse使用不同exact URL及不同非空bearer，防止两个strict协议共用authority却判绿。Round 247检测运行中dotenv代际漂移；Round 248让dead-man当前验收显式拒绝超龄artifact、过期/未完成probe和非healthy route；Round 249把reviewed config、dotenv generation与strict evidence绑定成expiring commissioning receipt并持续纳入required health。Round 200-249累计合同以本段和下方最新Round为准。
+
+---
+
+## Round 251 完成:Unified local onboarding + real LaunchAgent dogfood
+
+- [x] 新增单一公开CLI `aico demo|init|run|doctor|service`，复用既有runtime/service事实源；`init`原子创建`0600`最小配置。
+- [x] `init`新增一次性exact private-chat pairing，只接受匹配随机码的private update；已知owner/chat可显式提供，失败不泄露token或Bot API细节。
+- [x] 修复配置隔离：显式settings与service preflight不再隐式吸入checkout ambient`.env`，production loader仍显式读取并绑定文件代际。
+- [x] README/Quickstart/Daily Ops/部署文档将本机Runtime固定为默认形态；Dead-Man明确为异机整机失联检测的可选高级组件。
+- [x] 新增Accepted ADR-0089与P-106；拒绝把本机核心Docker化或让shell脚本形成第二套策略源。
+- [x] 真实生成owner-only`.env`，doctor基础合同通过；安装并重启用户级LaunchAgent，稳定态pid与owner lock一致，heartbeat v5中
+  Telegram polling、Claude、Codex component health均为OK。
+- [x] Gate：targeted phase/service/CLI/Telegram`148 passed`；full root`1020 passed, 1 skipped`；Ruff、mypy(226 files)、
+  226-file format与diff通过。
+- [ ] Web Telegram在指定`ai_co` Bot私聊显示测试气泡，但当前账号同时显示`Your Account is Frozen`，Bot API用户名确认正确但
+  `getUpdates`为0；因此没有把该气泡或本地注入冒充真实IM入站证据。B-010只剩可发消息账号下的新鲜回包样本。
+- [ ] ADR-0088仍是独立密码学提案；本轮没有因为Dead-Man降为可选就静默实现、接受或删除它。
 
 ---
 
@@ -3180,10 +3201,10 @@ AICO 的产品边界是 absence-first:
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【最高】Durable runtime 真实安装 + owner-bound standing IM 样本**:
-   - Round 208 已补 durable secondary runtime alert + external dead-man sender/receiver contract；重复 runtime、crash recovery、owned-task recovery、heartbeat v5、plist lint 和 pre-install doctor 机器 Gate已完成,真实 checkout 仍缺 `.env`,且本轮没有执行 LaunchAgent 安装。
-   - owner 按 `docs/human/quickstart.md` 创建 `.env`、`chmod 600 .env`并配置真实owner sender/trusted target；若需
-     discovery只在前台短时开启，复制identity后必须关闭。先跑 `uv run aico-service doctor`,再显式执行 `uv run aico-service install`。
+1. **【最高】Durable runtime 新鲜 owner-bound IM 样本**:
+   - Round 251已生成真实`.env`、安装/restart用户级LaunchAgent并验证stable owner PID、Telegram polling与required component health；
+     当前只缺可发消息Telegram账号下的一条新鲜入站/回包样本。现有Web账号显示frozen，UI气泡未进入Bot API，见B-010。
+   - 账号恢复后在`ai_co` Bot私聊发送`/help`、`/project aico`、`/inbox`；核对UI回包、`handler finished`与doctor stable。
    - strict还必须先在最终`.env`固定checkout-external evidence/receipt路径，从真实receiver导出owner-only bundle并运行
      `aico-commission create`；doctor需同时显示`runtime commissioning` OK。任何配置/evidence更新使用新artifact路径重新commission。
    - doctor必须同时显示`IM ingress`和bounded approval lease；owner调整`AICO_APPROVAL_MAX_AGE_SECONDS`只影响新审批，
@@ -3191,21 +3212,20 @@ AICO 的产品边界是 absence-first:
    - Round 232-233起scheduled morning必须配置`AICO_STATE_DB_PATH`；真实到点后用`aico-state`分别核对delivery
      status/id/content SHA与autonomy intent/status/disposition，再在可信聊天核对相同`Delivery:`/`Intent:`。
      `delivered`只表示平台ACK，`settled`也不等于result complete；duplicate flags必须检查有界重复，不能写成老板已读。
-   - 关闭启动终端后,用 `uv run aico-service doctor` 确认 launchctl loaded + process fresh + required components healthy;optional Adapter degraded 可单独修复。
-   - 再从可信 Telegram/Feishu 聊天发一条 `/inbox` 或 `/morning`;若配置独立 receiver,补一条 circuit open/resolved 真实收件样本。见 B-010/B-011。
+   - 若配置独立receiver，再补一条circuit open/resolved收件样本；未配置不阻塞基础开源形态。见B-010/B-011。
    - 若owner启用standing autonomy，doctor必须显示`owner-bound runtime binding verified`；用`max_runs=1`完成一次真实
      scheduled Codex inspection，重启后验证budget exhausted、done/interrupted receipt且无collaboration/resume/network；
      terminal receipt必须有provider `tokens=N`；`evidence_missing`必须停止人工核对，不能自动重跑。阈值只在run间
      熔断，不是单次硬成本SLA。见B-014。
-2. **【最高】独立 dead-man receiver 部署 + 真实 outage sample**:
+2. **【可选高级】独立 dead-man receiver 部署 + 真实 outage sample**:
    - Round 210 已完成可部署 receiver、持久 armed/current/outage/outbox、auth、worker-progress readiness、evidence export/verifier、容器和 runbook；当前只缺
      第二故障域、TLS/secret/owner notification endpoint 与真实 kill/launch-failure/network open-resolved 样本,见 B-012。
-   - owner 按 `deploy/dead-man-receiver/README.md` 部署到独立主机,挂载 persistent `/data`,生成互异 pulse/admin
+   - 只有owner把整机失联检测列为目标时，才按`deploy/dead-man-receiver/README.md`部署到独立主机，挂载persistent`/data`，生成互异pulse/admin
      secret,配置 owner notification sink并显式 arm；不要把 receiver 与 AICO 放在同一 Mac。
    - 验收 kill process后 launchd replacement、持续 launch failure、断网超过 TTL再恢复；每类只允许一次 open +
      一次 resolved。每类导出bundle并用strict offline verifier及`aico-commission`绑定当前runtime generation，同时保存host/TLS/fault操作证据；
      永久 uninstall 前显式 disarm,普通 stop/restart不解除监控。
-   - ADR-0088已提出Ed25519 signed evidence envelope以关闭local artifact来源信任缺口；这是密码学依赖与wire contract变更，需owner确认后实现。
+   - ADR-0088已提出Ed25519 signed evidence envelope以关闭local artifact来源信任缺口；它仍是Proposed，需单独确认后实现，且不阻塞普通用户启动。
 3. **【最高】全资产 off-device 备份策略 + 隔离checkout业务恢复演练**:
    - Round 211-212 已完成主SQLite recovery primitive；Round 223-225完成tamper-evident audit与owner-fenced recovery；
      Round 227完成同等级memory recovery并用bounded-window core set绑定三者；Round 228绑定独立reviewed Git revision/config；

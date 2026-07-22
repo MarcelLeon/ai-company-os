@@ -224,6 +224,50 @@ async def test_telegram_channel_maps_callback_query_to_incoming_message() -> Non
     ]
 
 
+async def test_telegram_channel_discovers_only_exact_private_setup_command() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/bottoken/getUpdates"
+        assert request.read() == b'{"timeout":0,"limit":100}'
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "result": [
+                    {
+                        "update_id": 1,
+                        "message": {
+                            "text": "/help AICO-setup-exact",
+                            "from": {"id": 11},
+                            "chat": {"id": -100, "type": "group"},
+                        },
+                    },
+                    {
+                        "update_id": 2,
+                        "message": {
+                            "text": "/help AICO-setup-other",
+                            "from": {"id": 22},
+                            "chat": {"id": 22, "type": "private"},
+                        },
+                    },
+                    {
+                        "update_id": 3,
+                        "message": {
+                            "text": "/help AICO-setup-exact",
+                            "from": {"id": 33},
+                            "chat": {"id": 33, "type": "private"},
+                        },
+                    },
+                ],
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        channel = TelegramChannel("token", client=client)
+        identity = await channel.discover_private_identity("/help AICO-setup-exact")
+
+    assert identity == ("33", "33")
+
+
 async def test_telegram_channel_send_edit_and_delete_use_bot_api_methods() -> None:
     calls: list[tuple[str, bytes]] = []
 

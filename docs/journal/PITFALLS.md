@@ -2637,6 +2637,33 @@ reviewed config、loaded dotenv和strict dead-man bundle可分别通过，但没
 - P-103/P-104
 - B-010/B-012
 
+### [P-106] 把独立故障域写进默认Quickstart会把高级可靠性误成基础使用门槛
+
+**状态**:🟢 RESOLVED(tiered onboarding;external outage evidence remains optional)
+**首次踩中**:Round 251
+**最后更新**:2026-07-22
+**影响范围**:公开Quickstart、LaunchAgent安装、Dead-Man Receiver部署、产品分发形态
+
+**症状**
+普通用户只是想从Telegram调用本机AI CLI，却被引导先准备第二台电脑或云服务器、部署receiver并完成严格
+commissioning。机器合同虽然更完整，但首次使用路径被高级可靠性验收吞没，也让人误以为本机Runtime不能独立工作。
+
+**解决方案 / 缓解措施**
+- 公开默认路径固定为checkout + `aico init` + 前台runtime；macOS需要常驻时再安装用户级LaunchAgent。
+- Dead-Man Receiver明确标为可选高级能力，只有整机失联检测目标才需要，且仅异机部署能形成独立故障域。
+- `optional`是普通开发/dogfood默认；`strict`只用于owner主动选择的absence可靠性验收。
+- Docker Compose继续服务独立receiver；本机核心保留原生进程，以复用本地仓库、CLI凭据和macOS服务管理。
+
+**如何避免再次踩中**
+- 文档先回答“最少需要运行什么”，再分层介绍可靠性增强，不把所有可用能力堆进第一条路径。
+- 部署组件是否必需由产品承诺决定；某能力需要第二故障域，不代表整个产品需要第二故障域。
+- Quickstart只调用单一公开CLI；shell脚本和内部entrypoint不能发展成并行策略源。
+
+**相关链接**
+- ROUNDS Round 251
+- ADR-0089
+- B-010/B-012
+
 ### [P-063] 进程内告警无法证明发送者自身仍存活
 
 **状态**:🟢 RESOLVED(machine contract;external deployment pending)

@@ -8,11 +8,9 @@
 ## 启动 / 停止
 
 ```bash
-export AICO_TELEGRAM_BOT_TOKEN="你的 Telegram Bot Token"
-export AICO_CLAUDE_WORKING_DIRECTORY="/Users/wangzq/VsCodeProjects/ai-company-os"
-export AICO_OWNER_SENDER_IDS="你的 Telegram user id"
-export AICO_TRUSTED_TARGET_IDS="你的 private chat id"
-env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11 aico-phase1
+uv run aico init      # 首次执行；创建owner-only .env
+uv run aico doctor    # 配置与运行状态检查
+uv run aico run       # 前台运行，Ctrl-C停止
 ```
 
 停止时用 `Ctrl-C`。
@@ -23,13 +21,16 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python /opt/homebrew/bin/python3.11
 `.env` 并执行 `chmod 600 .env`,再运行:
 
 ```bash
-uv run aico-service --repo . doctor   # 安装前 readiness;不输出 secret value
-uv run aico-service --repo . install  # 显式安装并启动 LaunchAgent
-uv run aico-service --repo . status   # launchctl 原始状态
-uv run aico-service --repo . doctor   # plist / loaded / heartbeat 综合检查
-uv run aico-service --repo . restart
-uv run aico-service --repo . uninstall
+uv run aico doctor             # 安装前 readiness;不输出 secret value
+uv run aico service install    # 显式安装并启动 LaunchAgent
+uv run aico service status     # launchctl 原始状态
+uv run aico doctor             # plist / loaded / heartbeat 综合检查
+uv run aico service restart
+uv run aico service uninstall
 ```
+
+Dead-Man Receiver不是常驻AICO的必需组件。只有需要在整台Mac失联时仍由外部系统告警，才在另一台主机
+或云服务部署它；与AICO运行在同一台Mac只能做接口测试，不能形成独立故障域。
 
 默认`.env`使用`AICO_ABSENCE_ADMISSION_MODE=optional`，用于开发时保留可选能力。老板准备离开前改成`strict`并重新运行
 doctor/install；`absence admission`必须为OK，否则launchctl不会执行。strict要求runtime alerts、external liveness、current runtime

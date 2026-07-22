@@ -17,6 +17,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, TextIO
 
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+
 from aico.app.absence_admission import (
     ABSENCE_ADMISSION_MODES,
     runtime_webhook_isolation_error,
@@ -57,6 +59,22 @@ _PLACEHOLDER_FRAGMENTS = (
     ">",
 )
 CheckStatus = Literal["ok", "warn", "fail"]
+
+
+class _ExplicitPhase1Settings(Phase1Settings):
+    """Validate one already-selected service config without ambient settings sources."""
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        del cls, settings_cls, env_settings, dotenv_settings, file_secret_settings
+        return (init_settings,)
 
 
 @dataclass(frozen=True)
@@ -936,7 +954,7 @@ def _standing_autonomy_settings(
         for field_name in field_names
         if (value := env.get(f"AICO_{field_name.upper()}")) is not None
     }
-    settings = Phase1Settings.model_validate(payload)
+    settings = _ExplicitPhase1Settings.model_validate(payload)
     path_updates = {
         field_name: _path_from_repo(getattr(settings, field_name), repo)
         for field_name in (
@@ -983,7 +1001,7 @@ def _recovery_backup_settings(
         if (value := env.get(f"AICO_{field_name.upper()}")) is not None
     }
     payload.setdefault("recovery_backup_checkout_path", str(repo))
-    settings = Phase1Settings.model_validate(payload)
+    settings = _ExplicitPhase1Settings.model_validate(payload)
     path_fields = (
         "state_db_path",
         "audit_log_path",

@@ -443,6 +443,26 @@ def test_service_readiness_verifies_owner_bound_standing_autonomy_without_identi
     assert unsafe.detail == "standing autonomy grant must be owner-only"
 
 
+def test_service_readiness_ignores_ambient_dotenv_during_explicit_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ambient = tmp_path / "ambient"
+    ambient.mkdir()
+    (ambient / ".env").write_text(
+        "AICO_PERSONA_CONFIG_PATH=missing-ambient-personas.json\nAICO_ENABLE_CURSOR_ADAPTER=true\n",
+        encoding="utf-8",
+    )
+    context = _context(tmp_path / "service")
+    _configure_standing_autonomy(context, tmp_path / "service")
+    monkeypatch.chdir(ambient)
+
+    check = next(item for item in readiness_checks(context) if item.name == "standing autonomy")
+
+    assert check.status == "ok"
+    assert check.detail == "owner-bound runtime binding verified (1 grants)"
+
+
 def test_service_readiness_preflights_scheduled_recovery_destination(tmp_path: Path) -> None:
     context = _context(tmp_path)
     output = tmp_path / "private-recovery"
@@ -1054,7 +1074,7 @@ def _configure_standing_autonomy(
             grants=(
                 StandingAutonomyGrant(
                     grant_id="grant-private-1",
-                    owner_id="owner-telegram-private",
+                    owner_id="owner-private",
                     channel_name="telegram",
                     target_id="chat-private",
                     project_id="aico",

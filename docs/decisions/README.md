@@ -107,6 +107,7 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0086 | Bounded Current Dead-Man Evidence Acceptance | Accepted | 2026-07-22 |
 | ADR-0087 | Expiring Runtime Commissioning Receipt | Accepted | 2026-07-22 |
 | ADR-0088 | Signed Dead-Man Evidence Envelope | Proposed | 2026-07-22 |
+| ADR-0089 | Unified Local Onboarding and Optional Dead-Man Receiver | Accepted | 2026-07-22 |
 
 **状态图例**:
 - `Proposed`(提议中)

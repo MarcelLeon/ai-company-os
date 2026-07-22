@@ -269,6 +269,22 @@ def test_phase1_loads_strict_absence_admission_from_dotenv(
     assert "private-token" not in str(exc.value)
 
 
+def test_phase1_settings_constructor_does_not_implicitly_read_checkout_dotenv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".env").write_text(
+        "AICO_STATE_DB_PATH=.aico/ambient-state.db\nAICO_ENABLE_CURSOR_ADAPTER=true\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    settings = Phase1Settings(telegram_bot_token="token")
+
+    assert settings.state_db_path is None
+    assert settings.enable_cursor_adapter is False
+
+
 def test_phase1_strict_absence_preflight_runs_before_runtime_construction(
     tmp_path: Path,
 ) -> None:

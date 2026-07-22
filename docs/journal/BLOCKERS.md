@@ -22,14 +22,14 @@
 
 **状态**:🟡 DEFERRED
 **提出于**:Round 200
-**最后更新**:2026-07-22(Round 250 proposal)
+**最后更新**:2026-07-22(Round 251)
 **影响**:LaunchAgent、heartbeat v5、component health、bounded owned-task self-healing、durable secondary alert、
 external liveness publisher 和 doctor 的机器契约已完成,但还不能声称当前 Mac 已在 terminal 关闭后持续接收真实 IM。
 
 **问题描述**
-Round 200 已提供 macOS user LaunchAgent 管理 CLI,并修复 morning scheduler 生命周期。真实 checkout 的
-`aico-service doctor` 仍如实报告 `.env` 缺失、plist 未安装、heartbeat 未安装。本轮没有 owner 的真实凭据配置,
-也没有显式安装授权,因此没有执行 `launchctl bootstrap/kickstart`,更没有关闭 terminal 后的 Telegram/Feishu 回包证据。
+Round 251已用真实owner凭据生成`0600` `.env`，安装并重启macOS user LaunchAgent；稳定态doctor确认plist current、
+launchctl loaded、owner PID与launchd一致，heartbeat v5确认Telegram polling及required Adapter健康。Web Telegram当前账号
+显示`Your Account is Frozen`，测试气泡没有进入Bot API，因此仍缺关闭terminal后的新鲜Telegram入站/回包证据。
 
 **已完成的机器证据**
 - fake launchctl 覆盖 install/restart/status/uninstall、bootstrap failure 和 recoverable backup。
@@ -68,16 +68,15 @@ Round 200 已提供 macOS user LaunchAgent 管理 CLI,并修复 morning schedule
   evidence，doctor/startup离线复核，运行中expiry/漂移进入required health。它仍没有创建owner `.env`、LaunchAgent或真实IM样本。
 
 **需要什么才能解开**
-1. owner 从 `.env.example` 创建真实 `.env`,替换占位值并执行 `chmod 600 .env`；必须配置真实
-   `AICO_OWNER_SENDER_IDS`和`AICO_TRUSTED_TARGET_IDS`。未知ID时只在前台短时开启discovery，复制后立即关闭。
-2. 商用absence dogfood先把`AICO_ABSENCE_ADMISSION_MODE`设为`strict`，在最终`.env`写入checkout-external evidence/receipt路径，
+1. owner恢复当前Telegram账号的发消息能力后，在已绑定的`ai_co` Bot私聊发送`/help`或`/inbox`；确认Bot API产生update、
+   Web UI收到回包且日志出现同一raw ref的`handler finished`。不得用本地注入或Bot主动消息替代该入站事实。
+2. 若owner选择商用absence高级档，再把`AICO_ABSENCE_ADMISSION_MODE`设为`strict`，在最终`.env`写入checkout-external evidence/receipt路径，
    从真实receiver导出owner-only bundle并运行`aico-commission create`。再运行doctor确认`runtime commissioning`和
-   `absence admission`均OK且approval lease为owner接受的bounded值，最后显式install。
-3. 关闭启动 terminal 后再次运行 doctor,确认 `launchctl loaded`、process fresh 和 required components healthy。
-4. 从可信 IM 聊天发一条 `/inbox` 或 `/morning`,收到真实回包;若验证 provider,再发一条最小 exact task。
+   `absence admission`均OK且approval lease为owner接受的bounded值。该高级档不阻塞基础本机Runtime。
 
 **当前 workaround**
-- 需要临时运行时仍可手动执行 `uv run aico-phase1`,但这不算 durable runtime。
+- 当前LaunchAgent已常驻，doctor/heartbeat可证明本机进程与组件健康；2026-07-17历史日志可证明该owner/chat曾真实回包，
+  但不能替代本轮新鲜样本。
 - Mac sleep、合盖断网和远程唤醒不在本 blocker 的解决范围。
 
 **相关链接**
@@ -156,12 +155,15 @@ receiver生成`alert_delivery_unhealthy` outage，避免失败sink被fresh pulse
 
 **状态**:🟡 DEFERRED
 **提出于**:Round 206
-**最后更新**:2026-07-22(Round 249)
+**最后更新**:2026-07-22(Round 251)
 **影响**:external publisher、可部署 persistent receiver、notification outbox 和 heartbeat v5 的机器契约均已完成,
 但当前没有第二故障域部署、owner notification endpoint 或真实 outage 收件样本；完全 human-absent 可用性仍未被
 外部证据证明。
 
 **问题描述**
+该能力是可选高级可靠性档，不是普通AICO用户的启动前提。没有第二台电脑或云服务器时，用户仍可使用本机Runtime、
+LaunchAgent与进程内health；只是不能声称整台Mac失联后仍能被独立发现和通知。
+
 Round 207 已实现 secret-free ephemeral pulse:stable runtime id、fresh boot id、sequence、interval/TTL 和稳定
 `Idempotency-Key`;failed send 只在内存保留同一 pulse,不写 incident outbox。reference receiver tracker 会在 arm 后
 从未收到 pulse 或最后 acceptance-time TTL 到期时只 open 一次,并在有效新 pulse 后只 resolved 一次；duplicate、

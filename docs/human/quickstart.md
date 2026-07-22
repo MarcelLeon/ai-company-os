@@ -14,7 +14,10 @@ CLI 后的可选成员启用。Feishu Channel 已有实现切片,但仍需要真
 
 ---
 
-## 5 步快速上手
+## 5 分钟快速上手
+
+公开用户只需要在自己的电脑运行一个AICO Runtime。独立Dead-Man Receiver不是入门依赖；它只用于检测
+整台电脑离线、LaunchAgent持续启动失败等高级故障，且必须运行在另一台主机或云服务上才有意义。
 
 ### 不配置 token 先看效果
 
@@ -26,7 +29,7 @@ git clone https://github.com/MarcelLeon/ai-company-os.git
 cd ai-company-os
 
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
-env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo
+env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico demo
 ```
 
 如果这条链路能看懂,再配置真实 Telegram runtime。
@@ -41,31 +44,29 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo
 - Codex CLI 已安装并能在命令行使用(启用 Codex Adapter 时需要)
 
 ```bash
-# 1. clone 仓库
+# 1. clone并安装依赖
 git clone https://github.com/MarcelLeon/ai-company-os.git
 cd ai-company-os
-
-# 2. 配置环境变量
-export AICO_TELEGRAM_BOT_TOKEN="你的 Telegram Bot Token"
-export AICO_CLAUDE_WORKING_DIRECTORY="$PWD"
-export AICO_OWNER_SENDER_IDS="你的 Telegram user id"
-export AICO_TRUSTED_TARGET_IDS="只允许接收 AICO 回复的 private chat id"
-export AICO_ENABLE_CODEX_ADAPTER=true
-export AICO_PERSONA_CONFIG_PATH="config/personas.example.json"
-export AICO_PROJECT_CONFIG_PATH="config/projects.example.json"
-export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
-export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
-export AICO_STATE_DB_PATH="/tmp/aico-state.db"
-
-# 3. 安装依赖
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
 
-# 4. 启动 Telegram runtime
-env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
+# 2. 交互式生成owner-only .env；token使用隐藏输入
+uv run aico init
 
-# 5. 在 Telegram 找你的 Bot,发送命令
+# 3. 先检查配置
+uv run aico doctor
+
+# 4. 前台启动Telegram runtime
+uv run aico run
+
+# 5. 在Telegram找到自己的Bot并发送
 # /help
 ```
+
+`aico init`会给出一条带随机码的`/help AICO-setup-...`命令；在自己的Bot私聊发送后按回车，
+它只接受exact private update并自动绑定sender/chat ID。若另一个poller正在消费同一Bot或Telegram账号不能发消息，
+配对会fail closed；已知ID时可使用`--owner-id`与`--chat-id`一起显式提供。
+它只写最小Telegram配置，创建的`.env`固定为`0600`；高级选项仍以`.env.example`为准，且不会部署
+Dead-Man、创建云资源或自动安装后台服务。
 
 ### 常用命令
 
@@ -156,8 +157,8 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
 
 ### 让 AICO 在关闭终端后继续运行(macOS)
 
-先完成一次前台启动,确认 Telegram、项目配置和 Adapter 都正常。然后把 durable 配置写入被 git
-忽略的 `.env`;不要把 token 写进 LaunchAgent:
+先完成一次前台启动,确认 Telegram、项目配置和 Adapter 都正常。`aico init`生成的`.env`就是
+LaunchAgent读取的durable配置；不要把token直接写进plist:
 
 如果还不知道sender/target ID，可先把两项留空并仅在当前terminal设置
 `AICO_INGRESS_DISCOVERY_LOG_IDENTITIES=true`后运行`aico-phase1`。发送一条消息，本地日志会显示escaped
@@ -165,15 +166,10 @@ env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
 `aico-service doctor/install`会拒绝开启discovery的配置，避免身份日志长期暴露。
 
 ```bash
-cp .env.example .env
-# 编辑 .env,至少替换 token、owner sender、trusted target、仓库绝对路径和项目配置
-chmod 600 .env
-uv sync --python 3.11
-
 uv run aico-audit --audit-log .aico/audit.jsonl verify
-uv run aico-service --repo . doctor
-uv run aico-service --repo . render | plutil -lint -
-uv run aico-service --repo . install
+uv run aico doctor
+uv run aico-service --repo . render | plutil -lint -  # operator diagnostics
+uv run aico service install
 ```
 
 上面的默认`AICO_ABSENCE_ADMISSION_MODE=optional`适合开发和前台dogfood：关键absence能力关闭会WARN，但不会阻止安装。
@@ -189,10 +185,10 @@ Telegram 配置启动 polling runtime,Feishu 配置启动 webhook runtime;切换
 工作目录、PATH 和日志路径,不包含 `.env` 的 token/key value。
 
 ```bash
-uv run aico-service --repo . status
-uv run aico-service --repo . doctor
-uv run aico-service --repo . restart
-uv run aico-service --repo . uninstall
+uv run aico service status
+uv run aico doctor
+uv run aico service restart
+uv run aico service uninstall
 ```
 
 `doctor` 的 `runtime owner` 必须显示 active PID 且与 launchd PID 一致。若提示 owner mismatch,

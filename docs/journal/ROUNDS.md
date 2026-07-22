@@ -12739,3 +12739,37 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - owner确认ADR-0088后，按Goal Brief顺序实现sign/verify primitive、receiver signed endpoint、offline verifier、commissioning schema v2与strict continuous health，再完成全量gate。
 - 若owner不接受新增`cryptography`依赖，应明确选择替代trust authority；不得静默退回HMAC或自制Ed25519。
 - B-010/B-012/B-013/B-014仍需真实owner环境与外部证据，goal保持active。
+
+## Round 251 — 2026-07-22 — Codex
+
+### 输入与决策
+
+- owner授权在`codex/aico-closeout`提交、安装/restart用户级LaunchAgent，并仅在`ai_co` Bot私聊执行AICO测试；push前必须暂停。
+- owner明确第二台电脑/云服务器门槛过高，Dead-Man应标为非必需。选择本机Runtime + 单一CLI作为默认形态，Docker Compose只保留给
+  可选异机receiver；否决本机核心默认Docker化和承载业务策略的Quickstart脚本。
+- ADR-0088的签名receiver仍是独立Proposed方案；本轮不把产品分层认可解释成密码学实现授权。
+
+### 产出
+
+- 新增`aico demo|init|run|doctor|service`统一入口，委托既有runtime/service合同；`init`以隐藏token、排他写入和`0600`权限创建最小配置。
+- `init`新增一次性`/help AICO-setup-<random>`自动配对，只接受exact private update；支持成对显式owner/chat ID，错误不回显token/API细节。
+- 修复显式`Phase1Settings`/service preflight受checkout ambient`.env`污染：普通构造只消费参数/环境，production loader才显式读取当前
+  `.env`；service组合预检只消费已选定payload，保证测试和doctor不随调用cwd漂移。
+- README、Quickstart、Daily Ops、deployment guide及receiver runbook固定“本机Runtime默认、Dead-Man可选高级”边界；新增ADR-0089与P-106。
+- 用历史真实日志中的owner/chat绑定生成真实`.env`，安装/restart LaunchAgent；stable doctor确认launchctl loaded、owner PID一致，
+  heartbeat v5中Telegram polling、Claude与Codex均健康。
+
+### 验证与边界
+
+- targeted phase/service/CLI/Telegram:`148 passed`；full root:`1020 passed, 1 skipped`；Ruff、mypy(226 files)、
+  226-file format与diff通过。
+- Chrome中的指定Bot私聊确实显示新测试气泡，Bot Token的`getMe`确认username为`ai_co_telegram_bot`；但当前Telegram账号同时显示
+  `Your Account is Frozen`，Bot API `getUpdates`为0。本轮没有读取/联系其他Telegram用户，也没有公开发布。
+- 因此真实新鲜IM入站仍未验收：不把网页本地气泡、本地注入、历史回包或Bot主动发送替代成当前E2E证据。B-010保持DEFERRED。
+- Dead-Man未部署且不阻塞基础形态；只有owner选择整机失联检测目标时，B-012的第二故障域/TLS/notification/outage证据才适用。
+
+### 留给下一轮
+
+- Telegram账号恢复发消息能力后，只在同一Bot私聊补`/help`、`/project aico`、`/inbox`三条样本并核对handler日志。
+- 若owner选择advanced absence tier，再单独裁决ADR-0088并部署异机receiver；否则保持disabled/optional，不增加第二台机器前置条件。
+- push前停下并等待owner确认。

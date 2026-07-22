@@ -216,6 +216,22 @@ class TelegramChannel:
                         {"callback_query_id": callback_query_id},
                     )
 
+    async def discover_private_identity(self, expected_text: str) -> tuple[str, str]:
+        """Find the sender/chat pair for one exact private-chat setup command."""
+        result = await self._post("getUpdates", {"timeout": 0, "limit": 100})
+        for update in reversed(result):
+            message = update.get("message")
+            if not isinstance(message, dict) or message.get("text") != expected_text:
+                continue
+            sender = message.get("from")
+            chat = message.get("chat")
+            if not isinstance(sender, dict) or not isinstance(chat, dict):
+                continue
+            if chat.get("type") != "private" or "id" not in sender or "id" not in chat:
+                continue
+            return str(sender["id"]), str(chat["id"])
+        raise TelegramAPIError("matching private setup command was not found")
+
     async def _poll_loop(self) -> None:
         while self._running:
             try:

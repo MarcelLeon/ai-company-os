@@ -44,6 +44,10 @@
 - Crash restart task reconciliation:新 runtime 接管 SQLite 时把失去执行所有权的持久化 `running` 任务改为 `interrupted`,写一次恢复审计并要求重试前核对外部副作用;pending approval 与终态保持不变。
 
 ### Added
+- Unified public CLI:`aico demo|init|run|doctor|service`复用既有authoritative runtime/service合同；
+  `aico init`以隐藏输入和一次性exact private-chat命令自动发现owner/chat，生成最小Telegram配置并原子创建`0600` `.env`；
+  已知identity可显式传入。公开Quickstart明确本地Runtime是默认形态，
+  独立Dead-Man Receiver只是需要整机失联告警时的可选高级组件。
 - `aico-commission create|verify`:生成/复核secret-free runtime commissioning receipt；expiry取bundle maximum age与completed silent-probe
   TTL较早值，receipt SHA可由owner外部归档。local receipt固定`business_absence_ready=false`，不冒充receiver签名、provider ACK或human read。
 - Strict absence install admission:`AICO_ABSENCE_ADMISSION_MODE=strict`会复用同一service readiness图，把runtime alerts、external

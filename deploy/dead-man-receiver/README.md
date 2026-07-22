@@ -1,5 +1,9 @@
 # Independent Dead-Man Receiver
 
+> Optional advanced reliability component. The normal AICO quickstart does not require a second
+> computer or cloud server. Deploy this only when whole-machine outage detection is part of your
+> reliability target.
+
 This service must run outside the Mac it monitors. Running it beside AICO proves the API but does
 not create an independent failure domain.
 

@@ -10,6 +10,8 @@
 - 一个进程跑编排核心 + 所有 Adapter + 所有 Channel
 - 数据用 SQLite / 文件
 - 主机:Wang 自己的 Mac
+- 公开用户默认通过`uv run aico init|run|doctor|service`完成配置、前台验证和macOS常驻。
+- 独立Dead-Man Receiver不是默认依赖；只有需要整机失联检测时，才在第二故障域用Docker部署。
 
 ### Phase 3-5:本地 + Sidecar
 - 编排核心一个进程

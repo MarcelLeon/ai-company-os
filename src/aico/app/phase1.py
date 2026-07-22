@@ -142,7 +142,7 @@ from aico.view.deep_link import load_deep_link_settings_from_env
 class Phase1Settings(BaseSettings):
     """Environment-backed settings for the Phase 1 local runtime."""
 
-    model_config = SettingsConfigDict(env_prefix="AICO_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="AICO_", env_file=None, extra="ignore")
     _config_source_health: RuntimeConfigSourceHealth | None = PrivateAttr(default=None)
     _commissioning_health: RuntimeCommissioningHealth | None = PrivateAttr(default=None)
 
@@ -1141,7 +1141,7 @@ def load_phase1_settings() -> Phase1Settings:
     source = Path.cwd() / ".env"
     generation_before = capture_file_generation(source)
     try:
-        settings = Phase1Settings()
+        settings = Phase1Settings(_env_file=source)  # type: ignore[call-arg]
     except ValidationError:
         raise RuntimeError(
             "AICO configuration validation failed; run aico-service doctor"

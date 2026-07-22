@@ -22,7 +22,7 @@ task status, and a morning handoff — all over IM, without sitting at the lapto
 > **Try it in 30 seconds, no tokens needed:**
 > ```bash
 > git clone https://github.com/MarcelLeon/ai-company-os.git && cd ai-company-os
-> env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo
+> env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico demo
 > ```
 > Runs the full Release Room flow with deterministic fake adapters — no Telegram bot,
 > no Claude account, no spend.
@@ -158,22 +158,19 @@ Requirements:
 ```bash
 git clone https://github.com/MarcelLeon/ai-company-os.git
 cd ai-company-os
-
-export AICO_TELEGRAM_BOT_TOKEN="your Telegram bot token"
-export AICO_CLAUDE_WORKING_DIRECTORY="$PWD"
-export AICO_ENABLE_CODEX_ADAPTER=true
-export AICO_PERSONA_CONFIG_PATH="config/personas.example.json"
-export AICO_PROJECT_CONFIG_PATH="config/projects.example.json"
-export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
-export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
-export AICO_STATE_DB_PATH="/tmp/aico-state.db"
-
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
-env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
+uv run aico init
+uv run aico doctor
+uv run aico run
 ```
 
-`aico-phase1` is the long-running Telegram runtime. Leave it open while you use the bot;
-stop it with `Ctrl-C`.
+`aico run` is the local Telegram runtime. Leave it open while you use the bot and stop it
+with `Ctrl-C`. On macOS, `uv run aico service install` installs the user LaunchAgent after
+foreground verification.
+
+The external Dead-Man Receiver is optional. Normal users do not need a second computer or
+cloud server; add the receiver only when whole-machine outage detection is part of the required
+reliability level. It must run outside the monitored Mac to provide that guarantee.
 
 Then message your Telegram bot:
 
