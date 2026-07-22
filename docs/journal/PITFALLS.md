@@ -2664,6 +2664,34 @@ commissioning。机器合同虽然更完整，但首次使用路径被高级可�
 - ADR-0089
 - B-010/B-012
 
+### [P-107] Active long polling时旁路getUpdates为空不能证明Telegram消息未送达
+
+**状态**:🟢 RESOLVED(live UI + consumed-update log correlation)
+**首次踩中**:Round 251
+**最后更新**:2026-07-22
+**影响范围**:Telegram dogfood、LaunchAgent运行态诊断、Bot API验收、B-010
+
+**症状**
+LaunchAgent已经运行Telegram long polling时，旁路调用同一Bot Token的`getUpdates`返回空数组。若把“此刻没有待消费update”误写成
+“测试消息从未进入Bot API”，会在Web Telegram已有新鲜回包、runtime也已消费update的情况下错误判定E2E失败；页面中其他位置的
+账号状态文本还可能进一步放大误诊。
+
+**解决方案 / 缓解措施**
+- 真实入站验收以同一Bot私聊中的新鲜用户命令和可见Bot回包为客户端证据。
+- runtime侧按时间与raw ref核对`incoming -> command -> sendMessage -> handler finished`完整链路。
+- active poller存在时不启动竞争性`getUpdates`消费者；空pending queue只说明update可能已经被主runtime消费。
+- 页面状态结论必须限定到当前账号与当前私聊，不用无关DOM文本替代消息链证据。
+
+**如何避免再次踩中**
+- 先画清Bot API消费模型：`getUpdates`是消费队列，不是不可变消息历史查询。
+- 通道E2E至少组合客户端可见结果与服务端消费日志；只看其中一层不能定位链路断点。
+- 若需要旁路检查，使用不会争抢update的健康信息与既有日志，不让诊断动作改变被测系统。
+
+**相关链接**
+- ROUNDS Round 251/252
+- B-010
+- P-056
+
 ### [P-063] 进程内告警无法证明发送者自身仍存活
 
 **状态**:🟢 RESOLVED(machine contract;external deployment pending)

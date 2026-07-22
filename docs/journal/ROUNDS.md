@@ -12773,3 +12773,38 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - Telegram账号恢复发消息能力后，只在同一Bot私聊补`/help`、`/project aico`、`/inbox`三条样本并核对handler日志。
 - 若owner选择advanced absence tier，再单独裁决ADR-0088并部署异机receiver；否则保持disabled/optional，不增加第二台机器前置条件。
 - push前停下并等待owner确认。
+
+## Round 252 — 2026-07-22 — Codex
+
+### 输入与纠偏
+
+- owner提供`ai_co`私聊截图并明确授权仅使用该Bot测试；截图显示13:37的`/help`已收到完整命令列表。
+- runtime日志同步证明raw ref `1424`完成`incoming -> help -> sendMessage -> handler finished`。因此Round 251基于页面无关
+  `Your Account is Frozen`文本和旁路`getUpdates=0`得出的“Telegram未闭环”结论错误。
+- active LaunchAgent正在long polling时，update会被主runtime立即消费；旁路队列为空不是消息历史证据，也不能否定UI回包和消费日志。
+
+### 真实Dogfood
+
+- 仅在`https://web.telegram.org/k/#@ai_co_telegram_bot`私聊逐条发送只读`/status`、`/project aico`、`/inbox`，未读取或联系
+  其他Telegram用户，未发布公开内容。
+- Web Telegram分别显示adapter/recent task状态、`aico`项目团队与next commands、当前项目inbox/交接/提案。
+- runtime日志分别记录：
+  - raw ref `1426`：`command=status`，出站2724字符，handler finished；
+  - raw ref `1428`：`command=project`，出站287字符，handler finished；
+  - raw ref `1430`：`command=inbox`，出站1185字符，handler finished。
+- 验收后`aico doctor`继续确认plist current、launchctl loaded、runtime owner PID `46439`与launchd一致；Telegram channel正常。
+
+### 结论与边界
+
+- B-010已关闭：基础本机Runtime具备真实owner配置、用户级LaunchAgent和新鲜Telegram常驻E2E证据。
+- 新增P-107，固定“消费队列为空不等于消息未送达”的诊断边界；更正STATUS与B-010，不用本地注入或Bot主动消息替代证据。
+- Dead-Man/secondary alert/strict absence/off-device recovery/owner手机已读继续是可选高级验收，不影响基础Quickstart。
+- `/status`暴露历史Codex任务因本机Codex版本不支持`gpt-5.6-sol`失败；`/project aico`仍显示Phase 5。这是后续provider/config
+  一致性收口，不影响Telegram transport结论，本轮不扩大范围修改。
+
+### 验证
+
+- 真实Web Telegram三条命令与三条回包：通过。
+- runtime raw-ref四阶段日志关联：通过。
+- post-dogfood `uv run aico doctor`：required本机Runtime合同通过，advanced absence能力保持明确WARN/optional。
+- 文档变更执行`git diff --check`；无production code变更，不重复运行Round 251已通过的1020-test全量gate。

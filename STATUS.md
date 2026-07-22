@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-07-22
-**当前轮次**:Round 251(Unified local onboarding + real LaunchAgent dogfood)
+**当前轮次**:Round 252(Real Telegram E2E closeout)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是owner-bound standing autonomy、
@@ -24,6 +24,20 @@ Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增�
 
 ---
 
+## Round 252 完成:Real Telegram E2E closeout
+
+- [x] owner授权后，仅在已登录的`ai_co` Bot私聊发送只读`/status`、`/project aico`、`/inbox`；三条均在Web Telegram收到新鲜回包。
+- [x] runtime日志逐条闭环`Telegram incoming text`、`Command received`、`Telegram sendMessage`、`handler finished`，raw refs分别为
+  `1426`、`1428`、`1430`；LaunchAgent验收后仍由launchd持有且owner PID一致。
+- [x] 更正Round 251误判：LaunchAgent正在消费long polling时，旁路`getUpdates=0`不能证明消息未送达；页面中无关账号状态文本也不能
+  替代当前Bot私聊的可见回包与runtime日志。
+- [x] B-010关闭；基础本机Runtime已具备owner配置、真实LaunchAgent安装和新鲜IM常驻证据。Dead-Man、secondary alert、strict absence及
+  owner手机已读仍是独立高级验收，不影响基础Quickstart。
+- [ ] `/status`暴露历史Codex任务曾因本机Codex版本不支持`gpt-5.6-sol`失败，且`/project aico`仍显示Phase 5；两者是后续provider/config
+  一致性问题，不影响本轮Telegram transport E2E结论。
+
+---
+
 ## Round 251 完成:Unified local onboarding + real LaunchAgent dogfood
 
 - [x] 新增单一公开CLI `aico demo|init|run|doctor|service`，复用既有runtime/service事实源；`init`原子创建`0600`最小配置。
@@ -35,8 +49,7 @@ Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增�
   Telegram polling、Claude、Codex component health均为OK。
 - [x] Gate：targeted phase/service/CLI/Telegram`148 passed`；full root`1020 passed, 1 skipped`；Ruff、mypy(226 files)、
   226-file format与diff通过。
-- [ ] Web Telegram在指定`ai_co` Bot私聊显示测试气泡，但当前账号同时显示`Your Account is Frozen`，Bot API用户名确认正确但
-  `getUpdates`为0；因此没有把该气泡或本地注入冒充真实IM入站证据。B-010只剩可发消息账号下的新鲜回包样本。
+- [x] Round 252已完成指定`ai_co` Bot私聊的新鲜入站/回包验收，并以页面回复与runtime同一轮日志双证据纠正本轮误判；B-010已关闭。
 - [ ] ADR-0088仍是独立密码学提案；本轮没有因为Dead-Man降为可选就静默实现、接受或删除它。
 
 ---

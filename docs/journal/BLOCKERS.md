@@ -18,18 +18,20 @@
 
 ## 当前活跃与近期归档卡点
 
-### [B-010] Durable runtime 仍缺 owner 配置、真实安装和 IM 常驻证据
+### [B-010] Durable runtime 已完成 owner 配置、真实安装和 IM 常驻验收
 
-**状态**:🟡 DEFERRED
+**状态**:🟢 RESOLVED
 **提出于**:Round 200
-**最后更新**:2026-07-22(Round 251)
-**影响**:LaunchAgent、heartbeat v5、component health、bounded owned-task self-healing、durable secondary alert、
-external liveness publisher 和 doctor 的机器契约已完成,但还不能声称当前 Mac 已在 terminal 关闭后持续接收真实 IM。
+**最后更新**:2026-07-22(Round 252)
+**影响**:基础本机Runtime已完成owner-bound配置、真实用户级LaunchAgent安装和新鲜Telegram常驻E2E；Dead-Man、secondary alert、
+strict absence和owner手机已读仍由独立高级blocker跟踪，不是基础Quickstart前置条件。
 
 **问题描述**
 Round 251已用真实owner凭据生成`0600` `.env`，安装并重启macOS user LaunchAgent；稳定态doctor确认plist current、
-launchctl loaded、owner PID与launchd一致，heartbeat v5确认Telegram polling及required Adapter健康。Web Telegram当前账号
-显示`Your Account is Frozen`，测试气泡没有进入Bot API，因此仍缺关闭terminal后的新鲜Telegram入站/回包证据。
+launchctl loaded、owner PID与launchd一致，heartbeat v5确认Telegram polling及required Adapter健康。Round 252在owner授权的
+`ai_co`私聊中真实发送`/status`、`/project aico`、`/inbox`，Web Telegram均显示新鲜回包；runtime日志分别以raw ref
+`1426`、`1428`、`1430`记录incoming、command、sendMessage和handler finished。旁路`getUpdates=0`是active long polling已消费
+update时的预期现象，不能据此否定已由UI和runtime日志共同证明的E2E。
 
 **已完成的机器证据**
 - fake launchctl 覆盖 install/restart/status/uninstall、bootstrap failure 和 recoverable backup。
@@ -67,17 +69,15 @@ launchctl loaded、owner PID与launchd一致，heartbeat v5确认Telegram pollin
 - Round 249再把`runtime commissioning`加入strict：owner-only receipt绑定reviewed Git config、loaded dotenv代际与当前strict dead-man
   evidence，doctor/startup离线复核，运行中expiry/漂移进入required health。它仍没有创建owner `.env`、LaunchAgent或真实IM样本。
 
-**需要什么才能解开**
-1. owner恢复当前Telegram账号的发消息能力后，在已绑定的`ai_co` Bot私聊发送`/help`或`/inbox`；确认Bot API产生update、
-   Web UI收到回包且日志出现同一raw ref的`handler finished`。不得用本地注入或Bot主动消息替代该入站事实。
-2. 若owner选择商用absence高级档，再把`AICO_ABSENCE_ADMISSION_MODE`设为`strict`，在最终`.env`写入checkout-external evidence/receipt路径，
-   从真实receiver导出owner-only bundle并运行`aico-commission create`。再运行doctor确认`runtime commissioning`和
-   `absence admission`均OK且approval lease为owner接受的bounded值。该高级档不阻塞基础本机Runtime。
+**解锁证据**
+1. owner-only `.env`存在且权限为`0600`；LaunchAgent plist current/loaded，runtime owner PID与launchd PID一致。
+2. Web Telegram真实私聊发送三条只读命令并收到对应回包；runtime日志将每条入站、命令、出站和完成绑定到同一raw ref。
+3. 验收后的`aico doctor`继续显示Telegram channel、launchctl和runtime owner为OK；全程未联系其他Telegram用户或公开发布。
 
-**当前 workaround**
-- 当前LaunchAgent已常驻，doctor/heartbeat可证明本机进程与组件健康；2026-07-17历史日志可证明该owner/chat曾真实回包，
-  但不能替代本轮新鲜样本。
+**剩余边界**
 - Mac sleep、合盖断网和远程唤醒不在本 blocker 的解决范围。
+- 若owner选择商用absence高级档，仍需按B-011/B-012/B-013/B-014补独立receiver、secondary alert、strict evidence、provider和恢复样本；
+  这些能力不阻塞基础本机Runtime。
 
 **相关链接**
 - ADR-0038
