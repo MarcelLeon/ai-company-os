@@ -124,6 +124,7 @@ async def test_create_process_closes_stdin(monkeypatch: pytest.MonkeyPatch) -> N
             "stdout": PIPE,
             "stderr": PIPE,
             "cwd": "/tmp/work",
+            "limit": 1024 * 1024,
         }
     ]
 

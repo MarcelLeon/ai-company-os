@@ -153,8 +153,6 @@ def _preauthorized_read_only_command(executable: str, payload: str) -> tuple[str
         "--ignore-rules",
         "--ephemeral",
         "--strict-config",
-        "-c",
-        "experimental_network.enabled=false",
         "--output-schema",
         str(STANDING_RESULT_SCHEMA_PATH),
         "--color",

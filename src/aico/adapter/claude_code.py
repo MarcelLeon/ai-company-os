@@ -37,6 +37,7 @@ DEFAULT_OPTIONAL_OUTPUT_IDLE_TIMEOUT_SECONDS = 1800.0
 DEFAULT_QUIET_STATUS_INTERVAL_SECONDS = 120.0
 _FINISHED = object()
 _MAX_STDERR_TAIL_CHARS = 8000
+_MAX_STREAM_LINE_BYTES = 1024 * 1024
 
 
 class AsyncLineReader(Protocol):
@@ -476,6 +477,7 @@ async def _create_process(command: tuple[str, ...], cwd: Path | None) -> Adapter
         stdout=PIPE,
         stderr=PIPE,
         cwd=None if cwd is None else str(cwd),
+        limit=_MAX_STREAM_LINE_BYTES,
     )
 
 

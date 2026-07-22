@@ -187,8 +187,6 @@ def test_codex_adapter_forces_ephemeral_read_only_command_for_preauthorized_task
         "--ignore-rules",
         "--ephemeral",
         "--strict-config",
-        "-c",
-        "experimental_network.enabled=false",
         "--output-schema",
         str(STANDING_RESULT_SCHEMA_PATH),
         "--color",
@@ -196,6 +194,7 @@ def test_codex_adapter_forces_ephemeral_read_only_command_for_preauthorized_task
         "--json",
         task.payload,
     )
+    assert "-c" not in adapter._command_for_task(task)  # noqa: SLF001
     assert STANDING_RESULT_SCHEMA_PATH.is_file()
 
 

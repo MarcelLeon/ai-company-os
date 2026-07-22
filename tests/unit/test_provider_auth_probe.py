@@ -41,7 +41,7 @@ def test_claude_and_codex_parsers_require_exact_challenge_and_usage() -> None:
     )
 
 
-def test_probe_commands_disable_tools_sessions_network_and_user_rules() -> None:
+def test_probe_commands_disable_tools_sessions_writes_and_user_rules() -> None:
     challenge = "aico-auth-v1-" + "b" * 48
 
     claude = _probe_command("claude-code", "claude", challenge)
@@ -54,7 +54,7 @@ def test_probe_commands_disable_tools_sessions_network_and_user_rules() -> None:
     assert "--sandbox" in codex and "read-only" in codex
     assert "--ignore-user-config" in codex
     assert "--ignore-rules" in codex
-    assert "experimental_network.enabled=false" in codex
+    assert "-c" not in codex
     assert challenge in claude[-1] and challenge in codex[-1]
 
 

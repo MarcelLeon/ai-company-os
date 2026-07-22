@@ -126,8 +126,6 @@ def _probe_command(provider: ProviderName, executable: str, challenge: str) -> t
             "--ignore-rules",
             "--ephemeral",
             "--strict-config",
-            "-c",
-            "experimental_network.enabled=false",
             "--skip-git-repo-check",
             "--color",
             "never",

@@ -31,6 +31,28 @@ def test_text_risk_assessor_requires_approval_for_write_tasks() -> None:
     assert risk.requires_approval is True
 
 
+def test_text_risk_assessor_understands_explicit_no_modify_constraint() -> None:
+    assessor = TextRiskAssessor()
+    read_only = Task(
+        task_id="task-read-only",
+        payload=(
+            "Reply with exactly AICO_ROUND254_PROVIDER_OK. "
+            "Do not read or modify files. Do not request collaboration."
+        ),
+        requester_id="user-1",
+        target_persona="reviewer",
+    )
+    write_after_constraint = Task(
+        task_id="task-write",
+        payload="Do not modify source files; update STATUS.md only.",
+        requester_id="user-1",
+        target_persona="implementer",
+    )
+
+    assert assessor.assess(read_only).risk_level is RiskLevel.READ_ONLY
+    assert assessor.assess(write_after_constraint).risk_level is RiskLevel.WRITE_FILES
+
+
 def test_text_risk_assessor_escalates_shell_and_destructive_tasks() -> None:
     shell_task = Task(
         task_id="task-1",

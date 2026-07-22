@@ -18,7 +18,7 @@ class TextRiskAssessor:
         if _is_internal_read_only_task(task):
             return RiskAssessment(risk_level=RiskLevel.READ_ONLY)
 
-        text = _risk_text(task.payload).lower()
+        text = _without_negated_write_markers(_risk_text(task.payload).lower())
         reasons: list[str] = []
         level = RiskLevel.READ_ONLY
 
@@ -43,6 +43,12 @@ def _risk_text(payload: str) -> str:
     if separator:
         return current_task
     return payload
+
+
+def _without_negated_write_markers(text: str) -> str:
+    for marker in _NEGATED_WRITE_MARKERS:
+        text = text.replace(marker, "")
+    return text
 
 
 def _is_internal_read_only_task(task: Task) -> bool:
@@ -133,4 +139,14 @@ RISK_RULES = (
             "覆盖",
         ),
     ),
+)
+
+
+_NEGATED_WRITE_MARKERS = (
+    "do not read or modify ",
+    "do not modify ",
+    "don't modify ",
+    "without modifying ",
+    "不要读取或修改",
+    "不要修改",
 )
