@@ -99,9 +99,9 @@ update时的预期现象，不能据此否定已由UI和runtime日志共同证�
 
 **状态**:🟡 DEFERRED
 **提出于**:Round 205
-**最后更新**:2026-07-22(Round 246)
-**影响**:AICO 已有 owned-task及confirmed required-component的durable open/resolved event与secondary HTTPS sink机器契约,但当前checkout没有owner
-配置的独立 endpoint/credential,也没有 primary Channel 断开后的真实远端收件证据。
+**最后更新**:2026-07-22(Round 254)
+**影响**:AICO 已有 owned-task及confirmed required-component的durable open/resolved event与secondary HTTPS sink机器契约；真实
+Telegram/Provider主链已通过，但当前`.env`仍未配置独立alert endpoint/credential，也没有primary Channel断开后的远端收件证据。
 
 **问题描述**
 Round 206 已把 owned-task first open 与后续 healthy 转成独立 SQLite incident/outbox,通过可插拔 HTTPS sink
@@ -112,6 +112,8 @@ optional/DEGRADED/瞬时失败不告警，同名owned-task circuit去重且不�
 receiver并提供授权配置。
 Round 240再把alert delivery snapshot压缩进dead-man pulse v2；pending/failed pulse只排序、不续租，持续超过TTL后由独立
 receiver生成`alert_delivery_unhealthy` outage，避免失败sink被fresh pulse掩盖。该本地合同仍不能证明真实endpoint/owner收件。
+Round 254重启LaunchAgent并完成Telegram/Codex真实E2E，证明primary链当前可用；doctor仍明确`runtime alerts: disabled`。这不是
+secondary path样本，因此B-011继续DEFERRED，但阻塞已准确收窄为独立endpoint与故障注入证据。
 
 **已完成的机器证据**
 - incident + outbox transaction rollback、重复 open/healthy/rebuild 去重和新 incident cycle 回归。
@@ -153,16 +155,19 @@ receiver生成`alert_delivery_unhealthy` outage，避免失败sink被fresh pulse
 
 ### [B-012] 整个 runtime / Mac 失联时无法由进程内告警自证
 
-**状态**:🟡 DEFERRED
+**状态**:🟡 DEFERRED(owner-paused;非当前个人开发者产品目标)
 **提出于**:Round 206
-**最后更新**:2026-07-22(Round 251)
-**影响**:external publisher、可部署 persistent receiver、notification outbox 和 heartbeat v5 的机器契约均已完成,
-但当前没有第二故障域部署、owner notification endpoint 或真实 outage 收件样本；完全 human-absent 可用性仍未被
-外部证据证明。
+**最后更新**:2026-07-22(Round 255)
+**影响**:external publisher、persistent receiver与signed evidence机器契约保留，但独立部署不再属于当前个人开发者产品声明或
+发布门槛；系统只承诺本机LaunchAgent与手工重启，不承诺整机失联后自动告警。
 
 **问题描述**
 该能力是可选高级可靠性档，不是普通AICO用户的启动前提。没有第二台电脑或云服务器时，用户仍可使用本机Runtime、
 LaunchAgent与进程内health；只是不能声称整台Mac失联后仍能被独立发现和通知。
+
+Round 255 owner明确暂停继续投入：目标用户是个人开发者，第二故障域/TLS/独立通知出口的部署门槛和使用比例不匹配；本机中断后
+允许用户手工启动。已有receiver、签名与恢复原语保留为可选插件和未来复用资产，但不再进入近期优先级、默认Quickstart、发布阻塞
+或持续dogfood清单。只有owner以后明确重新选择“整机失联也必须自动告警”的产品档位时才重启本项。
 
 Round 207 已实现 secret-free ephemeral pulse:stable runtime id、fresh boot id、sequence、interval/TTL 和稳定
 `Idempotency-Key`;failed send 只在内存保留同一 pulse,不写 incident outbox。reference receiver tracker 会在 arm 后
@@ -216,20 +221,22 @@ Round 249用expiring commissioning receipt把该strict artifact继续绑定到sa
 并纳入strict install/startup及持续required health。它防止A配置证据被B配置复用或运行中过期仍全绿，但local receipt仍非receiver签名，
 也没有生成任何真实第二故障域样本；因此本卡点仍保持DEFERRED。
 
-Round 250 proposal进一步确认exact-byte SHA只能检测固定artifact漂移，不能证明producer identity；ADR-0088/Goal Brief提出由receiver
-Ed25519私钥签exact bundle bytes、AICO只持owner-pinned公钥的signed envelope。该安全边界变更仍待owner确认，尚未实现或生成真实签名样本；
-即使实现也只证明trusted key possession，不证明私钥所在物理host、TLS、fault action、provider ACK或owner手机展示。
+Round 254在owner确认ADR-0088后实现signed evidence：receiver可用owner-only Ed25519私钥签domain-separated exact bundle；offline
+verifier与strict commissioning只信owner-pinned SPKI公钥，receipt schema v2绑定envelope、payload与key identity，unsigned旧bundle和
+silent key replacement均fail closed。该机器链路已通过wrong-key、tamper、unsigned、permission与rotation对抗测试，但当前仍未在真实
+第二故障域生成签名样本；签名只证明trusted key possession，不证明私钥所在物理host、TLS、fault action、provider ACK或手机展示。
 
-**需要什么才能解开**
+**仅在 owner 重新开启该产品目标时需要**
 1. owner 按 `deploy/dead-man-receiver/README.md` 在独立主机部署现有 receiver,配置 TLS、persistent `/data`、
    独立 pulse/admin secret 和至少一个owner notification endpoint；商用验收应再配不同provider/账号的fallback，token不得复用，
    默认1-of-2，只有owner要求双ACK时才设2-of-2。按同一 runtime identity/TTL 显式 arm。
 2. 在 owner-only `.env` 配置 URL/token、`AICO_RUNTIME_LIVENESS_ENABLED=true`、safe monitor id、interval/TTL,
    explicit install 后确认 doctor 和 heartbeat v5 publisher healthy。
-3. 分别完成 kill process后 launchd replacement、持续 launch failure、断网超过 TTL再恢复三类样本；每类应只有
+3. 从receiver的signed endpoint导出envelope，将独立复制的owner-pinned SPKI公钥写入最终strict配置并创建schema v2 receipt。
+   分别完成 kill process后 launchd replacement、持续 launch failure、断网超过 TTL再恢复三类样本；每类应只有
    一次 outage open 和一次 resolved,duplicate idempotency key 不重复通知。每类后导出evidence bundle并离线运行
-   verifier；commission验收必须组合maximum-age、fresh completed probe和all-routes-healthy三项，保存exact-byte SHA-256与独立
-   host/TLS/fault操作日志。
+   signature verifier；commission验收必须组合maximum-age、fresh completed probe和all-routes-healthy三项，保存envelope/payload/key
+   SHA-256与独立host/TLS/fault操作日志。私钥rotation必须显式换公钥、重新导出和recommission。
 4. 永久 uninstall 前先在 receiver 显式 disarm。普通 restart/stop、Mac sleep 和网络分区都不得自动解除监控。
 5. receiver按独立cadence生成`aico-dead-man-recovery backup`并保存off-device SHA；定期跑disposable drill。只有receiver
    自身事故才允许停worker后显式restore，不能由AICO恢复触发。
@@ -267,18 +274,21 @@ Ed25519私钥签exact bundle bytes、AICO只持owner-pinned公钥的signed envel
 
 ### [B-013] 主状态库仍缺少 off-device 备份策略与真实恢复演练
 
-**状态**:🟡 DEFERRED
+**状态**:🟡 DEFERRED(owner-paused;非当前个人开发者产品目标)
 **提出于**:Round 211
-**最后更新**:2026-07-22(Round 237)
-**影响**:AICO主SQLite已具备online backup、只读verify、owner-fenced restore和disposable materialization drill，
-但artifact仍只在本机测试；
-整盘损坏、Mac丢失或错误保留策略下的商用恢复能力尚无外部证据。
+**最后更新**:2026-07-22(Round 255)
+**影响**:本地backup/verify/restore/drill原语保留，但off-device商用DR不再属于当前个人开发者产品声明或发布门槛；
+整盘损坏、Mac丢失时允许用户手工重新部署与配置。
 
 **问题描述**
 Round 211实现`aico-state backup|verify|restore`：live DB可生成consistent standalone artifact，restore先校验
 expected SHA、拒绝active runtime、创建pre-restore safety backup并原子替换。machine round trip证明实现边界，
 但没有owner选择的独立存储、加密/密钥、retention、自动调度或off-device业务恢复演练。当前命令还只覆盖
 AICO SQLite business state，不覆盖audit/memory JSONL、Project/Persona配置、`.env`、日志和dead-man receiver DB。
+
+Round 255 owner明确暂停商用disaster-recovery闭环：个人开发者可以在故障后手工重启/重新配置，真实off-device存储、加密、retention、
+隔离恢复与RPO/RTO演练的成本暂不符合当前产品采用率。已有本地backup/verify/restore/drill代码继续维护但不扩展，不再把真实off-device
+演练列为发布或主线goal阻塞；只有未来出现明确用户需求或不可接受的数据损失成本时再重启。
 
 Round 212新增`aico-state drill`：不接触live `--db`，在private temp中调用production restore、再次校验
 schema/table-count parity并自动清理，可生成`0600` evidence report。它关闭“verify冒充restore rehearsal”的本机
@@ -325,6 +335,9 @@ Round 231增加真实provider认证恢复合同：schema v6固定required provid
 executable hash；不记录prompt/output/error/credential。coverage现在没有“缺少恢复方法”的required unresolved asset，但新增
 `post_restore_evidence_assets`明确列出每次恢复仍必须提供的checkout、reinjection、provider和receiver证据。当前checkout没有
 `.env`/owner授权，因此本轮没有真实付费probe；off-device、IM和RPO/RTO也仍未完成，B-013保持DEFERRED。
+
+Round 254已有真实owner `.env`、LaunchAgent、Telegram与当前Codex provider成功样本，但没有从off-device artifact执行恢复；也未生成
+绑定recovery set/reinjection的provider-auth receipt、独立receiver backup或业务RPO/RTO证据。因此它证明“当前运行”，不证明“灾后恢复”。
 
 Round 234增加默认关闭的scheduled core backup：每个窗口先持久化intent，再capture并立即deep verify；artifact/receipt
 崩溃矩阵可复验收敛，五次耗尽或verified age超过RPO max age会使required runtime health FAILED。目标目录必须已存在、
@@ -412,13 +425,14 @@ VERIFIED + custody VERIFIED artifact在private disposable workspace执行state/a
 - Goal Brief `docs/superpowers/specs/2026-07-22-continuous-recovery-artifact-custody.md`
 - P-091
 
-### [B-014] Owner-bound standing autonomy 仍缺真实授权与定时 provider 样本
+### [B-014] Owner-bound standing autonomy 真实样本暴露硬预算与结果证据缺口
 
 **状态**:🟡 DEFERRED
 **提出于**:Round 213
-**最后更新**:2026-07-22(Round 238)
-**影响**:本地已证明 scheduled-only、hard-read-only、bounded、restart-safe 的预授权链路，并能在install前验证
-真实runtime binding；但当前 checkout 没有owner grant、durable runtime或真实Codex/IM样本，不能声明上线。
+**最后更新**:2026-07-22(Round 256)
+**影响**:真实owner grant、scheduled morning、Telegram ACK、只读Codex、usage/outcome receipt与`max_runs=1`第二次阻断已经通过；
+但一次inspection实耗227,252 tokens且结果因大文件引用为`invalid/source_too_large`。没有单次硬预算与
+`outcome=complete/evidence=current`样本前，不能声明boss-absent autonomy上线。
 
 **问题描述**
 Round 213 实现 external owner-only grant、exact morning binding、persistent run budget、TaskBus fail-closed gate、
@@ -475,19 +489,28 @@ envelope，发送前进入独立SQLite outbox，失败有界重试且绝不重�
 settled-without-outbox均可见，后两者进入required health。started提示发送失败也不再阻断TaskBus submit。该合同关闭“安全地不重跑，
 却静默不告知老板”的本机窗口，但当前仍没有owner grant、paid provider、LaunchAgent或真实IM ACK，所以B-014保持DEFERRED。
 
+Round 254从真实Telegram手工`/ask --exact reviewer`两次完成Codex provider return-code 0与页面回包，关闭“当前Provider/IM是否可用”
+的不确定性；但手工请求不消费standing grant、不由scheduler触发，也不产生morning/outcome delivery整套receipt。当前doctor仍显示
+standing autonomy disabled，因此B-014剩余阻塞仅是owner授权和真实定时样本，而非基础Runtime或Provider连通性。
+
+Round 256由owner显式选择一次性真实验收。真实scheduled morning与Telegram ACK后，前两次dispatch分别暴露Codex 0.144.5已移除
+`experimental_network`旧配置键、asyncio默认64 KiB无法承载Codex JSONL单行；两处已最小修复并通过全量gate。第三次真实任务
+return code 0、status=done、usage与terminal outcome均durable落盘并送达Telegram；第二个同charter intent在Adapter启动前返回
+`run budget exhausted`，task数量不变，证明`max_runs=1`机器边界有效。
+
+同一真实样本也否决了上线：50,000 `token_stop_threshold`只在下一run前检查，无法阻止本次227,252 tokens；`STATUS.md`当前324 KiB，
+超过result validator的256 KiB source cap，模型仍选择该源，receipt因此`invalid/source_too_large`、criteria 0/3、sources 0。
+这不是IM或Provider可用性问题，而是“单次成本不可硬界定”和“charter允许的证据源与validator上限冲突”两个产品合同缺口。
+
 **需要什么才能解开**
-1. owner 在项目仓库外复制示例、替换全部 identity/target/project/charter/expiry/budget，执行 `chmod 600`，并在
-   owner-only `.env` 配置绝对路径；grant必须精确匹配唯一scheduled morning target，且target必须在
-   `AICO_TRUSTED_TARGET_IDS`内，owner sender必须显式绑定。
-2. 启用 Codex Adapter、SQLite state 与 morning scheduler，先跑 `uv run aico-service --repo . doctor`；再由 owner
-   显式安装/启动 durable runtime。恢复场景先生成reinjection receipt，再运行`aico-recovery provider-auth-receipt`并在
-   30分钟内`verify-provider-auth`；保存两份独立SHA。
-3. 用 `max_runs=1`、短 timeout、保守`token_stop_threshold`的只读 inspection 做一次真实定时样本，核对 morning
-   message、task audit、`PREAUTHORIZED + grant_id` decision、无 collaboration/resume/network、terminal usage、
-   `outcome=complete`、`evidence=current`与criteria/source coverage；再用`aico-state`核对delivery为delivered、autonomy
-   intent为settled、outcome delivery为delivered且dispatch/content/ACK receipt哈希存在；人工核对所引file/line确实支持charter语义。
-4. 重启后再次到点，确认同 grant 只返回 budget exhausted hold；再用 hanging-safe sample 验证 timeout/interrupt。
-5. 若商业威胁模型包含同一用户下恶意进程，先选择 detached owner signature、Keychain/managed policy 或独立 OS
+1. 选择可执行的单次硬token/cost边界；若当前Provider/CLI不能在生成前强制停止，就不能把post-run
+   `token_stop_threshold`描述为预算，只能通过小型预生成evidence pack、缩小模型/上下文或Provider侧hard quota另行约束。
+2. 让charter证据路由与validator共享同一bounded source事实：禁止向Agent提供超过cap的`STATUS.md`/`ROUNDS.md`整文件，改为
+   allowlisted小文件或带SHA的bounded片段；prompt不得一边要求STATUS证据、一边又要求不引用超限源。
+3. 修复后签发新的`max_runs=1`短期grant，只做一次真实定时复验；必须同时得到delivery/intent/outcome delivered、
+   `status=done`、`outcome=complete`、`evidence=current`、criteria/source全覆盖及可接受的硬预算证据。
+4. `max_runs=1`第二次hold已经通过；timeout/interrupt真实样本可在不扩大Provider成本的hanging-safe adapter fixture中补，不要求重复付费。
+5. 若商业威胁模型包含同一用户下恶意进程，先选择detached owner signature、Keychain/managed policy或独立OS
    identity，再提升 authorization claim。
 
 **当前 workaround**

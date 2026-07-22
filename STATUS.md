@@ -4,11 +4,11 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-07-22
-**当前轮次**:Round 253(Project phase source alignment)
+**当前轮次**:Round 256(Standing autonomy real acceptance)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
-[`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是owner-bound standing autonomy、
-durable result/outcome delivery、state/audit/memory recovery、独立dead-man observer与真实外部dogfood。风险审批、owner ingress、
+[`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是个人开发者可直接使用的远程IM指挥、
+owner-bound standing autonomy、durable result/outcome delivery与真实日常dogfood。风险审批、owner ingress、
 授权时钟、tamper-evident ledger、scheduled backup/custody/retention/drill和required component incident均已形成机器合同；所有local
 receipt继续不冒充off-device来源、full business recovery或老板已读。当前state schema v13、receiver/evidence schema v5，
 recovery-set schema v6仍固定`business_restore_ready=false`。默认与交互入口不自执行；Round 200-249累计补齐durable runtime、
@@ -21,6 +21,57 @@ recovery/alert/dead-man、component DR primitive和bounded/auditable autonomy，
 Round 241为独立receiver增加可选different-origin fallback与1-of-2/2-of-2 ACK quorum；schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝配置漂移，原2-of-2事件不能在重启后被1-of-2降级结算。单通知provider或credential失效不再必然切断老板通知，但不同URL、local ACK和unit test仍不冒充真实provider/账号/网络独立或human read。
 
 Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增加默认关闭、显式opt-in的`silent-route-probe-v1`：复用真实双route URL/token/POST，exact intent跨restart；一个失败窗口为suspect/PENDING，连续达到阈值才通过既有edge主动告警，ACK后恢复。bridge不能证明silent handling时必须保持disabled，local ACK不冒充human read或commercial HA。Round 244新增strict install admission，Round 245让它贯穿每次runtime启动；Round 246再要求incident alert与dead-man pulse使用不同exact URL及不同非空bearer，防止两个strict协议共用authority却判绿。Round 247检测运行中dotenv代际漂移；Round 248让dead-man当前验收显式拒绝超龄artifact、过期/未完成probe和非healthy route；Round 249把reviewed config、dotenv generation与strict evidence绑定成expiring commissioning receipt并持续纳入required health。Round 200-249累计合同以本段和下方最新Round为准。
+
+---
+
+## Round 256 完成:Standing autonomy real acceptance — control plane pass, business outcome fail
+
+- [x] owner选择一次性真实验收；创建checkout-external、owner-only `0600` grant，精确绑定当前Telegram owner/私聊、`aico`、
+  `absence-evidence-audit`、Codex read-only、两小时expiry、`max_runs=1`、300秒timeout与50,000累计token停止阈值。
+- [x] 真实scheduled morning、Telegram平台ACK、preauthorized proposal/task、Codex进程、usage、terminal outcome与durable intent/outbox
+  全链执行；Web Telegram逐条显示started、失败、terminal outcome和第二次`run budget exhausted`。第二次触发前注入同charter隔离候选，
+  task总数仍为1，证明没有第二次Provider调用。
+- [x] dogfood先后发现并修复两个production兼容缺陷：Codex 0.144.5已移除`experimental_network`旧strict config键；Codex JSONL
+  单行可超过asyncio默认64 KiB。预授权/probe继续强制`--sandbox read-only --ask-for-approval never --ignore-user-config
+  --ignore-rules --ephemeral --strict-config`，子进程流改用显式1 MiB单行上限。
+- [ ] 商业结果严格不通过：修复后Codex任务return code 0、status=done，但实际usage为227,252 tokens，超过50,000阈值4.5倍；
+  模型引用了超过256 KiB的`STATUS.md`，result receipt为`invalid/source_too_large`、criteria `0/3`、sources `0`。当前threshold只在
+  下一run前检查，不是单次硬token/cost cap；bounded output也不等于bounded input/context。
+- [x] 验收后已删除`.env`中的morning/grant/临时state配置并恢复原`.aico/state.db`；LaunchAgent重启后doctor确认standing autonomy
+  disabled、runtime owner PID与launchd一致。三份checkout-external验收artifact保留为owner-only短期证据，不参与运行时。
+- [x] Gate：standing/phase/Adapter定向`116 passed`；full root`1030 passed, 1 skipped`；Ruff lint、mypy(132 source files)和本轮文件
+  format通过。全仓format仍只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`。
+
+---
+
+## Round 255 完成:Personal-developer scope reset
+
+- [x] owner明确暂停“整机失联告警”和“商用灾难恢复”后续投入：第二故障域/TLS/独立通知出口、off-device加密存储与RPO/RTO
+  对个人开发者采用门槛过高；允许故障后手工启动/重新配置。
+- [x] B-012/B-013改为`owner-paused`，不再属于近期优先级、默认Quickstart、发布阻塞或长期goal完成条件；已有receiver、签名、
+  backup/verify/restore/drill能力保留，不删除、不扩展，未来只有明确用户需求时才重开。
+- [x] Boss-absent standing autonomy仍保留为待owner决策的核心候选：它复用现有Mac、Telegram和Codex，不要求新服务器；当前保持
+  disabled，不创建grant、不触发定时provider调用。本轮仅解释授权边界，不替owner启用。
+- [x] 本轮只调整产品范围与连续性文档；没有修改production code、`.env`、LaunchAgent、外部系统或Git状态。
+
+---
+
+## Round 254 完成:Signed receiver evidence + external dogfood
+
+- [x] owner确认ADR-0088；新增Ed25519 signed evidence envelope。receiver只持owner-only PKCS#8私钥，AICO只信
+  checkout-external owner-pinned SPKI公钥；domain-separated签名绑定exact payload，envelope不携带trust anchor。
+- [x] receiver新增可选admin-only`/signed-evidence`；unsigned endpoint继续服务历史审计。离线verifier新增
+  `--trusted-public-key`；strict commissioning升级schema v2并绑定exact envelope、payload与key identity，unsigned、wrong key、
+  tamper和silent rotation全部fail closed。
+- [x] private signing volume、key generation/export/rotation与recommission runbook已补齐；ADR-0088转Accepted，新增P-109并更新B-012。
+- [x] Dogfood重启真实LaunchAgent，`/status`页面与raw ref `1434`闭环；Codex Provider任务`ceed4a4c…`返回exact
+  `AICO_ROUND254_PROVIDER_OK`。随后发现`Do not … modify files`被误判write_files，新增bounded negation handling与P-110；exact原句
+  复验task `ee2aac16…`/raw ref `1440`返回`AICO_ROUND254_NEGATION_OK`。
+- [x] Gate：targeted signing/commissioning/service`155 passed`，risk/orchestrator`147 passed`；full root`1030 passed, 1 skipped`、
+  SME`53 passed`；Ruff、root/SME mypy(228/37 files)、format、132生产文件/2696 definitions、9 JSON、Compose、139-member
+  offline wheel与diff通过。
+- [ ] 当前真实`.env`仍是基础optional档：runtime alerts、external liveness、recovery、commissioning、standing autonomy未配置。
+  本轮没有第二故障域receiver/TLS/fault action/provider notification/owner手机已读样本；B-012至B-014与长期goal保持未完成。
 
 ---
 
@@ -66,12 +117,12 @@ Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增�
 
 ---
 
-## Round 250 proposal:Signed dead-man evidence envelope(待owner确认)
+## Round 250 proposal:Signed dead-man evidence envelope(Round 254已确认并实现)
 
 - [x] 审计确认Round 249 exact-byte SHA只能检测已固定artifact漂移，不能证明bundle由独立receiver签发；同用户进程仍可伪造新bundle并重新commission。
 - [x] 新增Goal Brief与Proposed ADR-0088：receiver用owner预生成Ed25519私钥签exact bundle bytes，AICO只持owner-pinned公钥；拒绝HMAC、自制密码学、envelope自带trust anchor和TLS证书替代artifact签名。
 - [x] 固定兼容/边界：unsigned endpoint仅保留历史审计；strict只接受signed envelope；signature成功仍不证明receiver host/TLS/fault action/provider ACK/human read，`business_absence_ready=false`。
-- [ ] 这是密码学依赖、receiver wire contract与strict部署工作流变更；按开发规范等待owner确认后才进入代码实现、测试、dependency lock和运维文档更新。
+- [x] Round 254 owner确认后已完成代码、测试、dependency lock与运维文档更新；ADR-0088状态为Accepted。
 
 ---
 
@@ -3226,23 +3277,14 @@ AICO 的产品边界是 absence-first:
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【最高】Durable runtime 新鲜 owner-bound IM 样本**:
-   - Round 251已生成真实`.env`、安装/restart用户级LaunchAgent并验证stable owner PID、Telegram polling与required component health；
-     当前只缺可发消息Telegram账号下的一条新鲜入站/回包样本。现有Web账号显示frozen，UI气泡未进入Bot API，见B-010。
-   - 账号恢复后在`ai_co` Bot私聊发送`/help`、`/project aico`、`/inbox`；核对UI回包、`handler finished`与doctor stable。
-   - strict还必须先在最终`.env`固定checkout-external evidence/receipt路径，从真实receiver导出owner-only bundle并运行
-     `aico-commission create`；doctor需同时显示`runtime commissioning` OK。任何配置/evidence更新使用新artifact路径重新commission。
-   - doctor必须同时显示`IM ingress`和bounded approval lease；owner调整`AICO_APPROVAL_MAX_AGE_SECONDS`只影响新审批，
-     不能用它复活旧票据。morning target必须属于trusted target，额外reviewer必须属于owner sender。
-   - Round 232-233起scheduled morning必须配置`AICO_STATE_DB_PATH`；真实到点后用`aico-state`分别核对delivery
-     status/id/content SHA与autonomy intent/status/disposition，再在可信聊天核对相同`Delivery:`/`Intent:`。
-     `delivered`只表示平台ACK，`settled`也不等于result complete；duplicate flags必须检查有界重复，不能写成老板已读。
-   - 若配置独立receiver，再补一条circuit open/resolved收件样本；未配置不阻塞基础开源形态。见B-010/B-011。
-   - 若owner启用standing autonomy，doctor必须显示`owner-bound runtime binding verified`；用`max_runs=1`完成一次真实
-     scheduled Codex inspection，重启后验证budget exhausted、done/interrupted receipt且无collaboration/resume/network；
-     terminal receipt必须有provider `tokens=N`；`evidence_missing`必须停止人工核对，不能自动重跑。阈值只在run间
-     熔断，不是单次硬成本SLA。见B-014。
-2. **【可选高级】独立 dead-man receiver 部署 + 真实 outage sample**:
+1. **【最高】Boss-absent 单次硬预算 + bounded evidence pack**:
+   - Round 256已证明真实scheduled morning、Telegram ACK、只读Codex、durable usage/outcome和`max_runs=1`第二次阻断；控制面通过。
+   - 当前不能上线：一次inspection实耗227,252 tokens，而50,000 threshold只能阻止下一次run；结果又因引用324 KiB的`STATUS.md`
+     超过256 KiB source cap而`invalid/source_too_large`。在修复前保持standing autonomy disabled，不再付费重验。
+   - 下一切片先选择可执行的单次硬token/cost边界；若Provider无可靠硬限额，就改为系统生成小型、指纹化、allowlisted evidence pack，
+     不允许Agent遍历`STATUS.md`/`ROUNDS.md`等大文件。随后再用新的`max_runs=1` grant做一次`outcome=complete + evidence=current`验收，见B-014。
+2. **【OWNER 已暂停】独立 dead-man receiver 部署 + 真实 outage sample**:
+   - Round 255起不再跟进、不作为发布或goal阻塞；以下内容只保留未来重开时的历史上下文。
    - Round 210 已完成可部署 receiver、持久 armed/current/outage/outbox、auth、worker-progress readiness、evidence export/verifier、容器和 runbook；当前只缺
      第二故障域、TLS/secret/owner notification endpoint 与真实 kill/launch-failure/network open-resolved 样本,见 B-012。
    - 只有owner把整机失联检测列为目标时，才按`deploy/dead-man-receiver/README.md`部署到独立主机，挂载persistent`/data`，生成互异pulse/admin
@@ -3250,8 +3292,9 @@ AICO 的产品边界是 absence-first:
    - 验收 kill process后 launchd replacement、持续 launch failure、断网超过 TTL再恢复；每类只允许一次 open +
      一次 resolved。每类导出bundle并用strict offline verifier及`aico-commission`绑定当前runtime generation，同时保存host/TLS/fault操作证据；
      永久 uninstall 前显式 disarm,普通 stop/restart不解除监控。
-   - ADR-0088已提出Ed25519 signed evidence envelope以关闭local artifact来源信任缺口；它仍是Proposed，需单独确认后实现，且不阻塞普通用户启动。
-3. **【最高】全资产 off-device 备份策略 + 隔离checkout业务恢复演练**:
+   - ADR-0088已Accepted并完成Ed25519 signed evidence envelope；它不改变本项owner-paused状态，也不阻塞普通用户启动。
+3. **【OWNER 已暂停】全资产 off-device 备份策略 + 隔离checkout业务恢复演练**:
+   - Round 255起不再跟进、不作为发布或goal阻塞；以下内容只保留未来出现明确数据损失成本时的历史上下文。
    - Round 211-212 已完成主SQLite recovery primitive；Round 223-225完成tamper-evident audit与owner-fenced recovery；
      Round 227完成同等级memory recovery并用bounded-window core set绑定三者；Round 228绑定独立reviewed Git revision/config；
      Round 229增加control-plane secret/standing grant reinjection receipt；Round 230补齐receiver独立恢复合同；Round 231
@@ -3335,8 +3378,9 @@ DEFERRED:机器 service/component-health/self-healing/secondary-alert/external-l
 B-012 已收窄为第二故障域 receiver 部署、TLS/owner sink 和整进程/Mac outage open/resolved 真实证据。
 B-013 跟踪全资产off-device加密备份策略与隔离checkout业务恢复；当前core set已绑定同机state/audit/memory、reviewed
 config、reinjection与provider live-auth合同，receiver有独立恢复合同但不入set；`unresolved_assets=()`不代表post-restore
-evidence已提供，所有artifact仍缺真实off-device/RPO证据，不能声称commercial disaster recovery ready。B-014还要求真实owner-bound grant、
-trusted scheduled target、paid provider与IM execution receipt；本地ingress gate不能替代该外部证据。
+evidence已提供，所有artifact仍缺真实off-device/RPO证据，不能声称commercial disaster recovery ready。B-014的真实owner grant、trusted
+scheduled target、paid provider、Telegram ACK和`max_runs=1`已在Round 256取证；剩余阻塞是单次硬token/cost边界与
+`outcome=complete/evidence=current`的bounded source样本。
 
 ---
 

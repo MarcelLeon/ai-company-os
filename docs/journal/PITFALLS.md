@@ -2718,6 +2718,61 @@ LaunchAgent已经运行Telegram long polling时，旁路调用同一Bot Token的
 - B-008
 - P-017
 
+### [P-109] Exact-byte digest不等于producer provenance，verifier持有签发secret会重新制造伪造能力
+
+**状态**:🟢 RESOLVED(owner-pinned asymmetric signature)
+**首次踩中**:Round 254
+**最后更新**:2026-07-22
+**影响范围**:`dead_man_evidence_signing.py`、receiver signed endpoint、runtime commissioning、B-012
+
+**症状**
+owner-only evidence与receipt绑定exact SHA后，任意字节漂移都能检测；但AICO Mac同用户进程仍可制造一份结构合法的新bundle，
+再生成自洽receipt。改成receiver/AICO共享HMAC虽然增加MAC，却让被验证端同时拥有签发能力，无法改善该威胁模型。
+
+**解决方案 / 缓解措施**
+- receiver仅持owner-only Ed25519私钥，对domain-separated exact payload签名；AICO只持owner-pinned SPKI公钥。
+- envelope绑定payload、payload digest、signature和public-key id，但不携带或信任新的trust anchor。
+- strict commissioning拒绝unsigned旧bundle，并在receipt schema v2绑定exact envelope、payload和key identity；rotation必须显式recommission。
+- 历史unsigned endpoint保留审计兼容，签名成功仍固定`receiver_host_attested=false`与`business_absence_ready=false`。
+
+**如何避免再次踩中**
+- 把integrity、producer identity、host placement、transport security和human delivery拆成独立事实；不能相互升级。
+- verifier不应持有能签发同类证据的secret；对称MAC只适合双方都被允许签发的合同。
+- 不信任artifact自带公钥，不把TLS证书、文件权限或digest当成离线producer trust anchor。
+- 密钥轮换必须变更owner固定公钥、重新导出与recommission，不能静默接受新key。
+
+**相关链接**
+- ADR-0088
+- ROUNDS Round 250/254
+- B-012
+- P-104/P-105
+
+### [P-110] 关键词风险分类器不能把明确禁止的动作当成动作请求
+
+**状态**:🟢 RESOLVED(bounded negation handling + real Telegram replay)
+**首次踩中**:Round 254
+**最后更新**:2026-07-22
+**影响范围**:`risk.py`、Codex read-only routing、Telegram `/ask`
+
+**症状**
+真实Telegram只读probe包含`Do not read or modify files`，旧分类器只做substring匹配，命中`modify `后把任务升级为
+`write_files`，Codex Adapter因此拒绝；删掉安全约束反而可以执行。
+
+**解决方案 / 缓解措施**
+- 在当前task文本进入风险规则前，只剥离有限、明确的英文/中文“不要修改”短语；后续独立`update/edit/run/delete`仍照常升级。
+- 回归同时固定原始误判句为read-only，以及“不要改source，但update STATUS”仍为write_files，防止否定处理吞掉真实动作。
+- 重启真实LaunchAgent后原句由Telegram接受，Codex返回exact token；UI与raw ref `1440`/task `ee2aac16…`日志一致。
+
+**如何避免再次踩中**
+- 关键词安全分类必须区分请求、引用与否定约束；安全提示词本身不应降低可执行性。
+- 否定处理必须bounded且fail-conservative；同句后续真实动作不能被整段删除。
+- classifier单测通过后仍要用触发问题的exact外部文本重放，避免prompt scaffolding与runtime拼装差异。
+
+**相关链接**
+- ROUNDS Round 254
+- P-077
+- B-010
+
 ### [P-063] 进程内告警无法证明发送者自身仍存活
 
 **状态**:🟢 RESOLVED(machine contract;external deployment pending)
@@ -3889,3 +3944,51 @@ credential、账号或网络没有单点；让readiness失败只会重启sender�
 - Goal Brief `docs/superpowers/specs/2026-07-22-quorum-dead-man-notification-routes.md`
 - P-096
 - B-012
+
+### [P-111] CLI strict-config中的历史安全键会把真实预授权链路变成启动即失败
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 256
+**最后更新**:2026-07-22
+**影响范围**:`CodexAdapter`,provider auth probe,standing autonomy
+
+**症状与根因**
+手工Codex任务正常，但预授权路径固定传递`experimental_network.enabled=false`；Codex 0.144.5已删除该键，`--strict-config`因此在模型
+执行前return code 1。单测只断言命令包含旧键，反而把版本漂移固化为“安全”。
+
+**解决与预防**
+- 删除已失效override；read-only、never approval、ignore user config/rules、ephemeral和schema继续构成当前可验证边界。
+- 保留`--strict-config`让未来漂移fail closed；Adapter命令测试断言不吸收调用方danger-full-access/search等参数。
+- 任何CLI安全键都必须用当前真实binary做低成本compatibility smoke；历史字符串断言不能替代版本验收。
+
+### [P-112] asyncio默认64 KiB单行上限不能承载真实Provider JSONL事件
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 256
+**最后更新**:2026-07-22
+**影响范围**:`ClaudeCodeAdapter`,Codex JSONL streaming
+
+**症状与根因**
+Codex已执行十余秒，但一个JSONL事件超过StreamReader默认limit，`readline()`抛`Separator is found...`，任务被误记FAILED。
+输出总量有界并不代表每个transport frame都小于默认行限制。
+
+**解决与预防**
+- 子进程stdout/stderr显式使用1 MiB单行上限；仍是有限上限，继续fail closed。
+- process factory回归固定该参数；真实JSONL smoke必须覆盖tool/result事件，而不只测短agent message。
+- 若未来事件超过1 MiB，应设计有界增量parser或Provider端事件裁剪，不能无限提高limit。
+
+### [P-113] 累计token阈值与bounded output不能冒充单次成本上限
+
+**状态**:🟡 ACTIVE
+**首次踩中**:Round 256
+**最后更新**:2026-07-22
+**影响范围**:standing autonomy grant,result source routing,B-014
+
+**症状与根因**
+grant配置50,000 token stop threshold，但真实单次inspection已生成227,252 tokens；threshold只读取已完成历史，在当前run开始后无法中断。
+同时charter允许引用`STATUS.md`，而该文件324 KiB、超过validator 256 KiB source cap，最终task DONE但outcome invalid。
+
+**解决方向 / 避免误报**
+- 对外只称“下一run前累计熔断”，禁止称hard budget；没有Provider侧生成前硬限额时保持standing autonomy disabled。
+- 先生成小型、allowlisted、带SHA的evidence pack，让Agent看不到超限整文件并限制可探索上下文；charter与validator共享同一source cap。
+- 只有真实样本同时满足硬预算证据、`outcome=complete`、`evidence=current`和criteria/source全覆盖，才能关闭B-014。

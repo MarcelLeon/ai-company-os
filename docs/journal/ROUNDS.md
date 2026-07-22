@@ -12838,3 +12838,105 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 
 - recent tasks保留历史失败是审计/可观测语义，不应为隐藏旧错误而删除；若产品需要区分current health与history，应另立显示设计任务。
 - 本轮只修已证实的phase事实源漂移，不借机修改项目目录模型或引入动态解析STATUS的隐式策略。
+
+## Round 254 — 2026-07-22 — Codex
+
+### 输入与决策
+
+- owner明确确认ADR-0088，并授权基于已登录Telegram做完整外部dogfood与高标准验收。
+- 采用既定owner-pinned Ed25519方案；继续否决unsigned digest、shared HMAC、envelope self-trusted key和TLS证书替代。
+- 签名只升级producer-key provenance，不升级receiver host/TLS/fault action/provider ACK/human read或commercial readiness。
+
+### 产出
+
+- 新增bounded signed envelope与`cryptography`依赖：receiver用owner-only PKCS#8私钥签domain-separated exact payload；
+  AICO用checkout-external SPKI公钥验签，key/path/type/permission/size错误均secret-safe fail closed。
+- receiver新增可选admin-only`/signed-evidence`，保留unsigned历史审计接口；部署增加独立signing volume、显式key generation/export、
+  backup/rotation/recommission操作合同。
+- offline verifier支持`--trusted-public-key`；runtime commissioning升级schema v2，同时绑定envelope SHA、payload SHA与public-key SHA，
+  service doctor、strict startup和continuous health均要求三条最终路径。
+- ADR-0088转Accepted；新增P-109，更新B-012、Quickstart、Daily Ops、Troubleshooting、absence playbook、architecture、CHANGELOG与env。
+- 真实Telegram首条安全probe中的`Do not read or modify files`被substring分类为write_files并拒绝。新增bounded negation handling：只删除
+  明确否定短语，同句后续真实update仍升级；新增P-110和回归。
+
+### 真实Dogfood
+
+- 重启用户级LaunchAgent；稳定doctor确认plist current、launchctl loaded、owner PID与launchd一致。仅操作授权的
+  `@ai_co_telegram_bot`私聊，没有联系其他用户或公开发布。
+- `/status`在页面新鲜回包，runtime raw ref `1434`完成incoming、command、sendMessage与handler finished。
+- 最小Codex Provider任务`ceed4a4c-5364-42fb-98ba-1ed2e0e03bd6`由raw ref `1438`接受，process return code 0，页面返回exact
+  `AICO_ROUND254_PROVIDER_OK`；证明当前CLI/model/provider链可用，`/status`旧失败仍只是审计历史。
+- 风险修复后重启并重放原否定约束，task `ee2aac16-51da-434b-a90e-9ebd30da843d`/raw ref `1440`由同一真实链返回exact
+  `AICO_ROUND254_NEGATION_OK`，关闭本轮dogfood误判。
+
+### 验证与边界
+
+- targeted signing/commissioning/service:`155 passed`；risk/task-bus/orchestrator:`147 passed`；full root:
+  `1030 passed, 1 skipped`；SME:`53 passed`。
+- Ruff、root mypy(228 source files)、SME strict mypy(37 source files)、format、132生产文件/2696 definitions结构、9份JSON、
+  dead-man Compose、139-member offline wheel/新模块/entrypoint与`git diff --check`通过。
+- 当前真实`.env`保持基础optional档：runtime alerts、external liveness、scheduled recovery、runtime commissioning与standing autonomy
+  均未配置。本轮没有部署真实第二故障域receiver，也没有TLS、kill/network fault、notification provider、off-device或owner手机已读证据。
+- B-010继续RESOLVED；B-012至B-014与长期goal继续未完成。签名机器合同已关闭，但external commercial acceptance不能虚报。
+
+## Round 255 — 2026-07-22 — Codex
+
+### 输入与决策
+
+- owner从个人开发者采用率重新校准产品范围：整机失联告警需要第二故障域/TLS/独立通知出口，商用灾难恢复需要off-device
+  存储/加密/retention/RPO/RTO；两者收益存在，但大多数个人开发者不会配置，故障后手工启动/重新配置可以接受。
+- 决定暂停而非删除：已有dead-man receiver、signed evidence、backup/verify/restore/drill代码继续保留为可选能力和未来资产；
+  不继续部署验收、不进入默认Quickstart、近期优先级、发布阻塞或长期goal完成条件。
+- Boss-absent standing autonomy与上述基础设施能力不同：它复用现有Mac、Telegram、Codex和morning scheduler，可能直接改善个人开发者
+  离开电脑后的工作推进；本轮先解释授权模型，等待owner决定启用一次性dogfood还是保持手工模式。
+
+### 授权模型背景
+
+- external `0600` grant是owner显式授权文件：位于managed repo之外，避免项目Agent/误提交修改；仅owner进程可读写。它不是密码学签名，
+  不抵抗同一OS用户下的恶意进程。
+- grant精确绑定owner、IM channel/target/thread、project和standing charter，并固定`mode=read_only`、aware expiry、持久化
+  `max_runs`、单次wall-clock timeout与累计token stop threshold。手工`/morning`、`/inbox`、startup不会消费grant，只有scheduled morning可触发。
+- `max_runs=1`是首次真实验收的commissioning fence，不是产品永久限制；token threshold只在completed run之后阻止下一次运行，
+  不是当前调用的硬token或美元上限。Codex执行边界固定read-only、no-network、no-resume、no-collaboration。
+
+### 产出与边界
+
+- B-012/B-013标记`owner-paused;非当前个人开发者产品目标`，STATUS近期优先级同步移出；B-011与B-014不被误关闭。
+- STATUS新增Round 255，并把下一有效决策入口改为Boss-absent定时只读自治；旧高级能力说明只保留重开背景。
+- 本轮没有创建或修改grant、`.env`、LaunchAgent、provider任务、外部消息或production code；只更新产品范围与连续性文档。
+- 只执行文档引用与`git diff --check`；无代码行为变化，不重复运行Round 254全量test gate。
+
+## Round 256 — 2026-07-22 — Codex
+
+### 输入与授权
+
+- owner明确选择“一次性真实验收”。创建checkout-external、owner-only `0600` grant，精确绑定当前Telegram owner/私聊、`aico`、
+  `absence-evidence-audit`和Codex read-only；配置两小时expiry、`max_runs=1`、300秒timeout与50,000累计token停止阈值。
+- 真实副作用仅限已授权`@ai_co_telegram_bot`私聊、LaunchAgent重启和Codex只读inspection；没有读取/联系其他聊天，没有Git stage/commit/push。
+
+### 真实dogfood与修复
+
+- 首次scheduled morning在原state DB完成Telegram ACK与dispatch，但Codex 0.144.5拒绝已删除的
+  `experimental_network.enabled=false` strict-config override；task失败、usage missing、outcome `evidence_missing`均如实送达Telegram。
+- 移除该旧键，保留`--sandbox read-only --ask-for-approval never --ignore-user-config --ignore-rules --ephemeral --strict-config`；
+  100个定向测试通过。为不污染原state，后续使用checkout-external隔离SQLite与新的一次性grant重验。
+- 第二次dispatch越过CLI校验后，Codex JSONL单行超过asyncio默认64 KiB，Adapter以`Separator is found...`失败。子进程创建增加
+  1 MiB显式单行上限；116个Adapter/standing/phase定向测试通过。
+- 第三次真实scheduled task `056a829e…`在约64.5秒后return code 0、status=done，Telegram与state均显示terminal outcome；
+  usage为225,181 input、2,071 output、227,252 total，其中168,704 cached input。
+- 结果validator拒绝超过256 KiB的引用源；当前`STATUS.md`为324,026 bytes，receipt为
+  `invalid/source_too_large`、criteria 0/3、sources 0。该失败证明bounded output/source validator有效，也证明现有charter/source
+  routing无法稳定产生可接受业务结果。
+- 在同一隔离state注入同charter candidate并改变morning scope生成第二intent；Telegram明确显示
+  `Autonomy held: run budget exhausted`，state为`settled/held`，task_records仍为1，没有第二次Provider调用。
+
+### 结论、清理与验证
+
+- 控制面通过：owner binding、scheduled-only、trusted Telegram delivery、只读Codex、durable usage/outcome、at-most-once与
+  `max_runs=1`均有真实证据。业务验收不通过：没有单次硬token/cost cap，且没有`outcome=complete/evidence=current`。
+- 验收后删除`.env`中的morning/grant/临时state配置，恢复`.aico/state.db`；沙箱外安全重启LaunchAgent后doctor确认standing autonomy
+  disabled、plist current、launchctl loaded、runtime owner PID一致。grant和两份隔离DB均为owner-only短期证据，不参与runtime。
+- Gate：full root`1030 passed, 1 skipped`；Ruff lint、mypy(132 source files)通过；本轮文件format通过。全仓format仅报告未触碰的既有
+  `projects/data-agent-v1/src/data_agent_v1/engine.py`。
+- B-014保持DEFERRED但性质已更新：外部授权/定时/IM/Provider/max-runs样本不再缺；下一轮只做单次硬预算和bounded evidence pack，
+  修复前不再付费重验。B-012/B-013继续owner-paused。

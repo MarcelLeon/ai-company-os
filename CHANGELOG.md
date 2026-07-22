@@ -7,7 +7,17 @@
 
 ## [Unreleased]
 
+### Added
+- Signed dead-man evidence:独立receiver可用owner-only Ed25519私钥签发domain-separated evidence envelope；离线verifier与strict
+  commissioning只信owner-pinned公钥，绑定exact envelope、payload和key identity。unsigned endpoint保留历史审计兼容，signature
+  success仍明确不证明receiver物理host、TLS、fault action、provider ACK或human read。
+
 ### Fixed
+- Codex standing-autonomy compatibility:预授权与live-auth probe不再传递Codex 0.144.5已删除的
+  `experimental_network` strict-config键；安全边界继续由`--sandbox read-only`、`never` approval、忽略user config/rules、
+  ephemeral session和output schema强制。子进程stdout/stderr显式使用1 MiB单行上限，避免合法的大JSONL事件触发asyncio默认64 KiB失败。
+- Risk negation false positive:明确的`Do not read or modify files`/`不要修改`约束不再被substring分类为`write_files`；同一task中
+  后续真实update/run/delete仍按原风险阶梯升级，避免安全提示反而让Codex只读任务被拒绝。
 - Project phase drift:`config/projects.example.json`与无配置fallback现在统一报告
   `Phase 8 - 离线托管 + 老板缺席操作模型`，避免公开`aico init`生成的LaunchAgent继续在`/project aico`展示已完成的Phase 5/6。
 - Runtime commissioning drift:strict install/startup现在要求owner-only、checkout-external的expiring commissioning receipt，绑定reviewed
