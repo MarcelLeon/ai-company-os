@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from aico.core import (
@@ -14,6 +16,13 @@ from aico.core import (
     task_with_assignment_context,
 )
 from aico.core.standing_result import MAX_STANDING_CRITERIA, MAX_STANDING_TEXT_CHARS
+
+
+def test_example_project_config_tracks_current_phase() -> None:
+    config_path = Path(__file__).parents[2] / "config" / "projects.example.json"
+    config = ProjectAssignmentConfig.model_validate_json(config_path.read_text(encoding="utf-8"))
+
+    assert config.projects["aico"].current_phase == ("Phase 8 - 离线托管 + 老板缺席操作模型")
 
 
 def test_project_assignment_directory_tracks_active_project_by_scope() -> None:

@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-07-22
-**当前轮次**:Round 252(Real Telegram E2E closeout)
+**当前轮次**:Round 253(Project phase source alignment)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是owner-bound standing autonomy、
@@ -24,6 +24,18 @@ Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增�
 
 ---
 
+## Round 253 完成:Project phase source alignment
+
+- [x] 复核Codex现状：PATH中实际CLI为`0.144.5`，B-008已记录同一`gpt-5.6-sol`最小调用和真实`/ask reviewer`成功；
+  `/status`展示的是历史失败任务正文，不是当前provider故障。本轮纠正Round 252表述，不做无依据的Adapter改动。
+- [x] 确认项目阶段确有配置漂移：公开`aico init`固定加载的`config/projects.example.json`仍为Phase 5，无外部配置fallback仍为Phase 6。
+- [x] 两个事实源统一为`Phase 8 - 离线托管 + 老板缺席操作模型`，并新增example config与fallback回归断言。
+- [x] Gate：Phase1/project assignment定向`83 passed`；Ruff、format、JSON、mypy和diff检查通过。
+- [x] 重启真实用户级LaunchAgent后doctor保持required合同OK；Web Telegram再次发送`/project aico`，页面显示Phase 8，runtime raw ref
+  `1432`完成incoming、command、sendMessage和handler finished。
+
+---
+
 ## Round 252 完成:Real Telegram E2E closeout
 
 - [x] owner授权后，仅在已登录的`ai_co` Bot私聊发送只读`/status`、`/project aico`、`/inbox`；三条均在Web Telegram收到新鲜回包。
@@ -33,8 +45,8 @@ Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增�
   替代当前Bot私聊的可见回包与runtime日志。
 - [x] B-010关闭；基础本机Runtime已具备owner配置、真实LaunchAgent安装和新鲜IM常驻证据。Dead-Man、secondary alert、strict absence及
   owner手机已读仍是独立高级验收，不影响基础Quickstart。
-- [ ] `/status`暴露历史Codex任务曾因本机Codex版本不支持`gpt-5.6-sol`失败，且`/project aico`仍显示Phase 5；两者是后续provider/config
-  一致性问题，不影响本轮Telegram transport E2E结论。
+- [x] Round 253复核确认`/status`中的Codex错误只是历史任务正文，当前CLI/model已有成功证据；`/project aico`的Phase 5配置漂移已修复并
+  通过真实Telegram Phase 8回包复验。
 
 ---
 

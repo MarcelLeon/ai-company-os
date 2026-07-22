@@ -12799,8 +12799,8 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - B-010已关闭：基础本机Runtime具备真实owner配置、用户级LaunchAgent和新鲜Telegram常驻E2E证据。
 - 新增P-107，固定“消费队列为空不等于消息未送达”的诊断边界；更正STATUS与B-010，不用本地注入或Bot主动消息替代证据。
 - Dead-Man/secondary alert/strict absence/off-device recovery/owner手机已读继续是可选高级验收，不影响基础Quickstart。
-- `/status`暴露历史Codex任务因本机Codex版本不支持`gpt-5.6-sol`失败；`/project aico`仍显示Phase 5。这是后续provider/config
-  一致性收口，不影响Telegram transport结论，本轮不扩大范围修改。
+- `/status`展示了一条历史Codex版本失败任务，`/project aico`显示Phase 5；本轮只将其列为待复核现象，不将历史正文直接判定为
+  当前provider故障。Telegram transport结论不受影响。
 
 ### 验证
 
@@ -12808,3 +12808,33 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - runtime raw-ref四阶段日志关联：通过。
 - post-dogfood `uv run aico doctor`：required本机Runtime合同通过，advanced absence能力保持明确WARN/optional。
 - 文档变更执行`git diff --check`；无production code变更，不重复运行Round 251已通过的1020-test全量gate。
+
+## Round 253 — 2026-07-22 — Codex
+
+### 输入与诊断
+
+- owner要求push，并要求确认Round 252发现的两个非Telegram现象，确有问题则一并更正。
+- 当前`codex --version`为`0.144.5`；B-008/Round 192已有同一`gpt-5.6-sol`最小调用与真实Telegram `/ask reviewer`成功证据。
+  `/status`只是把旧任务的`0.142.4`失败正文列在recent tasks中，因此不是当前Codex故障，不修改Adapter/model配置。
+- LaunchAgent的`.env`明确加载`config/projects.example.json`；该文件仍为Phase 5，且Phase1无配置fallback仍为Phase 6。该漂移会同时
+  污染`/project`用户视图和Agent Prompt Stack，确认需要修复。
+
+### 产出
+
+- `config/projects.example.json`和`_default_project_assignment_config`统一为
+  `Phase 8 - 离线托管 + 老板缺席操作模型`。
+- default runtime测试新增fallback phase断言；project assignment测试直接解析repo example config并断言Phase 8。
+- 新增P-108与CHANGELOG记录；STATUS/Round 252纠正Codex历史错误的表述，不制造虚假当前blocker。
+
+### 验证
+
+- `tests/unit/test_phase1_app.py tests/unit/test_project_assignment.py`：`83 passed`。
+- touched Ruff、format、mypy、JSON parse与`git diff --check`：通过。
+- 重启真实LaunchAgent后doctor确认plist current、launchctl loaded、runtime owner PID与launchd一致。
+- 仅在授权的`ai_co`私聊发送`/project aico`；15:14页面回包显示Phase 8，runtime raw ref `1432`完整记录
+  `incoming -> project -> sendMessage -> handler finished`。未联系其他用户或公开发布。
+
+### 边界
+
+- recent tasks保留历史失败是审计/可观测语义，不应为隐藏旧错误而删除；若产品需要区分current health与history，应另立显示设计任务。
+- 本轮只修已证实的phase事实源漂移，不借机修改项目目录模型或引入动态解析STATUS的隐式策略。

@@ -63,7 +63,7 @@
       "journal": "docs/journal/ROUNDS.md",
       "blockers_doc": "docs/journal/BLOCKERS.md",
       "pitfalls_doc": "docs/journal/PITFALLS.md",
-      "current_phase": "Phase 5 - AI 间协作",
+      "current_phase": "Phase 8 - 离线托管 + 老板缺席操作模型",
       "default_role": "implementer",
       "roles": {
         "implementer": {

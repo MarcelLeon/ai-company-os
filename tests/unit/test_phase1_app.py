@@ -1408,6 +1408,7 @@ def test_build_phase1_runtime_registers_default_project_assignments() -> None:
 
     assert project is not None
     assert project.name == "AI Company OS"
+    assert project.current_phase == "Phase 8 - 离线托管 + 老板缺席操作模型"
     assert [assignment.seat for assignment in assignments] == [
         "aico-implementer",
         "aico-reviewer",

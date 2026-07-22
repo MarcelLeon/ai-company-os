@@ -1352,7 +1352,7 @@ def _default_project_assignment_config(
                 journal="docs/journal/ROUNDS.md",
                 blockers_doc="docs/journal/BLOCKERS.md",
                 pitfalls_doc="docs/journal/PITFALLS.md",
-                current_phase="Phase 6 - 可观测看板",
+                current_phase="Phase 8 - 离线托管 + 老板缺席操作模型",
                 default_role="implementer",
                 default_assignment=default_assignment,
                 roles={role_id: ProjectRoleProfile(role=role_id) for role_id in roles},

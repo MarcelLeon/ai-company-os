@@ -8,6 +8,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Project phase drift:`config/projects.example.json`与无配置fallback现在统一报告
+  `Phase 8 - 离线托管 + 老板缺席操作模型`，避免公开`aico init`生成的LaunchAgent继续在`/project aico`展示已完成的Phase 5/6。
 - Runtime commissioning drift:strict install/startup现在要求owner-only、checkout-external的expiring commissioning receipt，绑定reviewed
   Git config、`.env` metadata generation fingerprint与strict dead-man exact bytes。运行中expiry或任一binding漂移会使required
   `configuration:commissioning-receipt` FAILED并进入既有confirmed alert；不联网、不保存dotenv内容/hash，也不自动restart/replay。

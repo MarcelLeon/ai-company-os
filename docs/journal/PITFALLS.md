@@ -2692,6 +2692,32 @@ LaunchAgent已经运行Telegram long polling时，旁路调用同一Bot Token的
 - B-010
 - P-056
 
+### [P-108] STATUS阶段升级不等于运行时项目配置会自动同步
+
+**状态**:🟢 RESOLVED(explicit config + fallback parity tests)
+**首次踩中**:Round 253
+**最后更新**:2026-07-22
+**影响范围**:`config/projects.example.json`、Phase1 fallback、`aico init`、`/project`、Prompt Stack
+
+**症状**
+项目已进入Phase 8，README/Quickstart/STATUS也已更新，但公开`aico init`加载的example config仍写Phase 5，无外部配置fallback写Phase 6。
+因此真实LaunchAgent健康且Telegram E2E正常时，`/project aico`和注入Agent prompt仍会报告旧阶段，误导用户和后续Agent决策。
+
+**解决方案 / 缓解措施**
+- 将公开example config与无配置fallback同时更新为当前Phase 8产品语义。
+- example config和fallback分别增加回归断言；两条启动路径任一漂移都会在测试中失败。
+- 修改后重启真实LaunchAgent，并用Web Telegram `/project aico`验证用户可见结果与runtime日志。
+
+**如何避免再次踩中**
+- 阶段变更时检索`current_phase`所有生产事实源，不只更新STATUS和发布文档。
+- 示例配置一旦被Quickstart直接消费，就属于生产默认值，不应按“仅文档样例”维护。
+- 历史任务错误与当前Adapter状态分开判断；`/status`中的recent task正文不能替代当前CLI版本、health和live成功证据。
+
+**相关链接**
+- ROUNDS Round 253
+- B-008
+- P-017
+
 ### [P-063] 进程内告警无法证明发送者自身仍存活
 
 **状态**:🟢 RESOLVED(machine contract;external deployment pending)
