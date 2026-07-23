@@ -131,6 +131,24 @@ bytes, a terminated old host, a newly started exact desktop app-server command, 
 `task_complete → task_started → turn_context → source="goal"` state transition whose new turn completes. Goal and provider usage must both advance
 without budget/capability drift. The observer opens no `turn/start` channel. A normal Goal without a frozen token budget is rejected.
 
+The live host receipt only admits the native host; it is not a task result. After the isolated harness has recorded one owner-safe scenario receipt,
+bind it to the exact admission and host-run ledgers:
+
+```bash
+uv run aico-benchmark finalize-codex-goal \
+  --contract /private/new-run/contract-for-embedded-cli.json \
+  --tasks benchmarks/boss-absent-v1/tasks.json \
+  --host-admission /private/new-run/codex/host-admission.json \
+  --host-run /private/new-run/codex/normal-release-audit/host-run.json \
+  --scenario-evidence /private/new-run/codex/normal-release-audit/scenario-evidence.json \
+  --output /private/new-run/codex/normal-release-audit/result.json
+```
+
+Every frozen required role must carry separately observed Agent-identity and provider-execution SHAs, runtime-instance SHA, source host turn,
+fixture fingerprint, artifact SHA, and prior-artifact consumption link. Collaboration roles require distinct Agents and distinct executions.
+Re-labeling one Goal/main execution as lead, implementer, tester, and reviewer fails finalization rather than receiving multi-agent credit.
+The initial host turn must receive the canonical frozen task object exactly; only native continuation inputs remain opaque.
+
 ## Advance the real AICO runtime
 
 Each invocation advances at most one frozen role. The checkout must be absolute, clean, and exactly match the contract revision. The external harness

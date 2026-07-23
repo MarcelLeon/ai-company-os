@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-07-23
-**当前轮次**:Round 269(Independent Codex Goal live host observer)
+**当前轮次**:Round 270(Codex Goal formal task-result finalizer)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是个人开发者可直接使用的远程IM指挥、
@@ -22,6 +22,25 @@ recovery/alert/dead-man、component DR primitive和bounded/auditable autonomy，
 Round 241为独立receiver增加可选different-origin fallback与1-of-2/2-of-2 ACK quorum；schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝配置漂移，原2-of-2事件不能在重启后被1-of-2降级结算。单通知provider或credential失效不再必然切断老板通知，但不同URL、local ACK和unit test仍不冒充真实provider/账号/网络独立或human read。
 
 Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增加默认关闭、显式opt-in的`silent-route-probe-v1`：复用真实双route URL/token/POST，exact intent跨restart；一个失败窗口为suspect/PENDING，连续达到阈值才通过既有edge主动告警，ACK后恢复。bridge不能证明silent handling时必须保持disabled，local ACK不冒充human read或commercial HA。Round 244新增strict install admission，Round 245让它贯穿每次runtime启动；Round 246再要求incident alert与dead-man pulse使用不同exact URL及不同非空bearer，防止两个strict协议共用authority却判绿。Round 247检测运行中dotenv代际漂移；Round 248让dead-man当前验收显式拒绝超龄artifact、过期/未完成probe和非healthy route；Round 249把reviewed config、dotenv generation与strict evidence绑定成expiring commissioning receipt并持续纳入required health。Round 200-249累计合同以本段和下方最新Round为准。
+
+---
+
+## Round 270 完成:Codex Goal formal task-result finalizer
+
+- [x] 新增`CodexGoalScenarioEvidenceReceipt`与`finalize_codex_goal_benchmark_result`，把ADR-0093 native host admission/run、
+  frozen task和独立scenario observer闭合为唯一可评分的`system=codex_goal`结果。
+- [x] 每个required role必须分别绑定真实Agent identity与provider execution SHA、runtime instance、source host turn、frozen
+  fixture与前序artifact；collaboration task逐role Agent和execution都必须不同，单一Goal/main thread只换label不能获得协作分。
+- [x] restart要求首个handoff前后runtime instance不同且零replay；approval、IM takeover、evidence drift、budget pressure与AICO
+  finalizer使用对称门禁。initial turn必须收到canonical frozen task；任一SHA漂移、unobserved turn、usage超预算或缺budget receipt
+  均fail closed；approval identity必须绑定host run中唯一owner turn。
+- [x] 新增`aico-benchmark finalize-codex-goal`，只读取owner-safe receipt并fresh 0600输出task result；它不调用模型、不生成
+  scenario证据，也不能把当前未授权的live样本变成正式成绩。
+- [x] Gate：相关finalizer/host对称测试`34 passed`；raw root严格只有用户既有空release-room JSON导致
+  `3 failed, 1164 passed, 1 skipped`，精确排除后`1164 passed, 1 skipped, 3 deselected`；SME`53 passed`。
+  Ruff、root/SME mypy(261/37 files)、format(261/38 files)、production structure、JSON、CLI与diff通过。
+- [ ] B-015仍只差owner授权的isolated Goal fork + App restart真实capability sample；五task两侧model run也仍需另行授权，
+  当前没有AICO胜出结论。
 
 ---
 

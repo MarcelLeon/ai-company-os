@@ -45,6 +45,11 @@ benchmark专用提示词可能被隐藏成无人值守能力。
 5. turn链必须sequence连续、previous SHA相接、Goal tokens连续，且每turn Goal delta与provider total完全一致；status不再active后
    禁止继续。缺失、漂移或超frozen token budget均fail closed。
 6. host admission和turn ledger只证明baseline身份与证据完整性，不证明任务完成，更不产生AICO胜出结论。
+7. host run不能直接进入scorer。每个frozen task还必须由独立scenario receipt分别绑定required role的Agent identity、
+   provider execution、runtime instance、source host turn、fixture fingerprint、artifact消费链及五类场景证据；
+   collaboration task每个role必须来自不同Agent和不同execution，单一Goal线程换role label不计multi-agent。
+8. initial host turn的opaque input SHA必须等于canonical frozen task SHA；continuation input仍保持opaque且归native host所有。
+9. approval task的request/grant/action evidence必须绑定host run中唯一的`owner_takeover` turn；其他task不得隐藏owner turn。
 
 ## 当前证据
 
@@ -63,10 +68,13 @@ benchmark专用提示词可能被隐藏成无人值守能力。
   per-thread session JSONL。intent冻结session inode/size/prefix、Goal/provider usage、host PID/start和capability context；
   finish只接受旧host退出、新PID启动后append-only同session出现完整`source="goal"`自动turn并完成。
 - 当前日常Goal真实负向样本因`tokenBudget=null`被拒绝且没有生成intent；这证明observer不会把本线程体验反向包装成formal baseline。
+- Round 270新增`finalize-codex-goal`：只有contract/task、formal admission、host run和独立scenario receipt的SHA链全部一致，
+  才能生成`BossAbsentTaskResult(system=codex_goal)`。离线测试拒绝Agent/execution复用、unobserved host turn、同runtime伪重启、
+  hidden human intervention和identity drift。
 
 ## 残余边界
 
-- 第一方build、native continuation surface和独立observer实现已取得；尚缺一次owner授权的isolated Goal fork实际执行，
+- 第一方build、native continuation surface、独立observer与正式task-result finalizer均已取得；尚缺一次owner授权的isolated Goal fork实际执行，
   让observer捕获跨host restart后的automatic turn、Goal/provider usage与稳定capability context。因此formal run仍未admit；
   B-015不再缺代码路径，只跟踪该真实执行证据。
 - opaque input SHA只能证明观察到的bytes identity，不能解释host内部prompt质量；公平性依赖exact host build与同一frozen task合同。

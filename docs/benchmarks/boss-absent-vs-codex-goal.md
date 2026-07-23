@@ -89,5 +89,7 @@ Round 268进一步找到并绑定签名Codex App build与明确automatic continu
 Round 269已实现独立live observer与formal admission桥：它不写`turn/start`，只接受签名desktop host真实PID更换、append-only
 per-thread session、restart后`source="goal"`完整turn、Goal/provider usage推进和capability context稳定。当前日常Goal因没有冻结
 token budget被正确拒绝；尚缺owner授权的isolated fork/restart真实样本。
+Round 270补齐Codex Goal正式结果边界：native host run不能直接进入scorer，必须再由独立scenario receipt逐项绑定required role的
+不同Agent identity与provider execution、runtime instance、source turn、frozen fixture与artifact消费链，并对称关闭五类场景门禁。
 首次正式对比仍须另行授权实际模型调用并由isolated harness注入五类事件；
 不能把protocol receipt、实现测试或synthetic fixture反向当成benchmark成绩。

@@ -31,6 +31,9 @@
   process、owner-only frozen Goal budget与per-thread session JSONL绑定；只接受append-only同inode历史、真实PID更换、旧host退出、
   restart后`source="goal"`自动turn、完成态、Goal/provider usage推进及capability context不漂移。observer只发
   `thread/goal/get`，不拥有`turn/start`写通道；不满足任一条件不生成formal admission。
+- Independent Codex Goal scenario finalization:`aico-benchmark finalize-codex-goal`把native host admission/run与外部scenario
+  receipt绑定为唯一可评分结果；required role逐项分开绑定Agent identity、provider execution、runtime instance、source turn、
+  fixture和artifact消费链，防止单一Goal线程更换角色标签冒充multi-agent，并对称验证五类场景。
 - Restart-safe AICO benchmark runner:核心按frozen roles编排不同Agent，所有role共享同一remaining-token budget并消费前一artifact
   SHA；provider调用前原子保存稳定dispatch intent，跨进程只按id对账、unknown outcome禁止重放，restart必须更换runtime instance。
   scorer同步拒绝单Agent更换role label的伪协作；超预算provider usage即使不采信checkpoint也完整计入budget loss证据。

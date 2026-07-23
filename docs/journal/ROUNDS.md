@@ -13421,3 +13421,38 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - B-015只剩owner授权的一次isolated Goal fork + 小额模型预算 + Codex App restart。该动作会中断桌面App内其他活动任务，
   未明确授权前不执行。
 - GitHub push仍等待exact remote/branch/commit list确认；本轮新提交完成后必须把SHA加入授权范围。
+
+## Round 270 — 2026-07-23 — Codex
+
+### 输入与目标
+
+- 继续收尾active boss-absent目标：即使B-015 live host admission通过，既有`CodexGoalHostRunReceipt`仍不能转换为五项冻结task的
+  scoreable result，公平对比还缺最后一层task/scenario证据合同。
+- 不调用模型、不创建thread、不重启App；先完成所有可本地验证的代码和失败门禁，并保持用户既有空release-room JSON不变。
+
+### 关键发现与决策
+
+- native host admission/run只证明continuation ownership、turn链和usage，不证明required roles由不同Agent完成、是否消费前序产物，
+  也不证明restart/approval/drift/budget-pressure场景闭合。
+- provider execution与Agent identity不能混为一谈。正式collaboration必须同时看到不同Agent identity与不同provider execution；
+  同一Agent多次执行或一个main execution只换role label都不得分。
+- frozen initial task不是opaque continuation：首turn input SHA必须等于canonical task SHA。approval evidence还必须绑定host run中
+  唯一owner turn，避免独立receipt与实际人工介入脱节。
+
+### 实现与验证
+
+- 新增`boss_absent_codex_goal_evidence.py`：独立scenario receipt逐role绑定Agent/execution/runtime/source turn/fixture/artifact/
+  consumption chain，并绑定exact contract、host admission与host run SHA。
+- finalizer对称验证五类场景、shared budget、terminal consumption和human intervention；输出唯一
+  `BossAbsentTaskResult(system=codex_goal)`，不完整或漂移证据fail closed。
+- CLI新增`aico-benchmark finalize-codex-goal`，bounded owner-safe输入、fresh 0600输出，不调用模型也不生成observer事实。
+- 新增P-129并更新ADR-0093、B-015、benchmark runbook/status与CHANGELOG。
+- 相关finalizer/host对称测试`34 passed`。raw root严格只有用户既有空release-room JSON导致
+  `3 failed, 1164 passed, 1 skipped`；精确排除后`1164 passed, 1 skipped, 3 deselected`。SME`53 passed`；
+  Ruff、root/SME mypy(261/37 files)、format(261/38 files)、production class/function结构、tracked JSON、packaged CLI和diff通过。
+
+### 下一步
+
+- B-015仍只剩owner授权的一次isolated Goal capability run：创建专用fork、冻结预算、observer start、重启App、observer finish。
+- capability admission通过后，两侧五task正式模型run仍需单独exact budget/side-effect授权；当前没有真实胜负结果。
+- 本轮提交必须排除用户空`examples/release-room/aico-project.json`；GitHub push继续等待exact remote/branch/commit list确认。

@@ -4347,3 +4347,28 @@ Goal预算和provider usage均未绑定；日常Goal还可能没有token budget�
 - B-015
 - `src/aico/app/boss_absent_codex_goal_live_observer.py`
 - `src/aico/app/boss_absent_codex_goal_observer_cli.py`
+
+### [P-129] Native host run通过不等于multi-agent task结果可评分
+
+**状态**:🟢 RESOLVED(machine finalizer; formal samples pending B-015)
+**首次踩中**:Round 270
+**最后更新**:2026-07-23
+**影响范围**:Codex Goal collaboration score,scenario fairness,formal benchmark result
+
+**症状与根因**
+ADR-0093 host admission/run能证明第一方宿主拥有续跑、turn链和provider usage，但它不知道frozen task的required roles、角色是否由
+不同provider execution完成、下游是否消费前序产物，也不知道restart/approval/drift/budget-pressure场景是否真的闭合。若把host run
+直接映射成task result，一个Goal/main execution只需输出多个role label就可能伪造multi-agent协作分。
+
+**解决与预防**
+- `CodexGoalScenarioEvidenceReceipt`由被测宿主外的harness分别记录逐role Agent identity、provider execution、runtime instance、
+  source turn、fixture fingerprint、artifact与消费链，并绑定exact contract/admission/host-run SHA。
+- collaboration task要求每个required role恰有一个不同Agent和不同execution；source turn必须存在于host run，terminal必须消费最后产物。
+- restart、takeover、approval、drift和budget pressure使用与AICO finalizer对称门禁；approval绑定唯一owner turn，
+  hidden intervention、超预算或缺budget receipt拒绝。
+- 只有`finalize-codex-goal`能产生scoreable baseline result；live host receipt、测试fixture或手写role label都不是成绩。
+
+**相关链接**
+- ADR-0093
+- B-015
+- `src/aico/app/boss_absent_codex_goal_evidence.py`

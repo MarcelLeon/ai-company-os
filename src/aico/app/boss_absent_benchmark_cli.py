@@ -57,6 +57,14 @@ from aico.app.boss_absent_codex_goal_capability import (
     probe_codex_goal_host_surface,
     probe_codex_goal_native_host_candidate,
 )
+from aico.app.boss_absent_codex_goal_evidence import (
+    CodexGoalScenarioEvidenceReceipt,
+    finalize_codex_goal_benchmark_result,
+)
+from aico.app.boss_absent_codex_goal_host import (
+    CodexGoalHostAdmissionReceipt,
+    CodexGoalHostRunReceipt,
+)
 from aico.app.boss_absent_codex_goal_probe import (
     CodexGoalProtocolReceipt,
     probe_codex_goal_protocol,
@@ -135,6 +143,14 @@ def run(
             result = _finalize_aico(args)
             output.write(
                 "AICO scenario evidence finalized: "
+                f"task={result.task_id} status={result.terminal_status.value} "
+                f"tokens={result.total_tokens}\n"
+            )
+            return 0
+        if args.command == "finalize-codex-goal":
+            result = _finalize_codex_goal(args)
+            output.write(
+                "Codex Goal scenario evidence finalized: "
                 f"task={result.task_id} status={result.terminal_status.value} "
                 f"tokens={result.total_tokens}\n"
             )
@@ -329,6 +345,28 @@ def _finalize_aico(args: argparse.Namespace) -> BossAbsentTaskResult:
     if canonical_sha256(task_set) != contract.task_set_sha256:
         raise ValueError("benchmark task set fingerprint mismatch")
     result = finalize_aico_benchmark_result(contract, task, state, receipt)
+    _write_new_model(args.output, result)
+    return result
+
+
+def _finalize_codex_goal(args: argparse.Namespace) -> BossAbsentTaskResult:
+    contract = _read_model(args.contract, BossAbsentBenchmarkContract)
+    task_set = _read_model(args.tasks, BossAbsentTaskSet)
+    admission = _read_model(args.host_admission, CodexGoalHostAdmissionReceipt)
+    host_run = _read_model(args.host_run, CodexGoalHostRunReceipt)
+    receipt = _read_model(args.scenario_evidence, CodexGoalScenarioEvidenceReceipt)
+    if canonical_sha256(task_set) != contract.task_set_sha256:
+        raise ValueError("benchmark task set fingerprint mismatch")
+    task = next((item for item in task_set.tasks if item.task_id == receipt.task_id), None)
+    if task is None:
+        raise ValueError("Codex Goal scenario evidence references an unknown frozen task")
+    result = finalize_codex_goal_benchmark_result(
+        contract,
+        task,
+        admission,
+        host_run,
+        receipt,
+    )
     _write_new_model(args.output, result)
     return result
 
@@ -837,6 +875,7 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument("--output", type=Path, required=True)
     probe.add_argument("--codex", default="codex")
     _add_codex_host_probe_arguments(subparsers)
+    _add_codex_finalize_arguments(subparsers)
     finalize = subparsers.add_parser(
         "finalize-aico",
         help="Bind an AICO role state to independent scenario evidence.",
@@ -947,6 +986,21 @@ def _add_codex_host_probe_arguments(
         default=Path("/Applications/ChatGPT.app/Contents/Resources/codex"),
     )
     app_host_probe.add_argument("--team-identifier", default="2DC432GLL2")
+
+
+def _add_codex_finalize_arguments(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    finalize = subparsers.add_parser(
+        "finalize-codex-goal",
+        help="Bind a native Codex Goal host run to independent scenario evidence.",
+    )
+    finalize.add_argument("--contract", type=Path, required=True)
+    finalize.add_argument("--tasks", type=Path, required=True)
+    finalize.add_argument("--host-admission", type=Path, required=True)
+    finalize.add_argument("--host-run", type=Path, required=True)
+    finalize.add_argument("--scenario-evidence", type=Path, required=True)
+    finalize.add_argument("--output", type=Path, required=True)
 
 
 def _add_im_arguments(parser: argparse.ArgumentParser) -> None:
