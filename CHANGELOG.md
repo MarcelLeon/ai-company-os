@@ -51,6 +51,9 @@
   success仍明确不证明receiver物理host、TLS、fault action、provider ACK或human read。
 
 ### Fixed
+- macOS LaunchAgent lifecycle race:`service install`在bootout后有界确认卸载并重试transient bootstrap；
+  `service restart`遇到未加载service时从当前plist重新bootstrap，再kickstart。真实Telegram独占polling dogfood后的
+  `Input/output error`/service-not-found恢复路径已在本机复现并闭环。
 - Codex standing-autonomy compatibility:预授权与live-auth probe不再传递Codex 0.144.5已删除的
   `experimental_network` strict-config键；安全边界继续由`--sandbox read-only`、`never` approval、忽略user config/rules、
   ephemeral session和output schema强制。子进程stdout/stderr显式使用1 MiB单行上限，避免合法的大JSONL事件触发asyncio默认64 KiB失败。

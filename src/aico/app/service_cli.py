@@ -11,6 +11,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -85,6 +86,7 @@ class CommandResult:
 
 
 CommandRunner = Callable[[tuple[str, ...]], CommandResult]
+Sleeper = Callable[[float], None]
 
 
 @dataclass(frozen=True)
@@ -154,9 +156,16 @@ class ServiceContext:
 class LaunchdService:
     """One recoverable user LaunchAgent; no cross-platform abstraction until needed."""
 
-    def __init__(self, context: ServiceContext, *, runner: CommandRunner) -> None:
+    def __init__(
+        self,
+        context: ServiceContext,
+        *,
+        runner: CommandRunner,
+        sleeper: Sleeper = time.sleep,
+    ) -> None:
         self.context = context
         self._runner = runner
+        self._sleeper = sleeper
 
     def render_plist(self) -> bytes:
         payload = {
@@ -186,16 +195,16 @@ class LaunchdService:
             backup = context.plist_path.with_suffix(".plist.previous")
             shutil.copy2(context.plist_path, backup)
         _atomic_write(context.plist_path, rendered)
-        self._runner(("launchctl", "bootout", context.service_target))
-        self._require_success(
-            ("launchctl", "bootstrap", context.user_domain, str(context.plist_path))
-        )
+        self._bootout_and_wait()
+        self._bootstrap_current()
         self._require_success(("launchctl", "kickstart", "-k", context.service_target))
         return backup
 
     def restart(self) -> None:
         if not self.context.plist_path.exists():
             raise RuntimeError("service plist is not installed")
+        if self.status().returncode != 0:
+            self._bootstrap_current()
         self._require_success(("launchctl", "kickstart", "-k", self.context.service_target))
 
     def status(self) -> CommandResult:
@@ -214,8 +223,38 @@ class LaunchdService:
     def _require_success(self, command: tuple[str, ...]) -> None:
         result = self._runner(command)
         if result.returncode != 0:
-            detail = result.stderr.strip() or result.stdout.strip() or "unknown launchctl error"
-            raise RuntimeError(f"{' '.join(command[:2])} failed: {detail}")
+            raise RuntimeError(f"{' '.join(command[:2])} failed: {_command_result_detail(result)}")
+
+    def _bootout_and_wait(self, *, attempts: int = 10, delay_seconds: float = 0.05) -> None:
+        self._runner(("launchctl", "bootout", self.context.service_target))
+        for attempt in range(attempts):
+            if self.status().returncode != 0:
+                return
+            if attempt + 1 < attempts:
+                self._sleeper(delay_seconds)
+        raise RuntimeError("launchctl bootout failed: service remained loaded")
+
+    def _bootstrap_current(
+        self,
+        *,
+        attempts: int = 20,
+        delay_seconds: float = 0.1,
+    ) -> None:
+        command = (
+            "launchctl",
+            "bootstrap",
+            self.context.user_domain,
+            str(self.context.plist_path),
+        )
+        last_result: CommandResult | None = None
+        for attempt in range(attempts):
+            last_result = self._runner(command)
+            if last_result.returncode == 0 or self.status().returncode == 0:
+                return
+            if attempt + 1 < attempts:
+                self._sleeper(delay_seconds)
+        assert last_result is not None
+        raise RuntimeError(f"launchctl bootstrap failed: {_command_result_detail(last_result)}")
 
 
 def run_service_cli(
@@ -302,6 +341,10 @@ def _dispatch(
     else:
         stdout.write(f"Uninstalled; recoverable plist: {recovered}\n")
     return 0
+
+
+def _command_result_detail(result: CommandResult) -> str:
+    return result.stderr.strip() or result.stdout.strip() or "unknown launchctl error"
 
 
 def readiness_checks(

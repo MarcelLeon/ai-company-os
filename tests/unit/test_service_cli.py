@@ -38,6 +38,10 @@ class RecordingRunner:
 
     def __call__(self, command: tuple[str, ...]) -> CommandResult:
         self.commands.append(command)
+        if command[1] == "bootout":
+            self.loaded = False
+        if command[1] == "bootstrap":
+            self.loaded = True
         if command[1] == "print" and not self.loaded:
             return CommandResult(returncode=3, stdout="", stderr="not found")
         return CommandResult(
@@ -50,8 +54,53 @@ class RecordingRunner:
 class BootstrapFailureRunner(RecordingRunner):
     def __call__(self, command: tuple[str, ...]) -> CommandResult:
         self.commands.append(command)
+        if command[1] == "bootout":
+            self.loaded = False
+        if command[1] == "print" and not self.loaded:
+            return CommandResult(returncode=3, stdout="", stderr="not found")
         if command[1] == "bootstrap":
             return CommandResult(returncode=5, stdout="", stderr="bootstrap rejected")
+        return CommandResult(returncode=0, stdout="", stderr="")
+
+
+class DelayedBootoutRunner(RecordingRunner):
+    def __init__(self) -> None:
+        super().__init__()
+        self.prints_after_bootout = 0
+
+    def __call__(self, command: tuple[str, ...]) -> CommandResult:
+        self.commands.append(command)
+        if command[1] == "bootout":
+            return CommandResult(returncode=0, stdout="", stderr="")
+        if command[1] == "print" and self.loaded:
+            self.prints_after_bootout += 1
+            if self.prints_after_bootout >= 2:
+                self.loaded = False
+            else:
+                return CommandResult(returncode=0, stdout="state = running\n", stderr="")
+        if command[1] == "bootstrap":
+            self.loaded = True
+        if command[1] == "print" and not self.loaded:
+            return CommandResult(returncode=3, stdout="", stderr="not found")
+        return CommandResult(returncode=0, stdout="", stderr="")
+
+
+class TransientBootstrapFailureRunner(RecordingRunner):
+    def __init__(self, *, loaded: bool) -> None:
+        super().__init__(loaded=loaded)
+        self.bootstrap_attempts = 0
+
+    def __call__(self, command: tuple[str, ...]) -> CommandResult:
+        self.commands.append(command)
+        if command[1] == "bootout":
+            self.loaded = False
+        if command[1] == "print" and not self.loaded:
+            return CommandResult(returncode=3, stdout="", stderr="not found")
+        if command[1] == "bootstrap":
+            self.bootstrap_attempts += 1
+            if self.bootstrap_attempts == 1:
+                return CommandResult(returncode=5, stdout="", stderr="Input/output error")
+            self.loaded = True
         return CommandResult(returncode=0, stdout="", stderr="")
 
 
@@ -115,6 +164,51 @@ def test_service_install_backs_up_changed_plist_and_uses_user_launchd_domain(
     assert plistlib.loads(context.plist_path.read_bytes())["Label"] == context.label
     assert runner.commands == [
         ("launchctl", "bootout", "gui/501/com.aico.phase1"),
+        ("launchctl", "print", "gui/501/com.aico.phase1"),
+        ("launchctl", "bootstrap", "gui/501", str(context.plist_path)),
+        ("launchctl", "kickstart", "-k", "gui/501/com.aico.phase1"),
+    ]
+
+
+def test_service_install_waits_for_delayed_bootout(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    runner = DelayedBootoutRunner()
+    sleeps: list[float] = []
+
+    LaunchdService(context, runner=runner, sleeper=sleeps.append).install()
+
+    assert runner.prints_after_bootout == 2
+    assert sleeps == [0.05]
+    assert runner.loaded is True
+
+
+def test_service_install_retries_transient_bootstrap_failure(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    runner = TransientBootstrapFailureRunner(loaded=True)
+    sleeps: list[float] = []
+
+    LaunchdService(context, runner=runner, sleeper=sleeps.append).install()
+
+    assert runner.bootstrap_attempts == 2
+    assert sleeps == [0.1]
+    assert runner.loaded is True
+
+
+def test_service_restart_bootstraps_an_unloaded_service(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    service = LaunchdService(context, runner=RecordingRunner())
+    context.plist_path.parent.mkdir(parents=True)
+    context.plist_path.write_bytes(service.render_plist())
+    runner = TransientBootstrapFailureRunner(loaded=False)
+    sleeps: list[float] = []
+
+    LaunchdService(context, runner=runner, sleeper=sleeps.append).restart()
+
+    assert runner.bootstrap_attempts == 2
+    assert runner.commands == [
+        ("launchctl", "print", "gui/501/com.aico.phase1"),
+        ("launchctl", "bootstrap", "gui/501", str(context.plist_path)),
+        ("launchctl", "print", "gui/501/com.aico.phase1"),
         ("launchctl", "bootstrap", "gui/501", str(context.plist_path)),
         ("launchctl", "kickstart", "-k", "gui/501/com.aico.phase1"),
     ]

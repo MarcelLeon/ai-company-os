@@ -564,7 +564,7 @@ source；系统只提供最多64 KiB的allowlisted原始path/line片段，同时
 
 **状态**:🔴 BLOCKING
 **提出于**:Round 266
-**最后更新**:2026-07-23(Round 266)
+**最后更新**:2026-07-23(Round 267)
 **影响**:五项boss-absent对比不能生成公平的Codex Goal正式样本；AICO正式链可继续准备，但在baseline未admit前不能宣称胜出。
 
 **问题描述**
@@ -589,7 +589,8 @@ source；系统只提供最多64 KiB的allowlisted原始path/line片段，同时
 
 **当前 workaround**
 - app-server只用于Goal控制面与协议探测；不运行runner-managed continuation，不把单turn或remote-control称作Codex Goal baseline。
-- AICO侧继续完成真实Telegram dogfood和formal harness准备，但scorer没有两侧完整样本时固定不能返回胜出。
+- AICO侧真实Telegram approval/takeover transport dogfood已在Round 267完成；formal model run仍未授权/执行，
+  scorer没有两侧完整样本时固定不能返回胜出。
 
 **相关链接**
 - ADR-0092

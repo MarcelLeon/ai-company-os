@@ -79,6 +79,9 @@ TaskBus/Adapter transport及跨runtime role handoff机器验收。Round 264把ac
 clean-checkout runtime CLI和owner-only independent observation ledger/finalization。Round 265冻结project assignment并把每个role
 绑定exact appointment与provider-issued execution fingerprint；approval/takeover均接入durable intent、Telegram platform ACK、
 owner-bound inbound action ledger和exact decision receipt。当前仍未执行真实Telegram/model dogfood，也未获得Codex native host build，
-因此没有正式成绩。
+因此Round 265结束时没有正式成绩。
+Round 267已补齐真实Telegram approval与takeover transport dogfood：两次都由当前owner在Telegram Web执行1次操作，并产生0600
+platform ACK/inbound/decision/grant或takeover receipt。该样本使用synthetic/no-model state，未执行mutation，只关闭IM协议的
+外部可用性缺口；正式model run与Codex native host build仍未发生，因此仍无正式成绩。
 首次正式对比仍须另行授权实际模型调用并由isolated harness注入五类事件；
 不能把protocol receipt、实现测试或synthetic fixture反向当成benchmark成绩。

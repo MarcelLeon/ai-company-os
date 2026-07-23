@@ -28,7 +28,10 @@ Telegram Bot API的`sendMessage`没有调用方幂等键。若平台已接收消
 
 ## 结果
 
-- 真实Telegram调用仍需owner显式运行collector并确认其独占bot polling；单测/fake Channel不冒充live dogfood。
+- Round 267已在owner显式授权下完成真实Telegram approval与takeover：collector独占bot polling，Bot API返回platform ACK，
+  当前owner在Telegram Web各执行1次操作，exact inbound callback闭合decision。所有exchange、grant与takeover receipt均为0600。
+- 本次使用显式synthetic/no-model state，只证明真实transport、owner-bound decision与receipt链；不证明provider执行、
+  approval mutation或formal benchmark成绩。
 - Telegram缺少发送幂等键时，ambiguous delivery可能等待到期而不是冒险重发；这是安全优先的显式失败。
 - raw bot token、chat/sender ID和provider thread ID不进入score artifact；只有owner-only exchange state或不可逆fingerprint。
 - formal run新增project config、IM exchange目录和decision receipt依赖，但协作率与接手成本获得可独立复核的事实来源。

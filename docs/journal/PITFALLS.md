@@ -4206,7 +4206,7 @@ independent observer可以在role chain结束后拒绝缺失approval的result，
 
 ### [P-123] 本地grant或ACK JSON不等于真实owner IM decision
 
-**状态**:🟢 RESOLVED(machine protocol; live dogfood pending)
+**状态**:🟢 RESOLVED(live approval/takeover transport dogfood; formal model run pending)
 **首次踩中**:Round 265
 **最后更新**:2026-07-23
 **影响范围**:approval,takeover,Telegram,restart ambiguity,takeover cost
@@ -4220,6 +4220,8 @@ schema-valid grant或takeover receipt可以由本地进程手写，无法证明T
 - intent有而ACK缺失时不重发；仅exact owner/target/thread/request token的inbound action可完成delivery reconciliation。
 - 相关错误操作进入hash-chain action ledger；wrong owner和无关消息不计入。terminal decision闭合后不再追加。
 - grant与takeover receipt都逐SHA绑定IM decision、delivery/inbound ACK和owner fingerprint；raw token/identity不进入score artifact。
+- Round 267真实Telegram approval与takeover各由当前owner执行1次操作，platform ACK、inbound、decision及grant/takeover receipt
+  均已闭合为0600证据；synthetic/no-model state不冒充provider或mutation成绩。
 
 **相关链接**
 - ADR-0099
@@ -4270,3 +4272,27 @@ Codex CLI同时展示stable `goals`、persistent app-server、`remote-control`�
 - ADR-0093
 - B-015
 - `src/aico/app/boss_absent_codex_goal_capability.py`
+
+### [P-126] launchctl bootout成功不等于服务已经完成卸载
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 267
+**最后更新**:2026-07-23
+**影响范围**:`aico service install|restart`,真实Telegram独占polling恢复
+
+**症状与根因**
+真实dogfood先`launchctl bootout`释放Telegram polling，随后立刻`bootstrap`会偶发
+`Bootstrap failed: 5: Input/output error`。旧`restart`只执行`kickstart -k`；服务一旦已经卸载，又会报找不到service。
+根因是launchd lifecycle命令完成与domain状态可重用之间存在短暂异步窗口，单条命令return code不能代表下一条操作已经安全。
+
+**解决与预防**
+- install在bootout后有界轮询`launchctl print`，确认service确实不再loaded后才bootstrap。
+- bootstrap失败时检查service是否已加载；未加载则在约2秒有界窗口内重试，超时保留最后一个secret-safe错误。
+- restart先检查service状态；未加载时从当前plist bootstrap，再kickstart，不要求人工执行另一条恢复命令。
+- 状态机fake覆盖延迟卸载、transient bootstrap失败和unloaded restart；真实Mac再次覆盖两条lifecycle路径。
+- launchctl loaded早于runtime owner lock约1秒属于启动窗口；高标准验收以随后doctor的owner PID与launchd PID一致为准。
+
+**相关链接**
+- ADR-0038
+- ROUNDS Round 267
+- `src/aico/app/service_cli.py`

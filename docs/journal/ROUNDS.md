@@ -13304,3 +13304,41 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - B-015等待第一方Codex host build/export surface；在此之前不生成不公平baseline结果。
 - AICO侧继续真实owner Telegram approval/takeover dogfood准备，正式模型预算仍需单独owner授权。
 - GitHub push仍等待owner对`d41fee1`、`03337a6`、`16907b9`及本轮后续提交的精确外发授权。
+
+## Round 267 — 2026-07-23 — Codex
+
+### 输入与目标
+
+- owner明确授权完整外部dogfood、当前代码提交与push，并准备启动新目标；本轮先高标准收口ADR-0099的真实Telegram边界。
+- 不调用模型、不执行正式benchmark；approval/takeover使用明确标记的synthetic state，只验证外部IM transport/decision/receipt。
+- dogfood后必须恢复常驻LaunchAgent并通过doctor；发现真实生命周期故障则在本轮修复，不把人工命令当长期workaround。
+
+### 真实dogfood与关键发现
+
+- 暂停`com.aico.phase1`后，one-shot collector独占Telegram polling。takeover消息由Bot API真实发送，当前owner在已登录
+  Telegram Web点击`Take over`，collector收到exact inbound；actions=1，elapsed=28.372s。
+- approval使用独立pending state。首次沙箱DNS建连前失败，未发消息；原exchange保留intent且按ADR-0099不盲重发。
+  获准网络上下文的新exchange真实发送消息，当前owner点击`Approve`，collector闭合approved decision并生成grant；actions=1。
+- 两次正常exchange均保存0600 intent/delivery/decision/actions；takeover receipt、approval state/grant也均为0600。
+  raw bot token、owner/target ID未写入score artifact。样本未调用provider、未执行approval mutation，不产生benchmark成绩。
+- 恢复服务时先后真实复现两类launchd问题：bootout尚未完成时bootstrap返回error 5；服务已卸载时旧restart只kickstart而无法恢复。
+  这不是Telegram协议失败，而是本机service lifecycle缺少状态对账。
+
+### 实现与验证
+
+- `LaunchdService.install()`现在bootout后有界轮询`launchctl print`直到unloaded；bootstrap失败时检查实际loaded状态，并在约2秒
+  有界窗口重试。超时仍fail closed并保留最后错误。
+- `restart()`先检查状态；service未加载时从当前plist bootstrap，再执行kickstart。新增可注入sleeper，只用于确定性测试。
+- `RecordingRunner`升级为状态机；新增延迟bootout、首次bootstrap失败和unloaded restart三条回归。相关定向`101 passed`。
+- 真实Mac先通过`service install → restart`，再从collector bootout状态直接用修复后的`service restart`恢复。launchd先于owner
+  lock约1秒进入loaded，随后doctor确认plist current、launchctl loaded、runtime owner PID与launchd一致。最后再紧邻执行一次
+  `bootout → restart`，无需人工等待即恢复，最终PID `66065`与launchd一致。
+- 新增P-126；更新ADR-0099、P-123、B-015、benchmark状态、STATUS与CHANGELOG。raw root严格只有用户既有空
+  release-room JSON导致的3项失败：`3 failed, 1136 passed, 1 skipped`；精确排除后
+  `1136 passed, 1 skipped, 3 deselected`。SME`53 passed`；Ruff、root/SME mypy(255/37 files)、format、结构和diff通过。
+
+### 下一步
+
+- B-015继续等待第一方Codex native continuation host/build receipt；没有它不运行不公平baseline、不宣称AICO胜出。
+- 当前代码完成完整Gate后本地提交；GitHub push按仓库外部动作合同核对exact remote/branch/commit range。
+- 新目标可以进入定义/基线讨论，但不能把本轮synthetic IM dogfood包装为formal model benchmark结果。
