@@ -564,7 +564,7 @@ source；系统只提供最多64 KiB的allowlisted原始path/line片段，同时
 
 **状态**:🔴 BLOCKING
 **提出于**:Round 266
-**最后更新**:2026-07-23(Round 268)
+**最后更新**:2026-07-23(Round 269)
 **影响**:五项boss-absent对比不能生成公平的Codex Goal正式样本；第一方build/surface已找到，但live admission前不能宣称胜出。
 
 **问题描述**
@@ -587,12 +587,14 @@ Round 268确认当前签名Codex App内嵌`0.145.0-alpha.30`新增
   build receipt。
 - Round 268新`probe-codex-app-host`验证App/内嵌CLI code signature、Team ID、notarization、bundle/build、完整CDHash和schema SHA。
   真实candidate固定formal false，blocking只剩live continuation与isolated state observation。
+- Round 269新增独立`aico-codex-goal-observer start|finish`：绑定exact session inode/prefix、desktop host PID/start、
+  read-only Goal state、provider usage与capability context，要求旧host退出和restart后完整`source="goal"`turn完成。
+- 当前真实日常Goal因没有冻结token budget被observer正确拒绝，未写intent；synthetic测试不能关闭本blocker。
 
 **需要什么才能解开**
-1. owner授权创建一个隔离Goal fork及极小live capability run；frozen contract绑定当前签名App/内嵌CLI build。
-2. independent observer证明host自动发起continuation，runner没有提交continuation input，并区分initial/native/owner/harness来源。
-3. persistent thread跨host restart继续，turn chain与Goal/provider usage可独立观察，默认能力和frozen model/effort/budget不漂移。
-4. live capability receipt通过ADR-0093 admission后，再申请两侧相同预算的五task正式模型run。
+1. owner授权创建一个隔离Goal fork、冻结小额token budget，并允许在该样本中重启一次Codex App。
+2. 执行已实现的observer start → restart → finish；任何PID/session/prefix/source/usage/capability漂移均保留失败证据。
+3. live capability receipt通过ADR-0093 admission后，再申请两侧相同预算的五task正式模型run。
 
 **当前 workaround**
 - 签名App candidate只用于build/surface admission；不运行runner-managed continuation，不把schema或当前聊天体验称作正式baseline。
@@ -604,6 +606,7 @@ Round 268确认当前签名Codex App内嵌`0.145.0-alpha.30`新增
 - ADR-0093
 - `src/aico/app/boss_absent_codex_goal_capability.py`
 - `src/aico/app/boss_absent_codex_goal_host.py`
+- `src/aico/app/boss_absent_codex_goal_live_observer.py`
 - Round 266
 
 ### [B-009] aico-view 本地 attachment 缺少策略允许的真实浏览器截图入口

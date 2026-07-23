@@ -27,6 +27,10 @@
 - Signed Codex App Goal host candidate:`probe-codex-app-host`验证App与内嵌CLI的Apple code signature、OpenAI Team ID、
   bundle/build、完整CDHash和experimental schema SHA；识别`thread/fork.deferGoalContinuation`明确声明的initial/normal automatic
   continuation语义。candidate receipt保持formal false，直到独立live continuation与isolated run state被观测。
+- Independent Codex Goal live host observer:`aico-codex-goal-observer start|finish`把签名App candidate、exact desktop app-server
+  process、owner-only frozen Goal budget与per-thread session JSONL绑定；只接受append-only同inode历史、真实PID更换、旧host退出、
+  restart后`source="goal"`自动turn、完成态、Goal/provider usage推进及capability context不漂移。observer只发
+  `thread/goal/get`，不拥有`turn/start`写通道；不满足任一条件不生成formal admission。
 - Restart-safe AICO benchmark runner:核心按frozen roles编排不同Agent，所有role共享同一remaining-token budget并消费前一artifact
   SHA；provider调用前原子保存稳定dispatch intent，跨进程只按id对账、unknown outcome禁止重放，restart必须更换runtime instance。
   scorer同步拒绝单Agent更换role label的伪协作；超预算provider usage即使不采信checkpoint也完整计入budget loss证据。

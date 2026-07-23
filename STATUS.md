@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-07-23
-**当前轮次**:Round 268(Signed Codex App native Goal host candidate)
+**当前轮次**:Round 269(Independent Codex Goal live host observer)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是个人开发者可直接使用的远程IM指挥、
@@ -22,6 +22,24 @@ recovery/alert/dead-man、component DR primitive和bounded/auditable autonomy，
 Round 241为独立receiver增加可选different-origin fallback与1-of-2/2-of-2 ACK quorum；schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝配置漂移，原2-of-2事件不能在重启后被1-of-2降级结算。单通知provider或credential失效不再必然切断老板通知，但不同URL、local ACK和unit test仍不冒充真实provider/账号/网络独立或human read。
 
 Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增加默认关闭、显式opt-in的`silent-route-probe-v1`：复用真实双route URL/token/POST，exact intent跨restart；一个失败窗口为suspect/PENDING，连续达到阈值才通过既有edge主动告警，ACK后恢复。bridge不能证明silent handling时必须保持disabled，local ACK不冒充human read或commercial HA。Round 244新增strict install admission，Round 245让它贯穿每次runtime启动；Round 246再要求incident alert与dead-man pulse使用不同exact URL及不同非空bearer，防止两个strict协议共用authority却判绿。Round 247检测运行中dotenv代际漂移；Round 248让dead-man当前验收显式拒绝超龄artifact、过期/未完成probe和非healthy route；Round 249把reviewed config、dotenv generation与strict evidence绑定成expiring commissioning receipt并持续纳入required health。Round 200-249累计合同以本段和下方最新Round为准。
+
+---
+
+## Round 269 完成:Independent Codex Goal live host observer
+
+- [x] 新增独立`aico-codex-goal-observer start|finish`，开始阶段冻结candidate SHA、Goal预算/usage、desktop host PID/start、
+  per-thread session inode/size/prefix SHA、provider usage与capability context；输出为fresh owner-only 0600 intent。
+- [x] finish要求同inode session只追加、旧host退出且新PID/同签名命令在intent后启动；restart后必须出现相邻
+  `task_complete → task_started → turn_context → source="goal"`，新turn完成且capability context不漂移。
+- [x] Goal只通过独立app-server执行`thread/goal/get`；runner协议写入固定为0。Goal与provider usage都必须推进，预算和thread
+  identity不得漂移；成功receipt才能转换为ADR-0093既有formal host admission。
+- [x] 当前真实Goal/session/host完成负向验收：因当前目标`tokenBudget=null`被拒绝，未生成intent；证明日常聊天不能反向冒充
+  frozen benchmark baseline。
+- [x] Gate：Codex Goal/observer定向`58 passed`；raw root仅用户既有空release-room JSON导致
+  `3 failed, 1154 passed, 1 skipped`，精确排除后`1154 passed, 1 skipped, 3 deselected`；SME`53 passed`。
+  Ruff、root/SME mypy(259/37 files)、format、production class/function结构与diff通过。
+- [ ] 代码已具备实跑入口，但尚未重启Codex App或消费isolated capability run模型预算；B-015只剩一次明确授权的破坏性较低
+  live fork/restart执行，不得用synthetic fixture关闭。
 
 ---
 

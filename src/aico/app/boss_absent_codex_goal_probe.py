@@ -19,6 +19,21 @@ _MAX_PROTOCOL_LINE_BYTES = 1_048_576
 GoalRequest = Callable[[str, dict[str, object]], dict[str, object]]
 
 
+class CodexGoalStateObservation(FrozenModel):
+    thread_id: str = Field(min_length=1, max_length=128)
+    status: Literal[
+        "active",
+        "paused",
+        "blocked",
+        "usageLimited",
+        "budgetLimited",
+        "complete",
+    ]
+    token_budget: int = Field(ge=1)
+    tokens_used: int = Field(ge=0)
+    time_used_seconds: int = Field(ge=0)
+
+
 class CodexGoalProtocolReceipt(FrozenModel):
     version: Literal[1] = 1
     codex_cli_version: str = Field(min_length=1, max_length=64)
@@ -88,6 +103,35 @@ def probe_codex_goal_protocol(
             connection.close()
         if not cleanup_intent_path.exists() and isolated_home_path.is_dir():
             shutil.rmtree(isolated_home_path)
+
+
+def observe_codex_goal_state(
+    *,
+    executable: str,
+    codex_home: Path,
+    thread_id: str,
+    timeout_seconds: float = 10,
+) -> CodexGoalStateObservation:
+    """Read one persistent Goal without starting a turn or changing its state."""
+    connection = _AppServerConnection(
+        executable,
+        isolated_home_path=codex_home,
+        timeout_seconds=timeout_seconds,
+    )
+    try:
+        connection.initialize()
+        goal = _mapping(connection.request("thread/goal/get", {"threadId": thread_id}), "goal")
+        return CodexGoalStateObservation.model_validate(
+            {
+                "thread_id": _text(goal, "threadId"),
+                "status": _text(goal, "status"),
+                "token_budget": _integer(goal, "tokenBudget"),
+                "tokens_used": _integer(goal, "tokensUsed", minimum=0),
+                "time_used_seconds": _integer(goal, "timeUsedSeconds", minimum=0),
+            }
+        )
+    finally:
+        connection.close()
 
 
 def run_goal_lifecycle(
@@ -349,6 +393,13 @@ def _text(payload: dict[str, object], key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or not value:
         raise ValueError("Codex Goal app-server response is missing a required identifier")
+    return value
+
+
+def _integer(payload: dict[str, object], key: str, *, minimum: int = 1) -> int:
+    value = payload.get(key)
+    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+        raise ValueError(f"Codex Goal app-server field {key} is invalid")
     return value
 
 

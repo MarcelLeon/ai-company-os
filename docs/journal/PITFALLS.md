@@ -4321,3 +4321,29 @@ Team ID或某个字段，又可能未经签名验证就过早admit。
 - B-015
 - ROUNDS Round 268
 - `src/aico/app/boss_absent_codex_goal_capability.py`
+
+### [P-128] 看到自动Goal续跑不等于已取得可审计的formal baseline
+
+**状态**:🟢 RESOLVED(machine observer; live sample pending B-015)
+**首次踩中**:Round 269
+**最后更新**:2026-07-23
+**影响范围**:Codex Goal live admission,restart evidence,benchmark fairness
+
+**症状与根因**
+Codex Desktop session JSONL确实会在`task_complete`后立即写下一次`task_started`，并注入
+`<codex_internal_context source="goal">`。但若事后只截取这几行，文件可被复制/手写，host build/PID、restart边界、历史是否被改写、
+Goal预算和provider usage均未绑定；日常Goal还可能没有token budget。真实体验不能自动升级为formal receipt。
+
+**解决与预防**
+- observer在restart前先写0600 intent，冻结签名candidate、session device/inode/size/prefix SHA、host PID/start、
+  read-only Goal budget/usage、provider usage和capability context。
+- restart后只接受旧host退出、新PID同命令、same-session append-only前缀、`source="goal"`完整turn及usage推进；runner没有
+  `turn/start`调用路径。
+- session必须是exact Codex home下按thread ID命名的artifact，owner持有且group/other不可写；synthetic tmp JSON不能走formal CLI。
+- 当前Goal因`tokenBudget=null`被真实负向验收拒绝且不落intent；只有isolated frozen fork可以关闭B-015。
+
+**相关链接**
+- ADR-0093
+- B-015
+- `src/aico/app/boss_absent_codex_goal_live_observer.py`
+- `src/aico/app/boss_absent_codex_goal_observer_cli.py`

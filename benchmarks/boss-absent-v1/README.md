@@ -101,6 +101,36 @@ This verifies the App and embedded CLI signatures, OpenAI Team ID, bundle/build,
 `thread/fork.deferGoalContinuation` semantics. It makes no model call and remains a non-formal candidate until an independent live isolated
 continuation/usage observation is attached.
 
+For that live observation, first freeze the current signed host, exact per-thread session prefix, Goal budget, provider usage, and capability context:
+
+```bash
+uv run aico-codex-goal-observer start \
+  --contract /private/new-run/contract-for-embedded-cli.json \
+  --session <absolute-codex-home>/sessions/<exact-thread-session>.jsonl \
+  --thread-id <isolated-fork-thread-id> \
+  --host-pid <desktop-app-server-pid-before> \
+  --codex-home <absolute-codex-home> \
+  --output /private/new-run/codex-live-observation-intent.json
+```
+
+After the signed Codex App host is restarted and the same Goal resumes through a complete native continuation, finish with the replacement host PID:
+
+```bash
+uv run aico-codex-goal-observer finish \
+  --contract /private/new-run/contract-for-embedded-cli.json \
+  --session <same-exact-session> \
+  --thread-id <same-isolated-fork-thread-id> \
+  --host-pid <desktop-app-server-pid-after> \
+  --codex-home <same-absolute-codex-home> \
+  --intent /private/new-run/codex-live-observation-intent.json \
+  --output /private/new-run/codex-live-host-receipt.json
+```
+
+The observer accepts only the exact Codex session path under that home, owner-controlled non-writable-by-group/other metadata, unchanged historical
+bytes, a terminated old host, a newly started exact desktop app-server command, and an adjacent
+`task_complete → task_started → turn_context → source="goal"` state transition whose new turn completes. Goal and provider usage must both advance
+without budget/capability drift. The observer opens no `turn/start` channel. A normal Goal without a frozen token budget is rejected.
+
 ## Advance the real AICO runtime
 
 Each invocation advances at most one frozen role. The checkout must be absolute, clean, and exactly match the contract revision. The external harness

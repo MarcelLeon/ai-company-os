@@ -9,8 +9,53 @@ from aico.app.boss_absent_codex_goal_probe import (
     _read_cleanup_intent,
     _recover_cleanup_intent,
     _write_cleanup_intent,
+    observe_codex_goal_state,
     run_goal_lifecycle,
 )
+
+
+def test_goal_state_observer_uses_only_read_only_goal_get(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    methods: list[str] = []
+
+    class FakeConnection:
+        def __init__(self, *_: object, **__: object) -> None:
+            pass
+
+        def initialize(self) -> None:
+            methods.append("initialize")
+
+        def request(self, method: str, params: dict[str, object]) -> dict[str, object]:
+            methods.append(method)
+            assert params == {"threadId": "thread-live"}
+            return {
+                "goal": {
+                    "threadId": "thread-live",
+                    "status": "active",
+                    "tokenBudget": 1_000,
+                    "tokensUsed": 125,
+                    "timeUsedSeconds": 60,
+                }
+            }
+
+        def close(self) -> None:
+            methods.append("close")
+
+    monkeypatch.setattr(
+        "aico.app.boss_absent_codex_goal_probe._AppServerConnection",
+        FakeConnection,
+    )
+
+    observed = observe_codex_goal_state(
+        executable="codex",
+        codex_home=tmp_path,
+        thread_id="thread-live",
+    )
+
+    assert observed.tokens_used == 125
+    assert methods == ["initialize", "thread/goal/get", "close"]
 
 
 def test_goal_lifecycle_uses_persistent_thread_and_cleans_it_without_usage(

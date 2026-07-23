@@ -86,5 +86,8 @@ platform ACK/inbound/decision/grant或takeover receipt。该样本使用syntheti
 外部可用性缺口；Round 267结束时正式model run与Codex native host build仍未发生，因此仍无正式成绩。
 Round 268进一步找到并绑定签名Codex App build与明确automatic continuation surface；正式缺口已收窄为live isolated Goal fork、
 跨host restart和usage观测，candidate receipt仍不参与评分。
+Round 269已实现独立live observer与formal admission桥：它不写`turn/start`，只接受签名desktop host真实PID更换、append-only
+per-thread session、restart后`source="goal"`完整turn、Goal/provider usage推进和capability context稳定。当前日常Goal因没有冻结
+token budget被正确拒绝；尚缺owner授权的isolated fork/restart真实样本。
 首次正式对比仍须另行授权实际模型调用并由isolated harness注入五类事件；
 不能把protocol receipt、实现测试或synthetic fixture反向当成benchmark成绩。

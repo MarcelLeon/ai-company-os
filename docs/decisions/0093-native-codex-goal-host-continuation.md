@@ -59,12 +59,16 @@ benchmark专用提示词可能被隐藏成无人值守能力。
   下一显式turn后normal automatic continuation恢复。
 - `probe-codex-app-host`已在非沙箱系统验证App与内嵌CLI的Apple code signature、OpenAI Team ID `2DC432GLL2`、
   stapled notarization、bundle/build、完整CDHash与schema SHA。真实candidate receipt仍固定formal false。
+- Round 269新增`aico-codex-goal-observer start|finish`：它不连接`turn/start`，只用read-only `thread/goal/get`和Codex Desktop
+  per-thread session JSONL。intent冻结session inode/size/prefix、Goal/provider usage、host PID/start和capability context；
+  finish只接受旧host退出、新PID启动后append-only同session出现完整`source="goal"`自动turn并完成。
+- 当前日常Goal真实负向样本因`tokenBudget=null`被拒绝且没有生成intent；这证明observer不会把本线程体验反向包装成formal baseline。
 
 ## 残余边界
 
-- 第一方build identity与native continuation surface已取得；尚缺一次isolated Goal fork的live host observation，必须捕获
-  automatic turn source、跨host restart resume、Goal/provider usage和默认能力，且runner不能提交continuation input。
-  因此formal run仍未admit；B-015只跟踪这两个剩余观察门槛。
+- 第一方build、native continuation surface和独立observer实现已取得；尚缺一次owner授权的isolated Goal fork实际执行，
+  让observer捕获跨host restart后的automatic turn、Goal/provider usage与稳定capability context。因此formal run仍未admit；
+  B-015不再缺代码路径，只跟踪该真实执行证据。
 - opaque input SHA只能证明观察到的bytes identity，不能解释host内部prompt质量；公平性依赖exact host build与同一frozen task合同。
 - owner/harness输入是场景事件，不是native continuation；评分时必须保留其来源和人工介入计数。
 

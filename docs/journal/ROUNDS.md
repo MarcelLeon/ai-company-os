@@ -13383,3 +13383,41 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - 设计独立live host observer；owner授权后创建一个隔离Goal fork，以最小预算捕获automatic continuation、restart resume与usage。
 - 只有live receipt通过ADR-0093后才启动五task正式两侧benchmark；当前仍不宣称AICO强于Codex Goal。
 - Round 267提交`4447968`及此前4个提交仍等待精确push授权；本轮完成Gate后另行提交，不夹带用户空JSON。
+
+## Round 269 — 2026-07-23 — Codex
+
+### 输入与目标
+
+- 继续当前boss-absent目标，不因GitHub exact push授权待定而停止本地推进；直接关闭B-015剩余的observer代码缺口。
+- 以当前Codex Desktop、session JSONL和Goal control plane为现场事实，禁止把本聊天的自动续跑事后手写成formal证据。
+
+### 关键发现与决策
+
+- 当前per-thread session JSONL在上一turn `task_complete`后2ms写入下一`task_started`，随后是同turn ID的`turn_context`与
+  `source="goal"`内部context；provider `token_count`持续写入。这是native continuation的可观察状态机。
+- session创建时的`session_meta.cli_version`可能早于当前App升级，不能单靠首行绑定当前host build；必须在观察窗口前后验证
+  当前签名App candidate和exact desktop app-server process。
+- 当前Goal可通过独立embedded app-server执行read-only `thread/goal/get`，无需连接desktop host私有stdio，也不调用模型。
+- 当前日常Goal的`tokenBudget=null`；真实`start`负向验收因此失败且不生成intent，符合formal baseline必须冻结预算的合同。
+
+### 实现与验证
+
+- 新增`CodexGoalStateObservation`与read-only `observe_codex_goal_state`；调用序列只有initialize、`thread/goal/get`、close。
+- 新增live observer intent/receipt：冻结candidate SHA、exact thread/session inode/size/prefix、desktop host PID/start、
+  Goal/provider usage和capability context；finish要求旧host退出、新PID同命令、same-session append-only和usage推进。
+- native source只接受相邻`task_complete → task_started → turn_context → source="goal"`，turn ID必须一致且新turn最终完成；
+  manual context、缺completion、session改写、PID未换、旧host仍活、usage不动或capability漂移全部fail closed。
+- 新增独立`aico-codex-goal-observer start|finish`入口；session必须位于exact Codex home的`sessions/`下并以thread ID结尾，
+  owner持有且group/other不可写；intent/receipt均fresh 0600 no-overwrite。
+- complete live receipt可转换为ADR-0093既有formal host admission；observer自身没有`turn/start`写路径。
+- Codex Goal/observer定向`58 passed`；真实当前Goal负向样本返回`tokenBudget is invalid`且确认未生成intent。
+- raw root仅用户既有空release-room JSON导致`3 failed, 1154 passed, 1 skipped`；精确排除后
+  `1154 passed, 1 skipped, 3 deselected`。SME`53 passed`；Ruff、root/SME mypy(259/37 files)、format、
+  production class/function结构与diff通过。
+
+### 下一步
+
+- 运行full root/SME/static/structure gate并提交本轮代码；继续排除用户既有空release-room JSON。
+- B-015只剩owner授权的一次isolated Goal fork + 小额模型预算 + Codex App restart。该动作会中断桌面App内其他活动任务，
+  未明确授权前不执行。
+- GitHub push仍等待exact remote/branch/commit list确认；本轮新提交完成后必须把SHA加入授权范围。
