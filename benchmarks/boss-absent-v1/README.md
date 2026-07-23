@@ -147,6 +147,47 @@ The independent observer reads the owner-private parent and child Codex session 
 read-only/no-network execution, hashes the final agent message as the artifact, and rejects hidden, extra, reused, or nested subagents. Raw thread,
 turn, prompt, and artifact text stay private.
 
+First derive—not handwrite—the formal host admission and per-task host run:
+
+```bash
+uv run aico-codex-goal-observer admit \
+  --contract /private/new-run/contract-for-embedded-cli.json \
+  --observation /private/new-run/codex/live-host-observation.json \
+  --output /private/new-run/codex/host-admission.json
+
+uv run aico-codex-goal-observer run-start \
+  --contract /private/new-run/contract-for-embedded-cli.json \
+  --tasks benchmarks/boss-absent-v1/tasks.json \
+  --task-id normal-release-audit \
+  --host-admission /private/new-run/codex/host-admission.json \
+  --session /private/codex-home/sessions/rollout-...-<thread-id>.jsonl \
+  --thread-id <thread-id> \
+  --codex-home /private/codex-home \
+  --output /private/new-run/codex/normal-release-audit/host-run-intent.json
+
+# Run once while each distinct Desktop runtime is still alive.
+uv run aico-codex-goal-observer run-sample \
+  --host-pid <desktop-app-server-pid> \
+  --output /private/new-run/codex/normal-release-audit/runtime-1.json
+
+uv run aico-codex-goal-observer run-finish \
+  --contract /private/new-run/contract-for-embedded-cli.json \
+  --tasks benchmarks/boss-absent-v1/tasks.json \
+  --task-id normal-release-audit \
+  --host-admission /private/new-run/codex/host-admission.json \
+  --session /private/codex-home/sessions/rollout-...-<thread-id>.jsonl \
+  --thread-id <thread-id> \
+  --codex-home /private/codex-home \
+  --intent /private/new-run/codex/normal-release-audit/host-run-intent.json \
+  --runtime-observation /private/new-run/codex/normal-release-audit/runtime-1.json \
+  --output /private/new-run/codex/normal-release-audit/host-run-observation.json
+```
+
+`run-start` requires an active Goal with the exact frozen token budget and zero usage. The initial client turn must contain one exact
+`<aico_boss_absent_initial_task>` envelope. Native continuation is accepted only as the adjacent automatic
+`task_complete → task_started → turn_context → source="goal"` transition; a normal client turn containing a copied Goal marker is rejected.
+Approval owner turns use `<aico_boss_absent_owner_decision>` and bind the exact IM decision receipt SHA.
+
 Scenario harness events are appended to `observations.json` through
 `IndependentCodexGoalScenarioObserver`. After role sessions, fixture/drift, approval, source pressure, external acceptance/test, budget, takeover,
 and terminal observations are complete, derive—not handwrite—the scenario receipt:
@@ -156,19 +197,19 @@ uv run aico-benchmark finalize-codex-goal-observations \
   --contract /private/new-run/contract-for-embedded-cli.json \
   --tasks benchmarks/boss-absent-v1/tasks.json \
   --host-admission /private/new-run/codex/host-admission.json \
-  --host-run /private/new-run/codex/normal-release-audit/host-run.json \
+  --host-run-observation /private/new-run/codex/normal-release-audit/host-run-observation.json \
   --observations /private/new-run/codex/normal-release-audit/observations.json \
   --output /private/new-run/codex/normal-release-audit/scenario-evidence.json
 ```
 
-Then bind that receipt to the exact admission and host-run ledgers:
+Then bind that receipt to the exact admission and observed host-run ledgers:
 
 ```bash
 uv run aico-benchmark finalize-codex-goal \
   --contract /private/new-run/contract-for-embedded-cli.json \
   --tasks benchmarks/boss-absent-v1/tasks.json \
   --host-admission /private/new-run/codex/host-admission.json \
-  --host-run /private/new-run/codex/normal-release-audit/host-run.json \
+  --host-run-observation /private/new-run/codex/normal-release-audit/host-run-observation.json \
   --scenario-evidence /private/new-run/codex/normal-release-audit/scenario-evidence.json \
   --output /private/new-run/codex/normal-release-audit/result.json
 ```

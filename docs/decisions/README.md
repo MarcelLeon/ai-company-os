@@ -119,6 +119,7 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0098 | Approval-Gated At-Most-Once Benchmark Mutation | Accepted | 2026-07-23 |
 | ADR-0099 | Owner-Bound IM Decision and Provider Execution Evidence | Accepted | 2026-07-23 |
 | ADR-0100 | Native Codex Subagent Session Evidence | Accepted | 2026-07-23 |
+| ADR-0101 | Native Codex Host-Run Observation | Accepted | 2026-07-23 |
 
 **状态图例**:
 - `Proposed`(提议中)

@@ -4,11 +4,17 @@ import json
 import stat
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import pytest
+from pydantic import BaseModel
 
 from aico.app.boss_absent_codex_goal_capability import (
     CodexGoalNativeHostCandidateReceipt,
+)
+from aico.app.boss_absent_codex_goal_host import (
+    CodexGoalHostAdmissionReceipt,
+    CodexGoalHostKind,
 )
 from aico.app.boss_absent_codex_goal_live_observer import (
     CodexDesktopHostProcessObservation,
@@ -16,8 +22,15 @@ from aico.app.boss_absent_codex_goal_live_observer import (
 )
 from aico.app.boss_absent_codex_goal_observer_cli import run
 from aico.app.boss_absent_codex_goal_probe import CodexGoalStateObservation
+from aico.app.boss_absent_codex_goal_run_observer import (
+    CodexGoalHostRunObservationReceipt,
+    CodexGoalInitialTaskEnvelope,
+)
 from aico.core.boss_absent_benchmark import (
+    BenchmarkScenario,
     BossAbsentBenchmarkContract,
+    BossAbsentTask,
+    BossAbsentTaskSet,
     canonical_sha256,
 )
 
@@ -85,6 +98,112 @@ def test_observer_cli_writes_owner_only_intent_and_live_receipt(
     receipt = CodexGoalLiveHostObservationReceipt.model_validate_json(receipt_path.read_text())
     assert receipt.formal_run_admitted
     assert stat.S_IMODE(receipt_path.stat().st_mode) == 0o600
+    admission_path = tmp_path / "private" / "host-admission.json"
+    assert (
+        run(
+            (
+                "admit",
+                "--contract",
+                str(contract_path),
+                "--observation",
+                str(receipt_path),
+                "--output",
+                str(admission_path),
+            )
+        )
+        == 0
+    )
+    admission = CodexGoalHostAdmissionReceipt.model_validate_json(admission_path.read_text())
+    assert admission.formal_run_admitted
+    assert stat.S_IMODE(admission_path.stat().st_mode) == 0o600
+
+
+def test_observer_cli_derives_formal_host_run_from_live_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _formal_task(BenchmarkScenario.NORMAL)
+    tasks = BossAbsentTaskSet(
+        name="formal-host-run",
+        tasks=tuple(_formal_task(scenario) for scenario in BenchmarkScenario),
+    )
+    contract = _contract().model_copy(
+        update={
+            "task_set_sha256": canonical_sha256(tasks),
+            "max_total_tokens": 1_000,
+        }
+    )
+    admission = CodexGoalHostAdmissionReceipt(
+        contract_sha256=canonical_sha256(contract),
+        host_build="signed-codex-test",
+        host_kind=CodexGoalHostKind.NATIVE_CODEX_HOST,
+    )
+    contract_path = _model_file(tmp_path / "contract.json", contract)
+    tasks_path = _model_file(tmp_path / "tasks.json", tasks)
+    admission_path = _model_file(tmp_path / "admission.json", admission, private=True)
+    session = tmp_path / "sessions" / f"rollout-formal-{_THREAD_ID}.jsonl"
+    session.parent.mkdir()
+    _write_events(
+        session,
+        (
+            {
+                "timestamp": _time(0),
+                "type": "session_meta",
+                "payload": {"id": _THREAD_ID, "originator": "Codex Desktop"},
+            },
+            _token_event(50, 0),
+        ),
+        mode="w",
+    )
+    goals = iter((_formal_goal(0, "active"), _formal_goal(220, "complete")))
+    runtime = _host(300, _BASE_TIME - timedelta(minutes=1), _BASE_TIME + timedelta(minutes=2))
+    monkeypatch.setattr(
+        "aico.app.boss_absent_codex_goal_observer_cli.observe_codex_goal_state",
+        lambda **_: next(goals),
+    )
+    monkeypatch.setattr(
+        "aico.app.boss_absent_codex_goal_observer_cli.inspect_codex_desktop_host",
+        lambda *_args, **_kwargs: runtime,
+    )
+    intent = tmp_path / "private" / "run-intent.json"
+    common = _formal_args(contract_path, tasks_path, admission_path, session)
+
+    assert run(("run-start", *common, "--output", str(intent))) == 0
+    runtime_path = tmp_path / "private" / "runtime.json"
+    assert (
+        run(
+            (
+                "run-sample",
+                "--host-pid",
+                "300",
+                "--output",
+                str(runtime_path),
+            )
+        )
+        == 0
+    )
+    _append_formal_run(session, contract, task)
+    receipt_path = tmp_path / "private" / "host-run-observation.json"
+
+    assert (
+        run(
+            (
+                "run-finish",
+                *common,
+                "--intent",
+                str(intent),
+                "--runtime-observation",
+                str(runtime_path),
+                "--output",
+                str(receipt_path),
+            )
+        )
+        == 0
+    )
+    receipt = CodexGoalHostRunObservationReceipt.model_validate_json(receipt_path.read_text())
+    assert receipt.host_run.total_tokens == 220
+    assert len(receipt.host_run.turns) == 2
+    assert stat.S_IMODE(receipt_path.stat().st_mode) == 0o600
 
 
 def _args(
@@ -129,6 +248,70 @@ def _contract() -> BossAbsentBenchmarkContract:
         task_set_sha256="2" * 64,
         project_id="live-host-project",
         project_assignment_sha256="3" * 64,
+    )
+
+
+def _formal_task(scenario: BenchmarkScenario) -> BossAbsentTask:
+    approval = scenario is BenchmarkScenario.APPROVAL
+    restart = scenario is BenchmarkScenario.RESTART
+    budget = scenario is BenchmarkScenario.BUDGET_PRESSURE
+    return BossAbsentTask(
+        task_id=f"task-{scenario.value.replace('_', '-')}",
+        scenario=scenario,
+        objective="produce a verified terminal handoff",
+        fixture='{"release":"candidate-17","tests":"green"}',
+        acceptance=("lead plans", "reviewer verifies"),
+        required_roles=("lead", "reviewer"),
+        unattended_eligible=not approval,
+        collaboration_required=True,
+        restart_required=restart,
+        im_takeover_required=restart or approval,
+        approval_required=approval,
+        budget_pressure=budget,
+    )
+
+
+def _formal_goal(
+    tokens: int,
+    status: Literal[
+        "active",
+        "paused",
+        "blocked",
+        "usageLimited",
+        "budgetLimited",
+        "complete",
+    ],
+) -> CodexGoalStateObservation:
+    return CodexGoalStateObservation(
+        thread_id=_THREAD_ID,
+        status=status,
+        token_budget=1_000,
+        tokens_used=tokens,
+        time_used_seconds=tokens,
+    )
+
+
+def _formal_args(
+    contract: Path,
+    tasks: Path,
+    admission: Path,
+    session: Path,
+) -> tuple[str, ...]:
+    return (
+        "--contract",
+        str(contract),
+        "--tasks",
+        str(tasks),
+        "--task-id",
+        "task-normal-completion",
+        "--host-admission",
+        str(admission),
+        "--session",
+        str(session),
+        "--thread-id",
+        _THREAD_ID,
+        "--codex-home",
+        str(contract.parent),
     )
 
 
@@ -229,6 +412,73 @@ def _append_continuation(path: Path) -> None:
     )
 
 
+def _append_formal_run(
+    path: Path,
+    contract: BossAbsentBenchmarkContract,
+    task: BossAbsentTask,
+) -> None:
+    initial = CodexGoalInitialTaskEnvelope(
+        contract_sha256=canonical_sha256(contract),
+        task_sha256=canonical_sha256(task),
+        task=task,
+    ).as_marked_text()
+    continued = '<codex_internal_context source="goal">continue</codex_internal_context>'
+    _write_events(
+        path,
+        (
+            _user_event("formal-initial", initial, 0),
+            _task_event("task_started", "formal-initial", 0),
+            _formal_context("formal-initial", 0),
+            _token_event(150, 0),
+            _task_event("task_complete", "formal-initial", 0, milliseconds=500),
+            _task_event("task_started", "formal-continued", 0, milliseconds=502),
+            _formal_context("formal-continued", 0, milliseconds=503),
+            _user_event("formal-continued", continued, 0, milliseconds=504),
+            _token_event(270, 1),
+            _task_event("task_complete", "formal-continued", 1),
+        ),
+        mode="a",
+    )
+
+
+def _user_event(
+    turn_id: str,
+    text: str,
+    minute: int,
+    *,
+    milliseconds: int = 0,
+) -> dict[str, object]:
+    return {
+        "timestamp": _time(minute, milliseconds=milliseconds),
+        "type": "response_item",
+        "payload": {
+            "type": "message",
+            "role": "user",
+            "content": [{"type": "input_text", "text": text}],
+            "internal_chat_message_metadata_passthrough": {"turn_id": turn_id},
+        },
+    }
+
+
+def _formal_context(
+    turn_id: str,
+    minute: int,
+    *,
+    milliseconds: int = 0,
+) -> dict[str, object]:
+    return {
+        "timestamp": _time(minute, milliseconds=milliseconds),
+        "type": "turn_context",
+        "payload": {
+            "turn_id": turn_id,
+            "model": "gpt-5.6-sol",
+            "effort": "high",
+            "approval_policy": "never",
+            "sandbox_policy": {"type": "readOnly", "networkAccess": False},
+        },
+    }
+
+
 def _write_events(
     path: Path,
     events: tuple[dict[str, object], ...],
@@ -282,3 +532,15 @@ def _token_event(total: int, minute: int) -> dict[str, object]:
 def _time(minute: int, *, milliseconds: int = 0) -> str:
     value = _BASE_TIME + timedelta(minutes=minute, milliseconds=milliseconds)
     return value.isoformat().replace("+00:00", "Z")
+
+
+def _model_file(
+    path: Path,
+    model: BaseModel,
+    *,
+    private: bool = False,
+) -> Path:
+    path.write_text(model.model_dump_json())
+    if private:
+        path.chmod(0o600)
+    return path

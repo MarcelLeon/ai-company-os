@@ -63,11 +63,13 @@ from aico.app.boss_absent_codex_goal_evidence import (
 )
 from aico.app.boss_absent_codex_goal_host import (
     CodexGoalHostAdmissionReceipt,
-    CodexGoalHostRunReceipt,
 )
 from aico.app.boss_absent_codex_goal_probe import (
     CodexGoalProtocolReceipt,
     probe_codex_goal_protocol,
+)
+from aico.app.boss_absent_codex_goal_run_observer import (
+    CodexGoalHostRunObservationReceipt,
 )
 from aico.app.boss_absent_codex_goal_scenario_observer import (
     IndependentCodexGoalScenarioObserver,
@@ -369,7 +371,10 @@ def _finalize_codex_goal(args: argparse.Namespace) -> BossAbsentTaskResult:
     contract = _read_model(args.contract, BossAbsentBenchmarkContract)
     task_set = _read_model(args.tasks, BossAbsentTaskSet)
     admission = _read_model(args.host_admission, CodexGoalHostAdmissionReceipt)
-    host_run = _read_model(args.host_run, CodexGoalHostRunReceipt)
+    host_run_observation = _read_model(
+        args.host_run_observation,
+        CodexGoalHostRunObservationReceipt,
+    )
     receipt = _read_model(args.scenario_evidence, CodexGoalScenarioEvidenceReceipt)
     if canonical_sha256(task_set) != contract.task_set_sha256:
         raise ValueError("benchmark task set fingerprint mismatch")
@@ -380,7 +385,7 @@ def _finalize_codex_goal(args: argparse.Namespace) -> BossAbsentTaskResult:
         contract,
         task,
         admission,
-        host_run,
+        host_run_observation,
         receipt,
     )
     _write_new_model(args.output, result)
@@ -393,7 +398,10 @@ def _finalize_codex_goal_observations(
     contract = _read_model(args.contract, BossAbsentBenchmarkContract)
     task_set = _read_model(args.tasks, BossAbsentTaskSet)
     admission = _read_model(args.host_admission, CodexGoalHostAdmissionReceipt)
-    host_run = _read_model(args.host_run, CodexGoalHostRunReceipt)
+    host_run_observation = _read_model(
+        args.host_run_observation,
+        CodexGoalHostRunObservationReceipt,
+    )
     if canonical_sha256(task_set) != contract.task_set_sha256:
         raise ValueError("benchmark task set fingerprint mismatch")
     store = JsonCodexGoalScenarioObservationStore(args.observations)
@@ -407,7 +415,7 @@ def _finalize_codex_goal_observations(
         contract,
         task,
         admission,
-        host_run,
+        host_run_observation,
         store,
         observer_build=ledger.observer_build,
     )
@@ -1043,7 +1051,7 @@ def _add_codex_finalize_arguments(
     finalize.add_argument("--contract", type=Path, required=True)
     finalize.add_argument("--tasks", type=Path, required=True)
     finalize.add_argument("--host-admission", type=Path, required=True)
-    finalize.add_argument("--host-run", type=Path, required=True)
+    finalize.add_argument("--host-run-observation", type=Path, required=True)
     finalize.add_argument("--scenario-evidence", type=Path, required=True)
     finalize.add_argument("--output", type=Path, required=True)
     observations = subparsers.add_parser(
@@ -1053,7 +1061,7 @@ def _add_codex_finalize_arguments(
     observations.add_argument("--contract", type=Path, required=True)
     observations.add_argument("--tasks", type=Path, required=True)
     observations.add_argument("--host-admission", type=Path, required=True)
-    observations.add_argument("--host-run", type=Path, required=True)
+    observations.add_argument("--host-run-observation", type=Path, required=True)
     observations.add_argument("--observations", type=Path, required=True)
     observations.add_argument("--output", type=Path, required=True)
 

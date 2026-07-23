@@ -38,6 +38,9 @@
   `session_meta/task_started/turn_context/task_complete`，从第一方JSONL派生Agent/execution/runtime/source-turn/artifact消费链；
   hidden/extra或nested Agent、模型/权限/终态漂移全部拒绝。场景事实写入owner-only hash-chain ledger，再由
   `finalize-codex-goal-observations`派生正式receipt。
+- Native Codex Goal host-run observer:`aico-codex-goal-observer run-start|run-sample|run-finish`冻结zero-usage Goal与
+  append-only session前缀，从exact initial/owner envelope、自动Goal transition、逐turn provider usage和签名Desktop runtime
+  样本派生host-run receipt；scenario/result finalizer不再接受裸`host-run.json`。
 - Restart-safe AICO benchmark runner:核心按frozen roles编排不同Agent，所有role共享同一remaining-token budget并消费前一artifact
   SHA；provider调用前原子保存稳定dispatch intent，跨进程只按id对账、unknown outcome禁止重放，restart必须更换runtime instance。
   scorer同步拒绝单Agent更换role label的伪协作；超预算provider usage即使不采信checkpoint也完整计入budget loss证据。

@@ -12,6 +12,9 @@ from aico.app.boss_absent_codex_goal_host import (
     CodexGoalHostRunReceipt,
     CodexGoalTurnSource,
 )
+from aico.app.boss_absent_codex_goal_run_observer import (
+    CodexGoalHostRunObservationReceipt,
+)
 from aico.core.boss_absent_benchmark import (
     BenchmarkEvidenceSet,
     BenchmarkEvidenceStatus,
@@ -54,6 +57,7 @@ class CodexGoalScenarioEvidenceReceipt(FrozenModel):
     task_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,63}$")
     host_admission_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     host_run_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+    host_run_observation_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     role_chain_observation_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     observer_kind: Literal["independent_harness"] = "independent_harness"
     observer_build: str = Field(min_length=1, max_length=128)
@@ -139,12 +143,19 @@ def finalize_codex_goal_benchmark_result(
     contract: BossAbsentBenchmarkContract,
     task: BossAbsentTask,
     admission: CodexGoalHostAdmissionReceipt,
-    host_run: CodexGoalHostRunReceipt,
+    host_run_observation: CodexGoalHostRunObservationReceipt,
     receipt: CodexGoalScenarioEvidenceReceipt,
 ) -> BossAbsentTaskResult:
     """Produce a scoreable native Goal result only after every evidence gate closes."""
     contract_sha = canonical_sha256(contract)
-    _validate_identity(contract_sha, task, admission, host_run, receipt)
+    host_run = host_run_observation.host_run
+    _validate_identity(
+        contract_sha,
+        task,
+        admission,
+        host_run_observation,
+        receipt,
+    )
     _validate_roles(contract, task, host_run, receipt)
     _validate_scenario(task, host_run, receipt)
     return BossAbsentTaskResult(
@@ -171,9 +182,10 @@ def _validate_identity(
     contract_sha: str,
     task: BossAbsentTask,
     admission: CodexGoalHostAdmissionReceipt,
-    host_run: CodexGoalHostRunReceipt,
+    host_run_observation: CodexGoalHostRunObservationReceipt,
     receipt: CodexGoalScenarioEvidenceReceipt,
 ) -> None:
+    host_run = host_run_observation.host_run
     admission_sha = canonical_sha256(admission)
     identity = (
         admission.contract_sha256 == contract_sha
@@ -183,6 +195,10 @@ def _validate_identity(
         and receipt.task_id == task.task_id
         and receipt.host_admission_sha256 == admission_sha
         and receipt.host_run_sha256 == canonical_sha256(host_run)
+        and receipt.host_run_observation_sha256 == canonical_sha256(host_run_observation)
+        and host_run_observation.contract_sha256 == contract_sha
+        and host_run_observation.task_sha256 == canonical_sha256(task)
+        and host_run_observation.host_admission_sha256 == admission_sha
     )
     if not identity:
         raise ValueError("Codex Goal scenario evidence identity drifted")

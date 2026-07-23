@@ -27,8 +27,15 @@ from aico.app.boss_absent_codex_goal_host import (
     CodexGoalHostTurnReceipt,
     CodexGoalTurnSource,
 )
+from aico.app.boss_absent_codex_goal_live_observer import (
+    CodexDesktopHostProcessObservation,
+)
 from aico.app.boss_absent_codex_goal_role_observer import (
     CodexGoalRoleChainObservationReceipt,
+)
+from aico.app.boss_absent_codex_goal_run_observer import (
+    CodexGoalHostRunObservationReceipt,
+    CodexGoalHostRunSessionAnchor,
 )
 from aico.app.boss_absent_codex_goal_scenario_observer import (
     CodexGoalApprovalActionObservationReceipt,
@@ -76,7 +83,7 @@ def test_observer_derives_complete_receipt_for_each_scenario(
         contract,
         task,
         admission,
-        host_run,
+        _host_observation(contract, task, admission, host_run),
         JsonCodexGoalScenarioObservationStore((tmp_path / "observations.json").absolute()),
         observer_build="observer-test",
         clock=lambda: _NOW,
@@ -130,13 +137,16 @@ def test_observer_derives_complete_receipt_for_each_scenario(
         contract,
         task,
         admission,
-        host_run,
+        _host_observation(contract, task, admission, host_run),
         receipt,
     )
 
     assert result.terminal_status is BenchmarkTerminalStatus.COMPLETE
     assert result.total_tokens == 220
     assert receipt.role_chain_observation_sha256 == canonical_sha256(role_receipt)
+    assert receipt.host_run_observation_sha256 == canonical_sha256(
+        _host_observation(contract, task, admission, host_run)
+    )
     assert receipt.evidence.proofs()[0].sha256 is not None
 
 
@@ -274,7 +284,10 @@ def test_cli_derives_owner_safe_receipt_from_observation_ledger(
         "contract": _model_file(tmp_path / "contract.json", contract),
         "tasks": _model_file(tmp_path / "tasks.json", tasks),
         "host-admission": _model_file(tmp_path / "admission.json", admission),
-        "host-run": _model_file(tmp_path / "host-run.json", host_run),
+        "host-run-observation": _model_file(
+            tmp_path / "host-run-observation.json",
+            _host_observation(contract, task, admission, host_run),
+        ),
     }
     output = tmp_path / "scenario-receipt.json"
     stdout = StringIO()
@@ -288,8 +301,8 @@ def test_cli_derives_owner_safe_receipt_from_observation_ledger(
             str(paths["tasks"]),
             "--host-admission",
             str(paths["host-admission"]),
-            "--host-run",
-            str(paths["host-run"]),
+            "--host-run-observation",
+            str(paths["host-run-observation"]),
             "--observations",
             str(ledger_path),
             "--output",
@@ -374,7 +387,7 @@ def _observer(
         contract,
         task,
         admission,
-        host_run,
+        _host_observation(contract, task, admission, host_run),
         store or JsonCodexGoalScenarioObservationStore((root / "ledger.json").absolute()),
         observer_build="observer-test",
         clock=lambda: _NOW,
@@ -450,6 +463,45 @@ def _host_run(
         total_tokens=220,
         human_interventions=int(task.approval_required),
         terminal_status="complete",
+    )
+
+
+def _host_observation(
+    contract: BossAbsentBenchmarkContract,
+    task: BossAbsentTask,
+    admission: CodexGoalHostAdmissionReceipt,
+    host_run: CodexGoalHostRunReceipt,
+) -> CodexGoalHostRunObservationReceipt:
+    runtime = CodexDesktopHostProcessObservation(
+        pid=101,
+        parent_pid=100,
+        started_at=_NOW,
+        observed_at=_NOW,
+        command_sha256="6" * 64,
+        parent_command_sha256="7" * 64,
+    )
+    anchor = CodexGoalHostRunSessionAnchor(
+        device=1,
+        inode=1,
+        size_bytes=100,
+        content_sha256="8" * 64,
+        provider_total_tokens=0,
+        observed_at=_NOW,
+    )
+    return CodexGoalHostRunObservationReceipt(
+        contract_sha256=canonical_sha256(contract),
+        task_sha256=canonical_sha256(task),
+        host_admission_sha256=canonical_sha256(admission),
+        intent_sha256="9" * 64,
+        thread_id_sha256="a" * 64,
+        session_before=anchor,
+        session_after_sha256="b" * 64,
+        session_after_size_bytes=200,
+        runtime_observations=(runtime,),
+        provider_tokens_before=0,
+        provider_tokens_after=host_run.total_tokens,
+        goal_tokens_after=host_run.total_tokens,
+        host_run=host_run,
     )
 
 

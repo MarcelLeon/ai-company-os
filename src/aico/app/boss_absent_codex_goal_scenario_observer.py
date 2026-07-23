@@ -25,11 +25,13 @@ from aico.app.boss_absent_codex_goal_evidence import (
 )
 from aico.app.boss_absent_codex_goal_host import (
     CodexGoalHostAdmissionReceipt,
-    CodexGoalHostRunReceipt,
     CodexGoalTurnSource,
 )
 from aico.app.boss_absent_codex_goal_role_observer import (
     observe_codex_goal_role_chain,
+)
+from aico.app.boss_absent_codex_goal_run_observer import (
+    CodexGoalHostRunObservationReceipt,
 )
 from aico.core.boss_absent_benchmark import (
     BenchmarkEvidenceProof,
@@ -104,6 +106,7 @@ class CodexGoalScenarioObservationLedger(FrozenModel):
     task_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,63}$")
     host_admission_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     host_run_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    host_run_observation_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     observer_build: str = Field(min_length=1, max_length=128)
     started_at: datetime
     events: tuple[CodexGoalScenarioObservation, ...] = Field(default=(), max_length=64)
@@ -244,7 +247,7 @@ class IndependentCodexGoalScenarioObserver(_CodexGoalObserverSupport):
         contract: BossAbsentBenchmarkContract,
         task: BossAbsentTask,
         admission: CodexGoalHostAdmissionReceipt,
-        host_run: CodexGoalHostRunReceipt,
+        host_run_observation: CodexGoalHostRunObservationReceipt,
         store: JsonCodexGoalScenarioObservationStore,
         *,
         observer_build: str,
@@ -253,7 +256,9 @@ class IndependentCodexGoalScenarioObserver(_CodexGoalObserverSupport):
         self._contract = contract
         self._task = task
         self._admission = admission
+        host_run = host_run_observation.host_run
         self._host_run = host_run
+        self._host_run_observation = host_run_observation
         self._store = store
         self._clock = clock
         contract_sha = canonical_sha256(contract)
@@ -262,6 +267,9 @@ class IndependentCodexGoalScenarioObserver(_CodexGoalObserverSupport):
             admission.contract_sha256 == contract_sha
             and host_run.contract_sha256 == contract_sha
             and host_run.host_admission_sha256 == admission_sha
+            and host_run_observation.contract_sha256 == contract_sha
+            and host_run_observation.task_sha256 == canonical_sha256(task)
+            and host_run_observation.host_admission_sha256 == admission_sha
         )
         if not identity:
             raise ValueError("Codex Goal scenario observer host identity drifted")
@@ -272,6 +280,7 @@ class IndependentCodexGoalScenarioObserver(_CodexGoalObserverSupport):
                 task_id=task.task_id,
                 host_admission_sha256=admission_sha,
                 host_run_sha256=canonical_sha256(host_run),
+                host_run_observation_sha256=canonical_sha256(host_run_observation),
                 observer_build=observer_build,
                 started_at=clock(),
             )
@@ -281,6 +290,7 @@ class IndependentCodexGoalScenarioObserver(_CodexGoalObserverSupport):
             task.task_id,
             admission_sha,
             canonical_sha256(host_run),
+            canonical_sha256(host_run_observation),
             observer_build,
         )
         actual = (
@@ -288,6 +298,7 @@ class IndependentCodexGoalScenarioObserver(_CodexGoalObserverSupport):
             existing.task_id,
             existing.host_admission_sha256,
             existing.host_run_sha256,
+            existing.host_run_observation_sha256,
             existing.observer_build,
         )
         if actual != expected:
@@ -588,6 +599,7 @@ class IndependentCodexGoalScenarioObserver(_CodexGoalObserverSupport):
             task_id=ledger.task_id,
             host_admission_sha256=ledger.host_admission_sha256,
             host_run_sha256=ledger.host_run_sha256,
+            host_run_observation_sha256=ledger.host_run_observation_sha256,
             role_chain_observation_sha256=events.roles.role_chain_sha256 or "",
             observer_build=ledger.observer_build,
             events_sha256=canonical_sha256(ledger),

@@ -32,6 +32,25 @@ uv run aico service uninstall
 Dead-Man Receiver不是常驻AICO的必需组件。只有需要在整台Mac失联时仍由外部系统告警，才在另一台主机
 或云服务部署它；与AICO运行在同一台Mac只能做接口测试，不能形成独立故障域。
 
+### Codex Goal正式对比取证
+
+这不是日常AICO启动流程，只用于经过老板明确预算授权的isolated benchmark。完整参数见
+`benchmarks/boss-absent-v1/README.md`：
+
+```bash
+uv run aico-codex-goal-observer start ...       # capability restart intent
+uv run aico-codex-goal-observer finish ...      # signed live observation
+uv run aico-codex-goal-observer admit ...       # formal host admission
+uv run aico-codex-goal-observer run-start ...   # zero-usage task/session anchor
+uv run aico-codex-goal-observer run-sample ...  # 每个仍存活Desktop runtime至少一次
+uv run aico-codex-goal-observer run-finish ...  # 派生host-run observation
+```
+
+所有intent、runtime sample、admission和receipt必须是checkout外的owner-only `0600`文件。`run-start`之后不要用脚本发送
+“继续”prompt；只有Codex Desktop原生automatic Goal transition可计入baseline。App重启前先为旧runtime取样，重启并完成turn后
+再为新runtime取样；缺任一runtime、Goal/provider usage不一致或session prefix改写都会fail closed。该流程会消费模型预算并可能
+中断Codex Desktop其他任务，未取得exact授权时不要执行。
+
 默认`.env`使用`AICO_ABSENCE_ADMISSION_MODE=optional`，用于开发时保留可选能力。老板准备离开前改成`strict`并重新运行
 doctor/install；`absence admission`必须为OK，否则launchctl不会执行。strict要求runtime alerts、external liveness、current runtime
 commissioning、scheduled recovery、disposable recovery drill和standing autonomy均通过真实preflight。commission receipt必须在最终

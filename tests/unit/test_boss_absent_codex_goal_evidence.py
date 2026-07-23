@@ -20,6 +20,13 @@ from aico.app.boss_absent_codex_goal_host import (
     CodexGoalHostTurnReceipt,
     CodexGoalTurnSource,
 )
+from aico.app.boss_absent_codex_goal_live_observer import (
+    CodexDesktopHostProcessObservation,
+)
+from aico.app.boss_absent_codex_goal_run_observer import (
+    CodexGoalHostRunObservationReceipt,
+    CodexGoalHostRunSessionAnchor,
+)
 from aico.core.boss_absent_benchmark import (
     BenchmarkEvidenceProof,
     BenchmarkEvidenceSet,
@@ -125,6 +132,45 @@ def _host_run(
     )
 
 
+def _host_observation(
+    contract: BossAbsentBenchmarkContract,
+    task: BossAbsentTask,
+    admission: CodexGoalHostAdmissionReceipt,
+    host_run: CodexGoalHostRunReceipt,
+) -> CodexGoalHostRunObservationReceipt:
+    runtime = CodexDesktopHostProcessObservation(
+        pid=101,
+        parent_pid=100,
+        started_at=contract.frozen_at,
+        observed_at=contract.frozen_at,
+        command_sha256="6" * 64,
+        parent_command_sha256="7" * 64,
+    )
+    anchor = CodexGoalHostRunSessionAnchor(
+        device=1,
+        inode=1,
+        size_bytes=100,
+        content_sha256="8" * 64,
+        provider_total_tokens=0,
+        observed_at=contract.frozen_at,
+    )
+    return CodexGoalHostRunObservationReceipt(
+        contract_sha256=canonical_sha256(contract),
+        task_sha256=canonical_sha256(task),
+        host_admission_sha256=canonical_sha256(admission),
+        intent_sha256="9" * 64,
+        thread_id_sha256="a" * 64,
+        session_before=anchor,
+        session_after_sha256="b" * 64,
+        session_after_size_bytes=200,
+        runtime_observations=(runtime,),
+        provider_tokens_before=0,
+        provider_tokens_after=host_run.total_tokens,
+        goal_tokens_after=host_run.total_tokens,
+        host_run=host_run,
+    )
+
+
 def _proof(label: str) -> BenchmarkEvidenceProof:
     return BenchmarkEvidenceProof(
         status=BenchmarkEvidenceStatus.PRESENT,
@@ -176,11 +222,13 @@ def _receipt(
     **updates: object,
 ) -> CodexGoalScenarioEvidenceReceipt:
     approval = task.approval_required
+    host_observation = _host_observation(contract, task, admission, host_run)
     payload: dict[str, object] = {
         "contract_sha256": canonical_sha256(contract),
         "task_id": task.task_id,
         "host_admission_sha256": canonical_sha256(admission),
         "host_run_sha256": canonical_sha256(host_run),
+        "host_run_observation_sha256": canonical_sha256(host_observation),
         "role_chain_observation_sha256": "c" * 64,
         "observer_build": "harness-test",
         "events_sha256": "f" * 64,
@@ -221,7 +269,7 @@ def test_finalizer_closes_each_frozen_scenario(scenario: BenchmarkScenario) -> N
         contract,
         task,
         admission,
-        host_run,
+        _host_observation(contract, task, admission, host_run),
         _receipt(contract, task, admission, host_run),
     )
 
@@ -244,7 +292,7 @@ def test_finalizer_rejects_role_labels_reusing_one_provider_execution() -> None:
             contract,
             task,
             admission,
-            host_run,
+            _host_observation(contract, task, admission, host_run),
             _receipt(contract, task, admission, host_run, roles=reused),
         )
     reused_agent = (
@@ -256,7 +304,7 @@ def test_finalizer_rejects_role_labels_reusing_one_provider_execution() -> None:
             contract,
             task,
             admission,
-            host_run,
+            _host_observation(contract, task, admission, host_run),
             _receipt(contract, task, admission, host_run, roles=reused_agent),
         )
 
@@ -273,7 +321,7 @@ def test_finalizer_rejects_unobserved_turn_or_same_restart_instance() -> None:
             contract,
             task,
             admission,
-            host_run,
+            _host_observation(contract, task, admission, host_run),
             _receipt(contract, task, admission, host_run, roles=unobserved),
         )
     same_runtime = (roles[0], roles[1].model_copy(update={"runtime_instance_sha256": "a" * 64}))
@@ -282,7 +330,7 @@ def test_finalizer_rejects_unobserved_turn_or_same_restart_instance() -> None:
             contract,
             task,
             admission,
-            host_run,
+            _host_observation(contract, task, admission, host_run),
             _receipt(contract, task, admission, host_run, roles=same_runtime),
         )
     second_turn = host_run.turns[1].model_copy(update={"runtime_instance_sha256": "a" * 64})
@@ -292,7 +340,7 @@ def test_finalizer_rejects_unobserved_turn_or_same_restart_instance() -> None:
             contract,
             task,
             admission,
-            same_host_run,
+            _host_observation(contract, task, admission, same_host_run),
             _receipt(contract, task, admission, same_host_run, roles=same_runtime),
         )
 
@@ -302,12 +350,22 @@ def test_finalizer_rejects_host_run_identity_or_hidden_intervention() -> None:
     task = _task()
     admission = _admission(contract)
     host_run = _host_run(contract, admission, task)
+    host_observation = _host_observation(contract, task, admission, host_run)
+    drifted_observation = host_observation.model_copy(update={"task_sha256": "0" * 64})
     with pytest.raises(ValueError, match="identity drifted"):
         finalize_codex_goal_benchmark_result(
             contract,
             task,
             admission,
-            host_run,
+            drifted_observation,
+            _receipt(contract, task, admission, host_run),
+        )
+    with pytest.raises(ValueError, match="identity drifted"):
+        finalize_codex_goal_benchmark_result(
+            contract,
+            task,
+            admission,
+            _host_observation(contract, task, admission, host_run),
             _receipt(
                 contract,
                 task,
@@ -321,7 +379,7 @@ def test_finalizer_rejects_host_run_identity_or_hidden_intervention() -> None:
             contract,
             task,
             admission,
-            host_run,
+            _host_observation(contract, task, admission, host_run),
             _receipt(contract, task, admission, host_run, human_interventions=1),
         )
     first = host_run.turns[0].model_copy(update={"opaque_input_sha256": "8" * 64})
@@ -331,7 +389,7 @@ def test_finalizer_rejects_host_run_identity_or_hidden_intervention() -> None:
             contract,
             task,
             admission,
-            drifted_run,
+            _host_observation(contract, task, admission, drifted_run),
             _receipt(contract, task, admission, drifted_run),
         )
 
@@ -347,7 +405,7 @@ def test_finalizer_binds_approval_evidence_to_the_owner_turn() -> None:
             contract,
             task,
             admission,
-            host_run,
+            _host_observation(contract, task, admission, host_run),
             _receipt(
                 contract,
                 task,
@@ -367,12 +425,13 @@ def test_cli_finalizes_owner_safe_codex_goal_result(tmp_path: Path) -> None:
     task = _task()
     admission = _admission(contract)
     host_run = _host_run(contract, admission, task)
+    host_observation = _host_observation(contract, task, admission, host_run)
     receipt = _receipt(contract, task, admission, host_run)
     models = {
         "contract": contract,
         "tasks": tasks,
         "host-admission": admission,
-        "host-run": host_run,
+        "host-run-observation": host_observation,
         "scenario-evidence": receipt,
     }
     paths = {name: tmp_path / f"{name}.json" for name in models}
@@ -390,8 +449,8 @@ def test_cli_finalizes_owner_safe_codex_goal_result(tmp_path: Path) -> None:
             str(paths["tasks"]),
             "--host-admission",
             str(paths["host-admission"]),
-            "--host-run",
-            str(paths["host-run"]),
+            "--host-run-observation",
+            str(paths["host-run-observation"]),
             "--scenario-evidence",
             str(paths["scenario-evidence"]),
             "--output",

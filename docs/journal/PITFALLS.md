@@ -4396,3 +4396,27 @@ thread仍可生成多组hash冒充multi-agent。额外/重复subagent若未进�
 - B-015
 - `src/aico/app/boss_absent_codex_goal_role_observer.py`
 - `src/aico/app/boss_absent_codex_goal_scenario_observer.py`
+
+### [P-131] 内部一致的host-run JSON不等于原生Codex Goal执行事实
+
+**状态**:🟢 RESOLVED(machine native host-run observer; live samples pending B-015)
+**首次踩中**:Round 272
+**最后更新**:2026-07-23
+**影响范围**:Codex Goal turn source,provider usage,runtime attribution,human intervention
+
+**症状与根因**
+`CodexGoalHostRunReceipt`可以校验sequence、previous SHA、Goal/provider delta和intervention count，但若文件由外部直接构造，
+这些字段仍可能整体自洽却没有对应的Codex Desktop session事实。尤其是把普通client `turn/start`包装成`source="goal"`，
+会把harness续跑错误计为native Goal能力。
+
+**解决与预防**
+- 运行前冻结zero-usage Goal与session inode/size/prefix；运行后只接受append-only同session。
+- initial/owner input使用exact marked envelope；native continuation必须满足相邻自动状态转换和5秒启动窗口，
+  仅复制Goal marker的普通client turn拒绝。
+- provider累计usage逐turn派生并与read-only Goal usage相等；每个turn还必须落入唯一签名Desktop runtime sample窗口。
+- scenario/result finalizer绑定完整host-run observation receipt，不再接受裸host-run文件。
+
+**相关链接**
+- ADR-0101
+- B-015
+- `src/aico/app/boss_absent_codex_goal_run_observer.py`

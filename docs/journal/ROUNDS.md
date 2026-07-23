@@ -13493,3 +13493,38 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - B-015只剩owner授权的一次isolated Goal capability run：专用fork、冻结预算、observer start、App restart、observer finish。
 - capability admission通过后，再单独冻结两侧同模型/任务/预算的五task正式run；没有完整两侧样本前scorer固定不能宣称AICO胜出。
 - 提交必须继续排除用户既有空`examples/release-room/aico-project.json`。
+
+## Round 272 — 2026-07-23 — Codex
+
+### 输入与目标
+
+- 继续当前boss-absent目标，审计Round 271之后最后一个可本地关闭的Codex Goal证据缺口：正式finalizer仍读取可直接构造的
+  `CodexGoalHostRunReceipt`，内部SHA/usage一致不等于原生Desktop执行事实。
+- 不调用模型、不创建fork、不重启App；保持用户既有空release-room JSON原样，只实现只读派生链与失败门禁。
+
+### 关键发现与决策
+
+- runner可以合法提交一次frozen initial task，但不得拥有续跑策略。initial和owner turn需要exact marked envelope；
+  native continuation必须保持Codex Desktop已观察到的相邻自动状态转换和5秒启动窗口。
+- provider `token_count`是session累计值。正式observer必须先冻结run前累计量，再按turn取delta，最后与read-only Goal
+  `tokens_used`交叉验证；直接把每个token_count当单turn usage会重复计费。
+- runtime不能由调用方填写任意SHA。每个turn必须完整落入一个通过签名App exact进程检查得到的runtime observation窗口；
+  restart task自然要求不同runtime。
+
+### 实现与验证
+
+- 新增`boss_absent_codex_goal_run_observer.py`：run-start冻结zero-usage Goal与append-only session prefix；run-finish解析initial、
+  native continuation、owner intervention、exact safety context和逐turn provider usage，并映射唯一signed runtime。
+- `aico-codex-goal-observer`新增`admit|run-start|run-sample|run-finish`，所有intent/sample/admission/receipt均fresh owner-only；
+  runner没有`turn/start`续跑写路径。
+- scenario ledger与result finalizer新增host-run observation SHA绑定，CLI参数改为`--host-run-observation`；裸host-run不能进入
+  正式结果路径。新增ADR-0101、P-131，并更新B-015、benchmark runbook、daily ops、STATUS和CHANGELOG。
+- boss-absent定向`145 passed`。raw root严格只有用户既有空release-room JSON导致
+  `3 failed, 1186 passed, 1 skipped`；精确排除后`1186 passed, 1 skipped, 3 deselected`。SME`53 passed`；
+  Ruff、root/SME mypy(267/37 files)、format(267/38 files)、production structure、tracked JSON、CLI与diff通过。
+
+### 下一步
+
+- 本地正式证据链已闭合；B-015只剩owner授权的isolated Goal fork、frozen budget和一次Codex App restart真实capability sample。
+- capability admission通过后，仍需单独授权两侧相同模型/任务/预算的五task正式模型run；完整score前不得声称AICO强于Codex Goal。
+- 提交继续排除用户空`examples/release-room/aico-project.json`；既有9个未push提交与本轮新提交必须一起取得exact push授权。
