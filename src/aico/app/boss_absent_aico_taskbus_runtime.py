@@ -18,6 +18,7 @@ from aico.app.boss_absent_aico_runner import (
     AicoRoleRequest,
     AicoRoleStatus,
 )
+from aico.core.boss_absent_benchmark import canonical_sha256
 from aico.core.collaboration import task_with_exact_output_constraint
 from aico.core.models import (
     AckStatus,
@@ -30,7 +31,16 @@ from aico.core.models import (
     utc_now,
 )
 from aico.core.preauthorized_execution import task_with_preauthorized_execution
-from aico.core.task_bus import TaskBus, task_usage_for_task
+from aico.core.project_assignment import (
+    AssignmentProfile,
+    ProjectAssignmentDirectory,
+    task_with_assignment_context,
+)
+from aico.core.task_bus import (
+    TaskBus,
+    provider_execution_id_for_task,
+    task_usage_for_task,
+)
 
 _MAX_ARTIFACT_BYTES = 65_536
 _MAX_RECEIPT_BYTES = 65_536
@@ -40,6 +50,7 @@ _BENCHMARK_AGENT_KEY = "aico.benchmark_agent_id"
 class AicoBenchmarkRoleTarget(FrozenModel):
     role: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,31}$")
     agent_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,63}$")
+    assignment_seat: str = Field(min_length=1, max_length=128)
     target_persona: str = Field(min_length=1, max_length=128)
 
 
@@ -50,6 +61,8 @@ class TaskBusAicoBenchmarkRuntime:
         self,
         *,
         task_bus: TaskBus,
+        project_directory: ProjectAssignmentDirectory,
+        project_id: str,
         role_targets: tuple[AicoBenchmarkRoleTarget, ...],
         runtime_build: str,
         runtime_instance_sha256: str,
@@ -74,6 +87,8 @@ class TaskBusAicoBenchmarkRuntime:
         if max_duration_seconds <= 0:
             raise ValueError("AICO benchmark runtime duration must be positive")
         self._task_bus = task_bus
+        self._project_directory = project_directory
+        self._project_id = project_id
         self._targets = {item.role: item for item in role_targets}
         self._runtime_build = runtime_build
         self._runtime_instance_sha256 = runtime_instance_sha256
@@ -82,6 +97,10 @@ class TaskBusAicoBenchmarkRuntime:
         self._expires_at = expires_at
         self._max_duration_seconds = max_duration_seconds
         self._clock = clock
+        if self._project_directory.project(project_id) is None:
+            raise ValueError("AICO benchmark runtime project is unknown")
+        for target in role_targets:
+            self._validate_target(target)
 
     def capabilities(
         self,
@@ -132,9 +151,12 @@ class TaskBusAicoBenchmarkRuntime:
                 pass
             raise
         usage = task_usage_for_task(self._task_bus, task.task_id)
+        provider_execution_id = provider_execution_id_for_task(self._task_bus, task.task_id)
         snapshot = self._task_bus.task_snapshot(task.task_id)
         if usage is None:
             raise ValueError("AICO benchmark role provider usage is missing")
+        if provider_execution_id is None:
+            raise ValueError("AICO benchmark role provider execution identity is missing")
         if not isinstance(snapshot, TaskSnapshot) or snapshot.status is not TaskStatus.DONE:
             raise ValueError("AICO benchmark role did not reach done")
         artifact_sha = self._artifacts.write_content(output.encode("utf-8"))
@@ -143,6 +165,10 @@ class TaskBusAicoBenchmarkRuntime:
             dispatch_id=request.dispatch_id,
             role=request.role,
             agent_id=target.agent_id,
+            assignment_sha256=canonical_sha256(self._assignment(target)),
+            provider_execution_sha256=hashlib.sha256(
+                provider_execution_id.encode("utf-8")
+            ).hexdigest(),
             runtime_instance_sha256=self._runtime_instance_sha256,
             input_fixture_sha256=hashlib.sha256(request.fixture.encode("utf-8")).hexdigest(),
             artifact_sha256=artifact_sha,
@@ -161,9 +187,16 @@ class TaskBusAicoBenchmarkRuntime:
         if payload is None:
             return None
         try:
-            return AicoRoleObservation.model_validate_json(payload)
+            observation = AicoRoleObservation.model_validate_json(payload)
         except ValueError:
             raise ValueError("AICO benchmark role receipt is invalid") from None
+        target = self._target(observation.role)
+        if (
+            observation.agent_id != target.agent_id
+            or observation.assignment_sha256 != canonical_sha256(self._assignment(target))
+        ):
+            raise ValueError("AICO benchmark recovered role assignment drifted")
+        return observation
 
     def _task(self, request: AicoRoleRequest) -> Task:
         target = self._target(request.role)
@@ -175,6 +208,13 @@ class TaskBusAicoBenchmarkRuntime:
             target_persona=target.target_persona,
             metadata=(MetadataEntry(key=_BENCHMARK_AGENT_KEY, value=target.agent_id),),
             trace_id=f"benchmark-{request.task_id}",
+        )
+        project = self._project_directory.project(self._project_id)
+        assert project is not None
+        task = task_with_assignment_context(
+            task,
+            project=project,
+            assignment=self._assignment(target),
         )
         task = task_with_exact_output_constraint(task)
         return task_with_preauthorized_execution(
@@ -205,6 +245,25 @@ class TaskBusAicoBenchmarkRuntime:
         if target is None:
             raise ValueError("AICO benchmark role is not mapped to an Agent")
         return target
+
+    def _assignment(self, target: AicoBenchmarkRoleTarget) -> AssignmentProfile:
+        assignment = self._project_directory.assignment(target.assignment_seat)
+        if assignment is None:
+            raise ValueError("AICO benchmark role assignment disappeared")
+        return assignment
+
+    def _validate_target(self, target: AicoBenchmarkRoleTarget) -> None:
+        assignment = self._assignment(target)
+        agent = self._project_directory.agent(assignment.agent)
+        identity = (
+            assignment.project == self._project_id
+            and assignment.role == target.role
+            and assignment.agent == target.agent_id
+            and agent is not None
+            and agent.provider == target.target_persona
+        )
+        if not identity:
+            raise ValueError("AICO benchmark role target drifted from project assignment")
 
     async def _collect_output(self, task: Task) -> str:
         captured: list[str] = []

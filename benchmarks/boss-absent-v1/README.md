@@ -3,6 +3,7 @@
 This directory contains the tracked task contract for the first AICO vs Codex Goal comparison. It is not a benchmark result.
 
 Canonical `tasks.json` SHA-256: `f0acbd3317466f8709cf408ba1403bc0dbda17f0f5367cbd21630861c9462031`.
+Canonical `project.json` SHA-256: `40f61edf9d7b931e9538c8b79ec76742dfb3bc11b501c27df8cc362654c33832`.
 The `freeze` command recomputes this fingerprint; this line is review help, not scoring authority.
 
 Each task embeds one bounded fixture in the canonical task object. The exact fixture therefore reaches both systems and is covered by the task-set
@@ -15,8 +16,9 @@ and one shared total-token ceiling. AICO role calls share that ceiling; they do 
 
 AICO real role transport follows ADR-0096. The frozen exact model and reasoning effort are carried in preauthorized Task metadata and enforced
 by the Adapter before dispatch; the Codex Adapter emits both as CLI arguments/config. Roles run through the production TaskBus contract, read provider
-usage, write owner-only content-addressed artifacts and durable dispatch receipts, and recover by stable dispatch ID. A configured `agent_id` is only
-runtime identity until the formal collector also binds project assignment and independent provider-session evidence.
+usage, write owner-only content-addressed artifacts and durable dispatch receipts, and recover by stable dispatch ID. The contract also freezes the
+project assignment config. Every role receipt binds the exact appointment and a provider-issued Codex thread/execution fingerprint; two role labels
+or Agent labels backed by one provider execution receive no collaboration credit.
 
 The harness applies five deterministic scenario events:
 
@@ -40,6 +42,8 @@ before provider execution. An ambiguous crash is reconciled by dispatch ID and i
 ```bash
 uv run aico-benchmark freeze \
   --tasks benchmarks/boss-absent-v1/tasks.json \
+  --project-config benchmarks/boss-absent-v1/project.json \
+  --project-id boss-absent-benchmark \
   --output /private/new-run/contract.json \
   --benchmark-id boss-absent-v1-run-001 \
   --model gpt-5.6-sol \
@@ -82,6 +86,8 @@ checkpoint and invokes a new process with a different runtime-instance SHA.
 uv run aico-benchmark advance-aico \
   --contract /private/new-run/contract.json \
   --tasks benchmarks/boss-absent-v1/tasks.json \
+  --project-config benchmarks/boss-absent-v1/project.json \
+  --project-id boss-absent-benchmark \
   --task-id bounded-budget-pressure \
   --state /private/new-run/aico/bounded-budget-pressure/state.json \
   --artifact-dir /private/new-run/aico/bounded-budget-pressure/artifacts \
@@ -91,16 +97,36 @@ uv run aico-benchmark advance-aico \
   --runtime-instance-sha256 <64-hex-harness-generation> \
   --expires-at <timezone-aware-iso8601> \
   --max-duration-seconds 300 \
-  --role-target lead=agent-lead:codex \
-  --role-target reviewer=agent-reviewer:codex
+  --role-target lead=benchmark-lead:codex \
+  --role-target reviewer=benchmark-reviewer:codex
 ```
 
 The command uses the frozen exact model/effort and one shared remaining-token budget. It refuses dirty/wrong-revision checkout, missing/excess roles,
 expired authorization, unsafe state paths, Adapter capability drift, missing provider usage, and ambiguous dispatch replay. Running this command
 consumes provider tokens; no formal invocation is allowed without a separate owner authorization for the frozen contract.
 
-For `approval-fence-resume`, the first role leaves the state at `approval_pending`. After the owner decision produces an exact owner-only grant,
-apply the isolated action before advancing the reviewer:
+For `approval-fence-resume`, the first role leaves the state at `approval_pending`. A one-shot collector must exclusively own Telegram polling for
+this benchmark exchange. It persists intent before `sendMessage`, records the platform ACK, accepts only the exact bound owner/target/request callback,
+and can reconcile a send-after-crash ambiguity from that owner callback without blindly resending:
+
+```bash
+uv run aico-benchmark collect-aico-approval-im \
+  --contract /private/new-run/contract.json \
+  --tasks benchmarks/boss-absent-v1/tasks.json \
+  --task-id approval-fence-resume \
+  --state /private/new-run/aico/approval-fence-resume/state.json \
+  --exchange-dir /private/new-run/aico/approval-fence-resume/approval-im \
+  --output /private/new-run/aico/approval-fence-resume/owner-grant.json \
+  --owner-id <exact-owner-sender-id> \
+  --target-id <exact-private-chat-id> \
+  --request-expires-at <timezone-aware-iso8601> \
+  --grant-expires-at <timezone-aware-iso8601> \
+  --max-wait-seconds 900 \
+  --exclusive-channel
+```
+
+The bot token is read only from `AICO_TELEGRAM_BOT_TOKEN` (or the explicitly named environment slot). A rejected decision produces no grant. After
+the approved grant exists, apply the isolated action before advancing the reviewer:
 
 ```bash
 uv run aico-benchmark apply-aico-approval \
@@ -110,14 +136,36 @@ uv run aico-benchmark apply-aico-approval \
   --state /private/new-run/aico/approval-fence-resume/state.json \
   --runtime-build <same-exact-aico-build> \
   --grant /private/new-run/aico/approval-fence-resume/owner-grant.json \
+  --decision-receipt /private/new-run/aico/approval-fence-resume/approval-im/decision.json \
   --mutation-root /private/new-run/aico/approval-fence-resume/isolated-mutation \
   --intent /private/new-run/aico/approval-fence-resume/action-intent.json \
   --receipt /private/new-run/aico/approval-fence-resume/action-receipt.json
 ```
 
-The action target and content come only from the frozen fixture. Intent is durable before mutation; a matching target can be reconciled only when that
+The grant itself must hash the exact owner-bound IM decision receipt; a hand-written grant is rejected. The action target and content come only from
+the frozen fixture. Intent is durable before mutation; a matching target can be reconciled only when that
 intent already exists, while a pre-existing target without intent is rejected. The reviewer remains undispatched until the action receipt is bound
-into runner state. The current missing formal link is production of the grant from a real owner-bound Telegram decision.
+into runner state.
+
+For every task with `im_takeover_required`, collect a separate terminal checkpoint acknowledgement after the final role:
+
+```bash
+uv run aico-benchmark collect-aico-takeover-im \
+  --contract /private/new-run/contract.json \
+  --tasks benchmarks/boss-absent-v1/tasks.json \
+  --task-id <task-id> \
+  --state /private/new-run/aico/<task>/state.json \
+  --exchange-dir /private/new-run/aico/<task>/takeover-im \
+  --output /private/new-run/aico/<task>/takeover-ack.json \
+  --owner-id <exact-owner-sender-id> \
+  --target-id <exact-private-chat-id> \
+  --request-expires-at <timezone-aware-iso8601> \
+  --max-wait-seconds 900 \
+  --exclusive-channel
+```
+
+The resulting receipt binds the terminal checkpoint, request, platform/inbound ACKs, owner identity fingerprint, effective action count and elapsed
+seconds. Raw chat and sender identifiers remain only in process configuration, not score artifacts.
 
 ## Score a completed run
 
@@ -127,6 +175,7 @@ The independent harness first converts its owner-only observation ledger into th
 uv run aico-benchmark finalize-aico-observations \
   --contract /private/new-run/contract.json \
   --tasks benchmarks/boss-absent-v1/tasks.json \
+  --project-config benchmarks/boss-absent-v1/project.json \
   --observations /private/new-run/aico/<task>/observations.json \
   --output /private/new-run/aico/<task>/scenario-evidence.json
 ```

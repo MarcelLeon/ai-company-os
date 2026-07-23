@@ -34,6 +34,10 @@ from aico.core.models import (
     TaskUsage,
 )
 from aico.core.preauthorized_execution import preauthorized_model_contract
+from aico.core.project_assignment import (
+    ProjectAssignmentConfig,
+    ProjectAssignmentDirectory,
+)
 from aico.core.task_bus import TaskBus
 
 
@@ -43,6 +47,7 @@ class RecordingAdapter:
     def __init__(self, *, exact_model: bool = True) -> None:
         self.tasks: list[Task] = []
         self._usage: dict[str, TaskUsage] = {}
+        self._executions: dict[str, str] = {}
         self._exact_model = exact_model
 
     def capabilities(self) -> frozenset[Capability]:
@@ -64,6 +69,7 @@ class RecordingAdapter:
             output_tokens=10,
             total_tokens=100,
         )
+        self._executions[task.task_id] = f"provider-execution-{task.task_id}"
         return TaskAck(task_id=task.task_id, status=AckStatus.ACCEPTED)
 
     async def stream_output(self, task_id: str) -> AsyncIterator[TaskOutput]:
@@ -82,6 +88,9 @@ class RecordingAdapter:
 
     def task_usage(self, task_id: str) -> TaskUsage | None:
         return self._usage.get(task_id)
+
+    def provider_execution_id(self, task_id: str) -> str | None:
+        return self._executions.get(task_id)
 
     def status(self) -> AdapterStatus:
         return AdapterStatus.IDLE
@@ -119,15 +128,19 @@ def _runtime(
 ) -> TaskBusAicoBenchmarkRuntime:
     return TaskBusAicoBenchmarkRuntime(
         task_bus=TaskBus(adapter),
+        project_directory=_directory(),
+        project_id="benchmark-project",
         role_targets=(
             AicoBenchmarkRoleTarget(
                 role="lead",
                 agent_id="agent-lead",
+                assignment_seat="lead-seat",
                 target_persona="recording",
             ),
             AicoBenchmarkRoleTarget(
                 role="reviewer",
                 agent_id="agent-reviewer",
+                assignment_seat="reviewer-seat",
                 target_persona="recording",
             ),
         ),
@@ -137,6 +150,56 @@ def _runtime(
         receipt_dir=(tmp_path / "receipts").absolute(),
         expires_at=datetime(2027, 1, 1, tzinfo=UTC),
         max_duration_seconds=10,
+    )
+
+
+def _directory() -> ProjectAssignmentDirectory:
+    return ProjectAssignmentDirectory(
+        ProjectAssignmentConfig.model_validate(
+            {
+                "agents": {
+                    "agent-lead": {
+                        "id": "agent-lead",
+                        "provider": "recording",
+                        "title": "Lead",
+                    },
+                    "agent-reviewer": {
+                        "id": "agent-reviewer",
+                        "provider": "recording",
+                        "title": "Reviewer",
+                    },
+                },
+                "roles": {
+                    "lead": {"id": "lead", "title": "Lead"},
+                    "reviewer": {"id": "reviewer", "title": "Reviewer"},
+                },
+                "projects": {
+                    "benchmark-project": {
+                        "id": "benchmark-project",
+                        "name": "Benchmark",
+                        "repo": ".",
+                        "roles": {
+                            "lead": {"role": "lead"},
+                            "reviewer": {"role": "reviewer"},
+                        },
+                    }
+                },
+                "appointments": [
+                    {
+                        "seat": "lead-seat",
+                        "project": "benchmark-project",
+                        "agent": "agent-lead",
+                        "role": "lead",
+                    },
+                    {
+                        "seat": "reviewer-seat",
+                        "project": "benchmark-project",
+                        "agent": "agent-reviewer",
+                        "role": "reviewer",
+                    },
+                ],
+            }
+        )
     )
 
 
@@ -196,10 +259,13 @@ def test_taskbus_runtime_preflight_rejects_missing_exact_model_boundary(
 def test_taskbus_runtime_preflight_rejects_expired_authorization(tmp_path: Path) -> None:
     runtime = TaskBusAicoBenchmarkRuntime(
         task_bus=TaskBus(RecordingAdapter()),
+        project_directory=_directory(),
+        project_id="benchmark-project",
         role_targets=(
             AicoBenchmarkRoleTarget(
                 role="lead",
                 agent_id="agent-lead",
+                assignment_seat="lead-seat",
                 target_persona="recording",
             ),
         ),
@@ -219,15 +285,44 @@ def test_taskbus_runtime_requires_distinct_agent_targets(tmp_path: Path) -> None
     with pytest.raises(ValueError, match="agents must be distinct"):
         TaskBusAicoBenchmarkRuntime(
             task_bus=TaskBus(RecordingAdapter()),
+            project_directory=_directory(),
+            project_id="benchmark-project",
             role_targets=(
                 AicoBenchmarkRoleTarget(
                     role="lead",
                     agent_id="agent-shared",
+                    assignment_seat="lead-seat",
                     target_persona="recording",
                 ),
                 AicoBenchmarkRoleTarget(
                     role="reviewer",
                     agent_id="agent-shared",
+                    assignment_seat="reviewer-seat",
+                    target_persona="recording",
+                ),
+            ),
+            runtime_build="aico-test",
+            runtime_instance_sha256="a" * 64,
+            artifact_dir=(tmp_path / "artifacts").absolute(),
+            receipt_dir=(tmp_path / "receipts").absolute(),
+            expires_at=datetime(2027, 1, 1, tzinfo=UTC),
+            max_duration_seconds=10,
+        )
+
+
+def test_taskbus_runtime_rejects_target_that_drifted_from_project_assignment(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="drifted from project assignment"):
+        TaskBusAicoBenchmarkRuntime(
+            task_bus=TaskBus(RecordingAdapter()),
+            project_directory=_directory(),
+            project_id="benchmark-project",
+            role_targets=(
+                AicoBenchmarkRoleTarget(
+                    role="lead",
+                    agent_id="agent-reviewer",
+                    assignment_seat="reviewer-seat",
                     target_persona="recording",
                 ),
             ),
@@ -255,6 +350,8 @@ async def test_taskbus_runtime_continues_role_chain_after_runtime_restart(
         wall_window_seconds=600,
         max_total_tokens=1_000,
         task_set_sha256="b" * 64,
+        project_id="benchmark-project",
+        project_assignment_sha256="c" * 64,
     )
     task = BossAbsentTask(
         task_id="restart-role-chain",

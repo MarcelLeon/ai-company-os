@@ -16,16 +16,30 @@ from typing import TextIO, TypeVar
 from pydantic import BaseModel
 
 from aico.adapter.codex import CodexAdapter
-from aico.app.boss_absent_aico_approval import execute_aico_approval_action
+from aico.app.boss_absent_aico_approval import (
+    execute_aico_approval_action,
+    write_aico_approval_grant_from_im,
+)
 from aico.app.boss_absent_aico_evidence import (
     AicoScenarioEvidenceReceipt,
     finalize_aico_benchmark_result,
 )
+from aico.app.boss_absent_aico_im import (
+    AicoImDecision,
+    AicoImDecisionReceipt,
+    AicoImExchangeKind,
+    AicoImExchangeRequest,
+    AicoImExchangeStore,
+    AicoImOwnerBinding,
+    collect_aico_im_decision,
+)
 from aico.app.boss_absent_aico_observer import (
     IndependentAicoScenarioObserver,
     JsonAicoScenarioObservationStore,
+    build_aico_takeover_ack_from_im,
 )
 from aico.app.boss_absent_aico_runner import (
+    AicoBenchmarkRunPhase,
     AicoBenchmarkRunState,
     AicoBenchmarkRuntimeCapabilities,
     JsonAicoBenchmarkStateStore,
@@ -41,12 +55,14 @@ from aico.app.boss_absent_codex_goal_probe import (
     CodexGoalProtocolReceipt,
     probe_codex_goal_protocol,
 )
+from aico.channel.telegram import TelegramChannel
 from aico.core.boss_absent_benchmark import (
     BenchmarkRate,
     BenchmarkSystem,
     BossAbsentBenchmarkContract,
     BossAbsentBenchmarkSummary,
     BossAbsentBenchmarkVerdict,
+    BossAbsentTask,
     BossAbsentTaskResult,
     BossAbsentTaskSet,
     canonical_sha256,
@@ -55,6 +71,10 @@ from aico.core.boss_absent_benchmark import (
 )
 from aico.core.boss_absent_benchmark_harness import run_synthetic_benchmark_harness
 from aico.core.models import utc_now
+from aico.core.project_assignment import (
+    ProjectAssignmentConfig,
+    ProjectAssignmentDirectory,
+)
 from aico.core.task_bus import TaskBus
 
 _MAX_JSON_BYTES = 1_048_576
@@ -130,6 +150,22 @@ def run(
             state = _apply_aico_approval(args)
             output.write(f"AICO approval applied: task={state.task_id} phase={state.phase.value}\n")
             return 0
+        if args.command == "collect-aico-approval-im":
+            decision = asyncio.run(_collect_aico_approval_im(args))
+            output.write(
+                "AICO owner approval collected through IM: "
+                f"task={decision.task_id} decision={decision.decision.value} "
+                f"actions={decision.actions}\n"
+            )
+            return 0
+        if args.command == "collect-aico-takeover-im":
+            decision = asyncio.run(_collect_aico_takeover_im(args))
+            output.write(
+                "AICO owner takeover acknowledged through IM: "
+                f"task={decision.task_id} actions={decision.actions} "
+                f"seconds={decision.elapsed_seconds:.3f}\n"
+            )
+            return 0
     except (OSError, UnicodeError, ValueError) as exc:
         error.write(f"benchmark failed: {exc}\n")
         return 2
@@ -142,6 +178,10 @@ def main() -> None:
 
 def _freeze_contract(args: argparse.Namespace) -> BossAbsentBenchmarkContract:
     task_set = _read_model(args.tasks, BossAbsentTaskSet)
+    project_config = _read_model(args.project_config, ProjectAssignmentConfig)
+    project_directory = ProjectAssignmentDirectory(project_config)
+    if project_directory.project(args.project_id) is None:
+        raise ValueError("benchmark project is unknown")
     return BossAbsentBenchmarkContract(
         benchmark_id=args.benchmark_id,
         frozen_at=utc_now(),
@@ -155,6 +195,8 @@ def _freeze_contract(args: argparse.Namespace) -> BossAbsentBenchmarkContract:
         takeover_action_cap=args.takeover_action_cap,
         takeover_seconds_cap=args.takeover_seconds_cap,
         task_set_sha256=canonical_sha256(task_set),
+        project_id=args.project_id,
+        project_assignment_sha256=canonical_sha256(project_config),
     )
 
 
@@ -241,6 +283,7 @@ def _finalize_aico_observations(
 ) -> AicoScenarioEvidenceReceipt:
     contract = _read_model(args.contract, BossAbsentBenchmarkContract)
     task_set = _read_model(args.tasks, BossAbsentTaskSet)
+    project_config = _read_model(args.project_config, ProjectAssignmentConfig)
     if canonical_sha256(task_set) != contract.task_set_sha256:
         raise ValueError("benchmark task set fingerprint mismatch")
     store = JsonAicoScenarioObservationStore(args.observations)
@@ -254,6 +297,7 @@ def _finalize_aico_observations(
         contract,
         task,
         store,
+        project_config=project_config,
         observer_build=ledger.observer_build,
     )
     receipt = observer.build_receipt()
@@ -264,14 +308,24 @@ def _finalize_aico_observations(
 async def _advance_aico(args: argparse.Namespace) -> AicoBenchmarkRunState:
     contract = _read_model(args.contract, BossAbsentBenchmarkContract)
     task_set = _read_model(args.tasks, BossAbsentTaskSet)
+    project_config = _read_model(args.project_config, ProjectAssignmentConfig)
     if canonical_sha256(task_set) != contract.task_set_sha256:
         raise ValueError("benchmark task set fingerprint mismatch")
+    if canonical_sha256(project_config) != contract.project_assignment_sha256:
+        raise ValueError("benchmark project assignment fingerprint mismatch")
+    if args.project_id != contract.project_id:
+        raise ValueError("benchmark project identity mismatch")
+    project_directory = ProjectAssignmentDirectory(project_config)
     task = next((item for item in task_set.tasks if item.task_id == args.task_id), None)
     if task is None:
         raise ValueError("AICO runtime references an unknown frozen task")
     _verify_clean_checkout(args.cwd, contract.repo_revision)
     expires_at = _aware_datetime(args.expires_at)
-    role_targets = _role_targets(args.role_target)
+    role_targets = _role_targets(
+        args.role_target,
+        project_directory=project_directory,
+        project_id=args.project_id,
+    )
     if {target.role for target in role_targets} != set(task.required_roles):
         raise ValueError("AICO runtime role targets do not match the frozen task")
     adapter = CodexAdapter(
@@ -282,6 +336,8 @@ async def _advance_aico(args: argparse.Namespace) -> AicoBenchmarkRunState:
     )
     runtime = TaskBusAicoBenchmarkRuntime(
         task_bus=TaskBus(adapter),
+        project_directory=project_directory,
+        project_id=args.project_id,
         role_targets=role_targets,
         runtime_build=args.runtime_build,
         runtime_instance_sha256=args.runtime_instance_sha256,
@@ -333,23 +389,172 @@ def _apply_aico_approval(args: argparse.Namespace) -> AicoBenchmarkRunState:
         admission,
         JsonAicoBenchmarkStateStore(args.state),
         grant_path=args.grant,
+        decision_receipt_path=args.decision_receipt,
         mutation_root=args.mutation_root,
         intent_path=args.intent,
         receipt_path=args.receipt,
     )
 
 
-def _role_targets(values: Sequence[str]) -> tuple[AicoBenchmarkRoleTarget, ...]:
+async def _collect_aico_approval_im(
+    args: argparse.Namespace,
+) -> AicoImDecisionReceipt:
+    contract, task, state = _im_task_state(args)
+    if (
+        not task.approval_required
+        or state.phase is not AicoBenchmarkRunPhase.APPROVAL_PENDING
+        or state.approval_request_sha256 is None
+    ):
+        raise ValueError("AICO approval IM collection requires a pending approval boundary")
+    owner, store, request, channel = _im_exchange(
+        args,
+        contract=contract,
+        task_id=task.task_id,
+        kind=AicoImExchangeKind.APPROVAL,
+        subject_sha256=state.approval_request_sha256,
+    )
+    decision = await collect_aico_im_decision(
+        channel,
+        owner,
+        request,
+        store,
+        max_wait_seconds=args.max_wait_seconds,
+    )
+    if decision.decision is not AicoImDecision.APPROVED:
+        raise ValueError("AICO owner rejected the frozen approval action")
+    write_aico_approval_grant_from_im(
+        contract,
+        task,
+        state,
+        decision_receipt_path=args.exchange_dir / "decision.json",
+        grant_path=args.output,
+        expires_at=_aware_datetime(args.grant_expires_at),
+    )
+    return decision
+
+
+async def _collect_aico_takeover_im(
+    args: argparse.Namespace,
+) -> AicoImDecisionReceipt:
+    contract, task, state = _im_task_state(args)
+    if (
+        not task.im_takeover_required
+        or state.phase is not AicoBenchmarkRunPhase.ROLE_CHAIN_COMPLETE
+        or not state.checkpoints
+    ):
+        raise ValueError("AICO takeover IM collection requires a complete takeover task")
+    checkpoint_sha = state.checkpoints[-1].artifact_sha256
+    owner, store, request, channel = _im_exchange(
+        args,
+        contract=contract,
+        task_id=task.task_id,
+        kind=AicoImExchangeKind.TAKEOVER,
+        subject_sha256=checkpoint_sha,
+    )
+    decision = await collect_aico_im_decision(
+        channel,
+        owner,
+        request,
+        store,
+        max_wait_seconds=args.max_wait_seconds,
+    )
+    receipt = build_aico_takeover_ack_from_im(
+        contract,
+        task,
+        checkpoint_sha,
+        args.exchange_dir / "decision.json",
+    )
+    _write_new_model(args.output, receipt)
+    return decision
+
+
+def _im_task_state(
+    args: argparse.Namespace,
+) -> tuple[BossAbsentBenchmarkContract, BossAbsentTask, AicoBenchmarkRunState]:
+    contract = _read_model(args.contract, BossAbsentBenchmarkContract)
+    task_set = _read_model(args.tasks, BossAbsentTaskSet)
+    if canonical_sha256(task_set) != contract.task_set_sha256:
+        raise ValueError("benchmark task set fingerprint mismatch")
+    task = next((item for item in task_set.tasks if item.task_id == args.task_id), None)
+    if task is None:
+        raise ValueError("AICO IM exchange references an unknown frozen task")
+    state = _read_model(args.state, AicoBenchmarkRunState)
+    if (
+        state.contract_sha256 != canonical_sha256(contract)
+        or state.benchmark_id != contract.benchmark_id
+        or state.task_id != task.task_id
+    ):
+        raise ValueError("AICO IM exchange state identity drifted")
+    return contract, task, state
+
+
+def _im_exchange(
+    args: argparse.Namespace,
+    *,
+    contract: BossAbsentBenchmarkContract,
+    task_id: str,
+    kind: AicoImExchangeKind,
+    subject_sha256: str,
+) -> tuple[AicoImOwnerBinding, AicoImExchangeStore, AicoImExchangeRequest, TelegramChannel]:
+    token = os.environ.get(args.telegram_token_env, "").strip()
+    if not token:
+        raise ValueError(f"AICO IM collector requires {args.telegram_token_env}")
+    owner = AicoImOwnerBinding(
+        channel_name="telegram",
+        target_id=args.target_id,
+        sender_id=args.owner_id,
+        thread_id=args.thread_id,
+    )
+    store = AicoImExchangeStore(args.exchange_dir)
+    expires_at = _aware_datetime(args.request_expires_at)
+    existing = store.load_intent()
+    if existing is None:
+        request = AicoImExchangeRequest(
+            kind=kind,
+            contract_sha256=canonical_sha256(contract),
+            task_id=task_id,
+            subject_sha256=subject_sha256,
+            created_at=utc_now(),
+            expires_at=expires_at,
+        )
+    else:
+        request = existing.request
+    identity = (
+        request.kind is kind
+        and request.contract_sha256 == canonical_sha256(contract)
+        and request.task_id == task_id
+        and request.subject_sha256 == subject_sha256
+        and request.expires_at == expires_at
+    )
+    if not identity:
+        raise ValueError("AICO IM persisted request identity drifted")
+    channel = TelegramChannel(
+        token,
+        poll_timeout_seconds=max(1, min(30, int(args.max_wait_seconds))),
+    )
+    return owner, store, request, channel
+
+
+def _role_targets(
+    values: Sequence[str],
+    *,
+    project_directory: ProjectAssignmentDirectory,
+    project_id: str,
+) -> tuple[AicoBenchmarkRoleTarget, ...]:
     result: list[AicoBenchmarkRoleTarget] = []
     for value in values:
         role, separator, remainder = value.partition("=")
         agent_id, persona_separator, persona = remainder.partition(":")
         if not separator or not persona_separator or not role or not agent_id or not persona:
             raise ValueError("AICO role target must use role=agent_id:target_persona syntax")
+        assignment = project_directory.appointment_for_role(project_id, role)
+        if assignment is None or assignment.agent != agent_id:
+            raise ValueError("AICO role target does not match the project appointment")
         result.append(
             AicoBenchmarkRoleTarget(
                 role=role,
                 agent_id=agent_id,
+                assignment_seat=assignment.seat,
                 target_persona=persona,
             )
         )
@@ -555,19 +760,7 @@ def _parser() -> argparse.ArgumentParser:
         description="Freeze and score the evidence-first boss-absent benchmark.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    freeze = subparsers.add_parser("freeze", help="Freeze a contract before model calls.")
-    freeze.add_argument("--tasks", type=Path, required=True)
-    freeze.add_argument("--output", type=Path, required=True)
-    freeze.add_argument("--benchmark-id", required=True)
-    freeze.add_argument("--model", required=True)
-    freeze.add_argument("--reasoning-effort", required=True)
-    freeze.add_argument("--repo-revision", required=True)
-    freeze.add_argument("--aico-version", required=True)
-    freeze.add_argument("--codex-cli-version", required=True)
-    freeze.add_argument("--wall-window-seconds", type=int, required=True)
-    freeze.add_argument("--max-total-tokens", type=int, required=True)
-    freeze.add_argument("--takeover-action-cap", type=int, default=20)
-    freeze.add_argument("--takeover-seconds-cap", type=int, default=900)
+    _add_freeze_arguments(subparsers)
     score = subparsers.add_parser("score", help="Score frozen AICO and Codex Goal results.")
     score.add_argument("--contract", type=Path, required=True)
     score.add_argument("--tasks", type=Path, required=True)
@@ -603,6 +796,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     observations.add_argument("--contract", type=Path, required=True)
     observations.add_argument("--tasks", type=Path, required=True)
+    observations.add_argument("--project-config", type=Path, required=True)
     observations.add_argument("--observations", type=Path, required=True)
     observations.add_argument("--output", type=Path, required=True)
     advance = subparsers.add_parser(
@@ -611,6 +805,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     advance.add_argument("--contract", type=Path, required=True)
     advance.add_argument("--tasks", type=Path, required=True)
+    advance.add_argument("--project-config", type=Path, required=True)
+    advance.add_argument("--project-id", required=True)
     advance.add_argument("--task-id", required=True)
     advance.add_argument("--state", type=Path, required=True)
     advance.add_argument("--artifact-dir", type=Path, required=True)
@@ -632,10 +828,61 @@ def _parser() -> argparse.ArgumentParser:
     approval.add_argument("--state", type=Path, required=True)
     approval.add_argument("--runtime-build", required=True)
     approval.add_argument("--grant", type=Path, required=True)
+    approval.add_argument("--decision-receipt", type=Path, required=True)
     approval.add_argument("--mutation-root", type=Path, required=True)
     approval.add_argument("--intent", type=Path, required=True)
     approval.add_argument("--receipt", type=Path, required=True)
+    approval_im = subparsers.add_parser(
+        "collect-aico-approval-im",
+        help="Collect one owner-bound Telegram approval and issue its exact grant.",
+    )
+    _add_im_arguments(approval_im)
+    approval_im.add_argument("--grant-expires-at", required=True)
+    takeover_im = subparsers.add_parser(
+        "collect-aico-takeover-im",
+        help="Collect one owner-bound Telegram terminal takeover acknowledgement.",
+    )
+    _add_im_arguments(takeover_im)
     return parser
+
+
+def _add_freeze_arguments(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    freeze = subparsers.add_parser("freeze", help="Freeze a contract before model calls.")
+    freeze.add_argument("--tasks", type=Path, required=True)
+    freeze.add_argument("--project-config", type=Path, required=True)
+    freeze.add_argument("--project-id", required=True)
+    freeze.add_argument("--output", type=Path, required=True)
+    freeze.add_argument("--benchmark-id", required=True)
+    freeze.add_argument("--model", required=True)
+    freeze.add_argument("--reasoning-effort", required=True)
+    freeze.add_argument("--repo-revision", required=True)
+    freeze.add_argument("--aico-version", required=True)
+    freeze.add_argument("--codex-cli-version", required=True)
+    freeze.add_argument("--wall-window-seconds", type=int, required=True)
+    freeze.add_argument("--max-total-tokens", type=int, required=True)
+    freeze.add_argument("--takeover-action-cap", type=int, default=20)
+    freeze.add_argument("--takeover-seconds-cap", type=int, default=900)
+
+
+def _add_im_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--contract", type=Path, required=True)
+    parser.add_argument("--tasks", type=Path, required=True)
+    parser.add_argument("--task-id", required=True)
+    parser.add_argument("--state", type=Path, required=True)
+    parser.add_argument("--exchange-dir", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--owner-id", required=True)
+    parser.add_argument("--target-id", required=True)
+    parser.add_argument("--thread-id")
+    parser.add_argument("--request-expires-at", required=True)
+    parser.add_argument("--max-wait-seconds", type=float, required=True)
+    parser.add_argument("--telegram-token-env", default="AICO_TELEGRAM_BOT_TOKEN")
+    parser.add_argument(
+        "--exclusive-channel",
+        action="store_true",
+        required=True,
+        help="Confirm this one-shot collector exclusively owns Telegram polling.",
+    )
 
 
 if __name__ == "__main__":

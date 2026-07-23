@@ -180,6 +180,10 @@ def _validate_role_state(
         state.checkpoints
     ):
         raise ValueError("AICO scenario evidence reused an Agent across roles")
+    if task.collaboration_required and len(
+        {item.provider_execution_sha256 for item in state.checkpoints}
+    ) != len(state.checkpoints):
+        raise ValueError("AICO scenario evidence reused a provider execution across roles")
     fixture_sha = hashlib.sha256(task.fixture.encode("utf-8")).hexdigest()
     if any(item.input_fixture_sha256 != fixture_sha for item in state.checkpoints):
         raise ValueError("AICO scenario evidence fixture fingerprint drifted")

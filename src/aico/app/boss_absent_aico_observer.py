@@ -16,9 +16,15 @@ from pydantic import Field, model_validator
 
 from aico.app.boss_absent_aico_approval import (
     AicoApprovalActionReceipt,
+    AicoBenchmarkApprovalGrant,
     approval_action_fingerprints,
 )
 from aico.app.boss_absent_aico_evidence import AicoScenarioEvidenceReceipt
+from aico.app.boss_absent_aico_im import (
+    AicoImDecision,
+    AicoImDecisionReceipt,
+    AicoImExchangeKind,
+)
 from aico.app.boss_absent_aico_runner import (
     AicoBenchmarkRunPhase,
     AicoBenchmarkRunState,
@@ -35,6 +41,10 @@ from aico.core.boss_absent_benchmark import (
     canonical_sha256,
 )
 from aico.core.models import FrozenModel, utc_now
+from aico.core.project_assignment import (
+    ProjectAssignmentConfig,
+    ProjectAssignmentDirectory,
+)
 
 _MAX_LEDGER_BYTES = 1_048_576
 _MAX_PROOF_BYTES = 65_536
@@ -129,6 +139,9 @@ class AicoTakeoverAckReceipt(FrozenModel):
     terminal_checkpoint_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     delivery_ack_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    inbound_ack_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    owner_binding_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    im_decision_receipt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     actions: int = Field(ge=1)
     elapsed_seconds: float = Field(ge=0)
 
@@ -189,7 +202,138 @@ class JsonAicoScenarioObservationStore:
                 temporary.unlink()
 
 
-class IndependentAicoScenarioObserver:
+def build_aico_takeover_ack_from_im(
+    contract: BossAbsentBenchmarkContract,
+    task: BossAbsentTask,
+    terminal_checkpoint_sha256: str,
+    decision_receipt_path: Path,
+) -> AicoTakeoverAckReceipt:
+    """Bind a terminal checkpoint to one exact owner-bound IM acknowledgement."""
+    _require_sha(terminal_checkpoint_sha256)
+    decision_payload = _read_owner_file(decision_receipt_path, _MAX_PROOF_BYTES)
+    try:
+        decision = AicoImDecisionReceipt.model_validate_json(decision_payload)
+    except ValueError:
+        raise ValueError("AICO takeover IM decision receipt is invalid") from None
+    identity = (
+        task.im_takeover_required
+        and decision.kind is AicoImExchangeKind.TAKEOVER
+        and decision.decision is AicoImDecision.ACKNOWLEDGED
+        and decision.contract_sha256 == canonical_sha256(contract)
+        and decision.task_id == task.task_id
+        and decision.subject_sha256 == terminal_checkpoint_sha256
+        and decision.actions <= contract.takeover_action_cap
+        and decision.elapsed_seconds <= contract.takeover_seconds_cap
+    )
+    if not identity:
+        raise ValueError("AICO takeover IM decision does not match the terminal checkpoint")
+    return AicoTakeoverAckReceipt(
+        contract_sha256=canonical_sha256(contract),
+        task_id=task.task_id,
+        terminal_checkpoint_sha256=terminal_checkpoint_sha256,
+        request_sha256=decision.request_sha256,
+        delivery_ack_sha256=decision.delivery_ack_sha256,
+        inbound_ack_sha256=decision.inbound_ack_sha256,
+        owner_binding_sha256=decision.owner_binding_sha256,
+        im_decision_receipt_sha256=_sha(decision_payload),
+        actions=decision.actions,
+        elapsed_seconds=decision.elapsed_seconds,
+    )
+
+
+class _IndependentAicoScenarioObserverSupport:
+    _contract: BossAbsentBenchmarkContract
+    _task: BossAbsentTask
+    _store: JsonAicoScenarioObservationStore
+    _clock: Callable[[], datetime]
+
+    def _validate_scenario_events(
+        self,
+        *,
+        restart: AicoScenarioObservation | None,
+        drift: AicoScenarioObservation | None,
+        approval_request: AicoScenarioObservation | None,
+        approval_grant: AicoScenarioObservation | None,
+        approval_action: AicoScenarioObservation | None,
+        pressure: AicoScenarioObservation | None,
+        takeover: AicoScenarioObservation | None,
+    ) -> None:
+        expected = (
+            restart is not None,
+            drift is not None,
+            approval_request is not None
+            and approval_grant is not None
+            and approval_action is not None,
+            pressure is not None,
+            takeover is not None,
+        )
+        required = (
+            self._task.restart_required,
+            self._task.scenario is BenchmarkScenario.EVIDENCE_DRIFT,
+            self._task.approval_required,
+            self._task.budget_pressure,
+            self._task.im_takeover_required,
+        )
+        if expected != required:
+            raise ValueError("AICO scenario observation events do not match the frozen task")
+
+    def _validate_state(self, state: AicoBenchmarkRunState) -> None:
+        identity = (
+            state.contract_sha256 == canonical_sha256(self._contract)
+            and state.benchmark_id == self._contract.benchmark_id
+            and state.task_id == self._task.task_id
+            and state.phase is AicoBenchmarkRunPhase.ROLE_CHAIN_COMPLETE
+            and tuple(checkpoint.role for checkpoint in state.checkpoints)
+            == self._task.required_roles
+        )
+        if not identity:
+            raise ValueError("AICO observer role state identity or phase drifted")
+
+    def _record(
+        self,
+        kind: AicoObservationKind,
+        *,
+        proof_sha256: str,
+        **fields: object,
+    ) -> AicoScenarioObservation:
+        ledger = self._ledger()
+        if any(event.kind is kind for event in ledger.events):
+            raise ValueError(f"AICO scenario observation already recorded: {kind.value}")
+        event = AicoScenarioObservation.model_validate(
+            {
+                "sequence": len(ledger.events) + 1,
+                "previous_event_sha256": (
+                    None if not ledger.events else canonical_sha256(ledger.events[-1])
+                ),
+                "kind": kind,
+                "observed_at": self._clock(),
+                "proof_sha256": proof_sha256,
+                **fields,
+            }
+        )
+        self._store.save(ledger.model_copy(update={"events": (*ledger.events, event)}))
+        return event
+
+    def _one(self, kind: AicoObservationKind) -> AicoScenarioObservation:
+        matches = tuple(event for event in self._ledger().events if event.kind is kind)
+        if len(matches) != 1:
+            raise ValueError(f"AICO scenario observation missing: {kind.value}")
+        return matches[0]
+
+    def _optional(self, kind: AicoObservationKind) -> AicoScenarioObservation | None:
+        matches = tuple(event for event in self._ledger().events if event.kind is kind)
+        if len(matches) > 1:
+            raise ValueError(f"AICO scenario observation duplicated: {kind.value}")
+        return matches[0] if matches else None
+
+    def _ledger(self) -> AicoScenarioObservationLedger:
+        ledger = self._store.load()
+        if ledger is None:
+            raise ValueError("AICO scenario observation ledger disappeared")
+        return ledger
+
+
+class IndependentAicoScenarioObserver(_IndependentAicoScenarioObserverSupport):
     """Record facts from harness-owned files instead of trusting SUT result flags."""
 
     def __init__(
@@ -198,6 +342,7 @@ class IndependentAicoScenarioObserver:
         task: BossAbsentTask,
         store: JsonAicoScenarioObservationStore,
         *,
+        project_config: ProjectAssignmentConfig,
         observer_build: str,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
@@ -205,6 +350,11 @@ class IndependentAicoScenarioObserver:
         self._task = task
         self._store = store
         self._clock = clock
+        if canonical_sha256(project_config) != contract.project_assignment_sha256:
+            raise ValueError("AICO observer project assignment fingerprint drifted")
+        self._project_directory = ProjectAssignmentDirectory(project_config)
+        if self._project_directory.project(contract.project_id) is None:
+            raise ValueError("AICO observer benchmark project is unknown")
         existing = store.load()
         if existing is None:
             existing = AicoScenarioObservationLedger(
@@ -233,6 +383,16 @@ class IndependentAicoScenarioObserver:
         proof_parts = [canonical_sha256(state)]
         fixture_sha = _sha(self._task.fixture.encode("utf-8"))
         for checkpoint in state.checkpoints:
+            assignment = self._project_directory.appointment_for_role(
+                self._contract.project_id,
+                checkpoint.role,
+            )
+            if (
+                assignment is None
+                or assignment.agent != checkpoint.agent_id
+                or canonical_sha256(assignment) != checkpoint.assignment_sha256
+            ):
+                raise ValueError("AICO observed role assignment drifted")
             artifact = _read_owner_file(
                 artifact_dir / f"{checkpoint.artifact_sha256}.txt",
                 _MAX_PROOF_BYTES,
@@ -251,6 +411,8 @@ class IndependentAicoScenarioObserver:
                 receipt.dispatch_id == checkpoint.dispatch_id
                 and receipt.role == checkpoint.role
                 and receipt.agent_id == checkpoint.agent_id
+                and receipt.assignment_sha256 == checkpoint.assignment_sha256
+                and receipt.provider_execution_sha256 == checkpoint.provider_execution_sha256
                 and receipt.runtime_instance_sha256 == checkpoint.runtime_instance_sha256
                 and receipt.artifact_sha256 == checkpoint.artifact_sha256
                 and receipt.consumed_checkpoint_sha256 == checkpoint.consumed_checkpoint_sha256
@@ -328,20 +490,48 @@ class IndependentAicoScenarioObserver:
 
     def observe_approval_grant(
         self,
-        grant_sha256: str,
+        grant_path: Path,
+        decision_receipt_path: Path,
         mutation_targets: Sequence[Path],
     ) -> AicoScenarioObservation:
-        _require_sha(grant_sha256)
         request = self._one(AicoObservationKind.APPROVAL_REQUEST)
+        grant_payload = _read_owner_file(grant_path, _MAX_PROOF_BYTES)
+        decision_payload = _read_owner_file(decision_receipt_path, _MAX_PROOF_BYTES)
+        try:
+            grant = AicoBenchmarkApprovalGrant.model_validate_json(grant_payload)
+            decision = AicoImDecisionReceipt.model_validate_json(decision_payload)
+        except ValueError:
+            raise ValueError("AICO observer approval grant or IM decision is invalid") from None
+        identity = (
+            grant.contract_sha256 == canonical_sha256(self._contract)
+            and grant.task_id == self._task.task_id
+            and grant.request_sha256 == request.request_sha256
+            and grant.decision_receipt_sha256 == _sha(decision_payload)
+            and decision.kind is AicoImExchangeKind.APPROVAL
+            and decision.decision is AicoImDecision.APPROVED
+            and decision.contract_sha256 == canonical_sha256(self._contract)
+            and decision.task_id == self._task.task_id
+            and decision.subject_sha256 == request.request_sha256
+            and decision.actions <= self._contract.takeover_action_cap
+            and decision.elapsed_seconds <= self._contract.takeover_seconds_cap
+            and decision.decided_at <= grant.granted_at < grant.expires_at
+        )
+        if not identity:
+            raise ValueError("AICO observer approval grant is not backed by the owner IM decision")
         snapshot = _mutation_snapshot(mutation_targets)
         if snapshot != request.mutation_set_sha256:
             raise ValueError("AICO observer detected mutation before approval")
+        grant_sha256 = _sha(grant_payload)
         return self._record(
             AicoObservationKind.APPROVAL_GRANT,
-            proof_sha256=_sha_join((request.proof_sha256, grant_sha256, snapshot)),
+            proof_sha256=_sha_join(
+                (request.proof_sha256, grant_sha256, _sha(decision_payload), snapshot)
+            ),
             mutation_set_sha256=snapshot,
             request_sha256=request.request_sha256,
             grant_sha256=grant_sha256,
+            actions=decision.actions,
+            elapsed_seconds=decision.elapsed_seconds,
         )
 
     def observe_approval_action(
@@ -451,17 +641,35 @@ class IndependentAicoScenarioObserver:
             passed=True,
         )
 
-    def observe_takeover(self, path: Path) -> AicoScenarioObservation:
+    def observe_takeover(
+        self,
+        path: Path,
+        decision_receipt_path: Path,
+    ) -> AicoScenarioObservation:
         payload = _read_owner_file(path, _MAX_PROOF_BYTES)
+        decision_payload = _read_owner_file(decision_receipt_path, _MAX_PROOF_BYTES)
         try:
             receipt = AicoTakeoverAckReceipt.model_validate_json(payload)
+            decision = AicoImDecisionReceipt.model_validate_json(decision_payload)
         except ValueError:
-            raise ValueError("AICO takeover ACK receipt is invalid") from None
+            raise ValueError("AICO takeover ACK or IM decision receipt is invalid") from None
         role_state = self._one(AicoObservationKind.ROLE_STATE)
         identity = (
             receipt.contract_sha256 == canonical_sha256(self._contract)
             and receipt.task_id == self._task.task_id
             and receipt.terminal_checkpoint_sha256 == role_state.checkpoint_sha256
+            and receipt.im_decision_receipt_sha256 == _sha(decision_payload)
+            and receipt.request_sha256 == decision.request_sha256
+            and receipt.delivery_ack_sha256 == decision.delivery_ack_sha256
+            and receipt.inbound_ack_sha256 == decision.inbound_ack_sha256
+            and receipt.owner_binding_sha256 == decision.owner_binding_sha256
+            and receipt.actions == decision.actions
+            and receipt.elapsed_seconds == decision.elapsed_seconds
+            and decision.kind is AicoImExchangeKind.TAKEOVER
+            and decision.decision is AicoImDecision.ACKNOWLEDGED
+            and decision.contract_sha256 == canonical_sha256(self._contract)
+            and decision.task_id == self._task.task_id
+            and decision.subject_sha256 == role_state.checkpoint_sha256
             and receipt.actions <= self._contract.takeover_action_cap
             and receipt.elapsed_seconds <= self._contract.takeover_seconds_cap
         )
@@ -577,91 +785,6 @@ class IndependentAicoScenarioObserver:
             irrelevant_source_consumed=False,
             cited_sources_allowlisted=True,
         )
-
-    def _validate_scenario_events(
-        self,
-        *,
-        restart: AicoScenarioObservation | None,
-        drift: AicoScenarioObservation | None,
-        approval_request: AicoScenarioObservation | None,
-        approval_grant: AicoScenarioObservation | None,
-        approval_action: AicoScenarioObservation | None,
-        pressure: AicoScenarioObservation | None,
-        takeover: AicoScenarioObservation | None,
-    ) -> None:
-        expected = (
-            restart is not None,
-            drift is not None,
-            approval_request is not None
-            and approval_grant is not None
-            and approval_action is not None,
-            pressure is not None,
-            takeover is not None,
-        )
-        required = (
-            self._task.restart_required,
-            self._task.scenario is BenchmarkScenario.EVIDENCE_DRIFT,
-            self._task.approval_required,
-            self._task.budget_pressure,
-            self._task.im_takeover_required,
-        )
-        if expected != required:
-            raise ValueError("AICO scenario observation events do not match the frozen task")
-
-    def _validate_state(self, state: AicoBenchmarkRunState) -> None:
-        identity = (
-            state.contract_sha256 == canonical_sha256(self._contract)
-            and state.benchmark_id == self._contract.benchmark_id
-            and state.task_id == self._task.task_id
-            and state.phase is AicoBenchmarkRunPhase.ROLE_CHAIN_COMPLETE
-            and tuple(checkpoint.role for checkpoint in state.checkpoints)
-            == self._task.required_roles
-        )
-        if not identity:
-            raise ValueError("AICO observer role state identity or phase drifted")
-
-    def _record(
-        self,
-        kind: AicoObservationKind,
-        *,
-        proof_sha256: str,
-        **fields: object,
-    ) -> AicoScenarioObservation:
-        ledger = self._ledger()
-        if any(event.kind is kind for event in ledger.events):
-            raise ValueError(f"AICO scenario observation already recorded: {kind.value}")
-        event = AicoScenarioObservation.model_validate(
-            {
-                "sequence": len(ledger.events) + 1,
-                "previous_event_sha256": (
-                    None if not ledger.events else canonical_sha256(ledger.events[-1])
-                ),
-                "kind": kind,
-                "observed_at": self._clock(),
-                "proof_sha256": proof_sha256,
-                **fields,
-            }
-        )
-        self._store.save(ledger.model_copy(update={"events": (*ledger.events, event)}))
-        return event
-
-    def _one(self, kind: AicoObservationKind) -> AicoScenarioObservation:
-        matches = tuple(event for event in self._ledger().events if event.kind is kind)
-        if len(matches) != 1:
-            raise ValueError(f"AICO scenario observation missing: {kind.value}")
-        return matches[0]
-
-    def _optional(self, kind: AicoObservationKind) -> AicoScenarioObservation | None:
-        matches = tuple(event for event in self._ledger().events if event.kind is kind)
-        if len(matches) > 1:
-            raise ValueError(f"AICO scenario observation duplicated: {kind.value}")
-        return matches[0] if matches else None
-
-    def _ledger(self) -> AicoScenarioObservationLedger:
-        ledger = self._store.load()
-        if ledger is None:
-            raise ValueError("AICO scenario observation ledger disappeared")
-        return ledger
 
 
 def _mutation_snapshot(paths: Sequence[Path]) -> str:

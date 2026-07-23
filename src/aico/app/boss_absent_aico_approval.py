@@ -12,6 +12,11 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from aico.app.boss_absent_aico_im import (
+    AicoImDecision,
+    AicoImDecisionReceipt,
+    AicoImExchangeKind,
+)
 from aico.app.boss_absent_aico_runner import (
     AicoApprovalCheckpoint,
     AicoBenchmarkRunPhase,
@@ -36,6 +41,7 @@ class AicoBenchmarkApprovalGrant(FrozenModel):
     contract_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     task_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,63}$")
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    decision_receipt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     decision: Literal["approved"] = "approved"
     granted_at: datetime
     expires_at: datetime
@@ -83,6 +89,59 @@ def approval_action_fingerprints(task: BossAbsentTask) -> tuple[str, str, str]:
     return action_id, _sha(target_name.encode("utf-8")), _sha(content)
 
 
+def write_aico_approval_grant_from_im(
+    contract: BossAbsentBenchmarkContract,
+    task: BossAbsentTask,
+    state: AicoBenchmarkRunState,
+    *,
+    decision_receipt_path: Path,
+    grant_path: Path,
+    expires_at: datetime,
+    now: datetime | None = None,
+) -> AicoBenchmarkApprovalGrant:
+    """Issue the only accepted grant shape from an exact owner-bound IM decision."""
+    current = now or utc_now()
+    decision_bytes = _read_owner_file(decision_receipt_path)
+    try:
+        decision = AicoImDecisionReceipt.model_validate_json(decision_bytes)
+    except ValueError:
+        raise ValueError("AICO approval IM decision receipt is invalid") from None
+    identity = (
+        task.approval_required
+        and state.phase is AicoBenchmarkRunPhase.APPROVAL_PENDING
+        and state.contract_sha256 == canonical_sha256(contract)
+        and state.benchmark_id == contract.benchmark_id
+        and state.task_id == task.task_id
+        and state.approval_request_sha256 is not None
+        and decision.kind is AicoImExchangeKind.APPROVAL
+        and decision.decision is AicoImDecision.APPROVED
+        and decision.contract_sha256 == canonical_sha256(contract)
+        and decision.task_id == task.task_id
+        and decision.subject_sha256 == state.approval_request_sha256
+    )
+    if not identity:
+        raise ValueError("AICO approval IM decision does not match the pending action")
+    assert state.approval_request_sha256 is not None
+    if (
+        current.tzinfo is None
+        or current.utcoffset() is None
+        or expires_at.tzinfo is None
+        or expires_at.utcoffset() is None
+        or not decision.decided_at <= current < expires_at
+    ):
+        raise ValueError("AICO approval grant window is invalid")
+    grant = AicoBenchmarkApprovalGrant(
+        contract_sha256=canonical_sha256(contract),
+        task_id=task.task_id,
+        request_sha256=state.approval_request_sha256,
+        decision_receipt_sha256=_sha(decision_bytes),
+        granted_at=current,
+        expires_at=expires_at,
+    )
+    _write_or_match(grant_path, grant.model_dump_json(indent=2).encode("utf-8") + b"\n")
+    return grant
+
+
 def execute_aico_approval_action(
     contract: BossAbsentBenchmarkContract,
     task: BossAbsentTask,
@@ -90,6 +149,7 @@ def execute_aico_approval_action(
     store: AicoBenchmarkStateStore,
     *,
     grant_path: Path,
+    decision_receipt_path: Path,
     mutation_root: Path,
     intent_path: Path,
     receipt_path: Path,
@@ -118,22 +178,17 @@ def execute_aico_approval_action(
     ):
         raise ValueError("AICO approval action is not at a pending boundary")
     action_id, target_name, content = _action_from_fixture(task)
-    grant_bytes = _read_owner_file(grant_path)
-    try:
-        grant = AicoBenchmarkApprovalGrant.model_validate_json(grant_bytes)
-    except ValueError:
-        raise ValueError("AICO approval grant is invalid") from None
     current = now or utc_now()
     if current.tzinfo is None or current.utcoffset() is None:
         raise ValueError("AICO approval action clock must be timezone-aware")
-    identity = (
-        grant.contract_sha256 == canonical_sha256(contract)
-        and grant.task_id == task.task_id
-        and grant.request_sha256 == state.approval_request_sha256
-        and grant.granted_at <= current < grant.expires_at
+    grant, grant_bytes = _validated_grant(
+        contract,
+        task,
+        state,
+        grant_path=grant_path,
+        decision_receipt_path=decision_receipt_path,
+        current=current,
     )
-    if not identity:
-        raise ValueError("AICO approval grant does not match the pending action")
     grant_sha = _sha(grant_bytes)
     target = _safe_target(mutation_root, target_name)
     intent = AicoApprovalActionIntent(
@@ -175,6 +230,42 @@ def execute_aico_approval_action(
         ),
         store,
     )
+
+
+def _validated_grant(
+    contract: BossAbsentBenchmarkContract,
+    task: BossAbsentTask,
+    state: AicoBenchmarkRunState,
+    *,
+    grant_path: Path,
+    decision_receipt_path: Path,
+    current: datetime,
+) -> tuple[AicoBenchmarkApprovalGrant, bytes]:
+    grant_bytes = _read_owner_file(grant_path)
+    try:
+        grant = AicoBenchmarkApprovalGrant.model_validate_json(grant_bytes)
+    except ValueError:
+        raise ValueError("AICO approval grant is invalid") from None
+    decision_bytes = _read_owner_file(decision_receipt_path)
+    try:
+        decision = AicoImDecisionReceipt.model_validate_json(decision_bytes)
+    except ValueError:
+        raise ValueError("AICO approval IM decision receipt is invalid") from None
+    identity = (
+        grant.contract_sha256 == canonical_sha256(contract)
+        and grant.task_id == task.task_id
+        and grant.request_sha256 == state.approval_request_sha256
+        and grant.decision_receipt_sha256 == _sha(decision_bytes)
+        and decision.kind is AicoImExchangeKind.APPROVAL
+        and decision.decision is AicoImDecision.APPROVED
+        and decision.contract_sha256 == canonical_sha256(contract)
+        and decision.task_id == task.task_id
+        and decision.subject_sha256 == state.approval_request_sha256
+        and grant.granted_at <= current < grant.expires_at
+    )
+    if not identity:
+        raise ValueError("AICO approval grant does not match the pending action")
+    return grant, grant_bytes
 
 
 def _action_from_fixture(task: BossAbsentTask) -> tuple[str, str, bytes]:

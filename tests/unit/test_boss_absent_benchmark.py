@@ -43,9 +43,12 @@ from aico.core.models import (
     TaskOutput,
     TaskUsage,
 )
+from aico.core.project_assignment import ProjectAssignmentConfig
 
 _TASKS_PATH = Path("benchmarks/boss-absent-v1/tasks.json")
+_PROJECT_PATH = Path("benchmarks/boss-absent-v1/project.json")
 _TASKS_SHA256 = "f0acbd3317466f8709cf408ba1403bc0dbda17f0f5367cbd21630861c9462031"
+_PROJECT_SHA256 = "40f61edf9d7b931e9538c8b79ec76742dfb3bc11b501c27df8cc362654c33832"
 
 
 class CliRecordingAdapter:
@@ -54,6 +57,7 @@ class CliRecordingAdapter:
     def __init__(self) -> None:
         self.tasks: list[Task] = []
         self._usage: dict[str, TaskUsage] = {}
+        self._executions: dict[str, str] = {}
 
     def capabilities(self) -> frozenset[Capability]:
         return frozenset({Capability.CODE_REVIEW, Capability.STREAM_OUTPUT})
@@ -74,6 +78,7 @@ class CliRecordingAdapter:
             output_tokens=10,
             total_tokens=100,
         )
+        self._executions[task.task_id] = f"execution-{task.task_id}"
         return TaskAck(task_id=task.task_id, status=AckStatus.ACCEPTED)
 
     async def stream_output(self, task_id: str) -> AsyncIterator[TaskOutput]:
@@ -93,6 +98,9 @@ class CliRecordingAdapter:
     def task_usage(self, task_id: str) -> TaskUsage | None:
         return self._usage.get(task_id)
 
+    def provider_execution_id(self, task_id: str) -> str | None:
+        return self._executions.get(task_id)
+
     def status(self) -> AdapterStatus:
         return AdapterStatus.IDLE
 
@@ -109,6 +117,13 @@ def test_frozen_task_set_embeds_bounded_distinct_fixtures() -> None:
     assert canonical_sha256(tasks) == _TASKS_SHA256
     assert len({task.fixture for task in tasks.tasks}) == len(tasks.tasks)
     assert all(0 < len(task.fixture.encode("utf-8")) <= 16_384 for task in tasks.tasks)
+
+
+def test_frozen_project_uses_distinct_formal_agent_appointments() -> None:
+    project = _project_config()
+
+    assert canonical_sha256(project) == _PROJECT_SHA256
+    assert len({item.agent for item in project.appointments}) == len(project.appointments)
 
 
 def test_boss_absent_scorer_requires_all_five_win_metrics() -> None:
@@ -487,6 +502,10 @@ def test_benchmark_cli_advances_frozen_aico_roles_through_taskbus(
         str(contract_path),
         "--tasks",
         str(tasks_path),
+        "--project-config",
+        str(_PROJECT_PATH.absolute()),
+        "--project-id",
+        "boss-absent-benchmark",
         "--task-id",
         task.task_id,
         "--state",
@@ -506,9 +525,9 @@ def test_benchmark_cli_advances_frozen_aico_roles_through_taskbus(
         "--max-duration-seconds",
         "10",
         "--role-target",
-        "lead=agent-lead:codex",
+        "lead=benchmark-lead:codex",
         "--role-target",
-        "reviewer=agent-reviewer:codex",
+        "reviewer=benchmark-reviewer:codex",
     ]
     stdout = StringIO()
 
@@ -655,6 +674,8 @@ def _contract(tasks: BossAbsentTaskSet) -> BossAbsentBenchmarkContract:
         wall_window_seconds=3_600,
         max_total_tokens=50_000,
         task_set_sha256=canonical_sha256(tasks),
+        project_id="boss-absent-benchmark",
+        project_assignment_sha256=canonical_sha256(_project_config()),
     )
 
 
@@ -745,6 +766,10 @@ def _freeze_args(output: Path) -> list[str]:
         "freeze",
         "--tasks",
         str(_TASKS_PATH),
+        "--project-config",
+        str(_PROJECT_PATH),
+        "--project-id",
+        "boss-absent-benchmark",
         "--output",
         str(output),
         "--benchmark-id",
@@ -764,6 +789,10 @@ def _freeze_args(output: Path) -> list[str]:
         "--max-total-tokens",
         "50000",
     ]
+
+
+def _project_config() -> ProjectAssignmentConfig:
+    return ProjectAssignmentConfig.model_validate_json(_PROJECT_PATH.read_text(encoding="utf-8"))
 
 
 def _sha(value: str) -> str:

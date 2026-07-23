@@ -37,6 +37,12 @@
 - Approval-gated benchmark mutation:approval task在implementer后持久停于`approval_pending`，exact owner grant与action receipt之前
   reviewer零派发。isolated executor从frozen fixture解析target/content，intent先于写入；write后crash只对账不重写，预存target无intent、
   expired/wrong grant或receipt/state SHA漂移全部fail closed。
+- Owner-bound benchmark IM exchange:`collect-aico-approval-im|collect-aico-takeover-im`以0600 durable intent、Telegram platform ACK、
+  exact owner inbound和hash-chain action ledger生成不可手写替代的decision receipt；send/ACK崩溃窗口不盲重发，grant与takeover
+  receipt逐SHA绑定decision、owner fingerprint、actions和elapsed seconds。
+- Formal benchmark Agent identity:contract冻结project config与project ID，role逐项绑定exact appointment；Codex Adapter从真实
+  `thread.started`采集provider-issued execution ID并只持久化SHA。runner/observer/finalizer同时拒绝Agent复用、provider execution
+  复用、assignment漂移与缺失execution identity。
 - Signed dead-man evidence:独立receiver可用owner-only Ed25519私钥签发domain-separated evidence envelope；离线verifier与strict
   commissioning只信owner-pinned公钥，绑定exact envelope、payload和key identity。unsigned endpoint保留历史审计兼容，signature
   success仍明确不证明receiver物理host、TLS、fault action、provider ACK或human read。

@@ -4088,7 +4088,6 @@ app-server暴露persistent Goal与`turn/start`，容易让runner在每个turn后
 **相关链接**
 - ADR-0094
 - `src/aico/app/boss_absent_aico_runner.py`
-- `src/aico/core/boss_absent_benchmark.py`
 
 ### [P-118] role-chain complete不是task terminal complete
 
@@ -4162,7 +4161,7 @@ provider usage和跨进程dispatch receipt。
 
 ### [P-121] 两次文件内容相同不能证明审批期间没有mutation
 
-**状态**:🟢 RESOLVED(local generation fence; live executor pending)
+**状态**:🟢 RESOLVED(machine fence and executor; live dogfood pending)
 **首次踩中**:Round 264
 **最后更新**:2026-07-23
 **影响范围**:approval benchmark,mutation-before-approval evidence
@@ -4175,7 +4174,7 @@ provider usage和跨进程dispatch receipt。
 - approval fence绑定target内容以及target/父目录的device、inode、size、mtime_ns和ctime_ns。
 - target创建后删除、替换、写后回滚都会改变不可由普通进程回拨的ctime或父目录代际，grant前因此fail closed。
 - mutation target必须位于harness隔离目录；observer自身ledger不得与target共用父目录。
-- 该fence只关闭本地文件代际证据；批准后的真实at-most-once executor和Telegram决策链仍须live连接。
+- at-most-once executor与owner-bound IM decision已由ADR-0098/0099机器连接；正式结论仍需真实Telegram dogfood。
 
 **相关链接**
 - ADR-0097
@@ -4183,7 +4182,7 @@ provider usage和跨进程dispatch receipt。
 
 ### [P-122] observer能发现越权不等于runner阻止了越权
 
-**状态**:🟢 RESOLVED(local execution gate; Telegram grant pending)
+**状态**:🟢 RESOLVED(end-to-end machine gate; live dogfood pending)
 **首次踩中**:Round 264
 **最后更新**:2026-07-23
 **影响范围**:approval benchmark,runner phase,at-most-once mutation
@@ -4198,9 +4197,53 @@ independent observer可以在role chain结束后拒绝缺失approval的result，
 - action intent必须先于target创建。无intent预存target一律拒绝，即使内容完全相同。
 - intent存在且target exact时只用于write后crash reconciliation，不再次写入；receipt固定execution_count=1。
 - state、grant、action receipt与observer逐SHA闭合后才恢复reviewer。
-- 当前grant文件仍需真实Telegram owner decision生产；本地gate通过不冒充IM链已完成。
+- grant只能由exact owner-bound IM decision receipt生产；机器链完成不冒充已做真实Telegram dogfood。
 
 **相关链接**
 - ADR-0098
 - `src/aico/app/boss_absent_aico_approval.py`
 - `src/aico/app/boss_absent_aico_runner.py`
+
+### [P-123] 本地grant或ACK JSON不等于真实owner IM decision
+
+**状态**:🟢 RESOLVED(machine protocol; live dogfood pending)
+**首次踩中**:Round 265
+**最后更新**:2026-07-23
+**影响范围**:approval,takeover,Telegram,restart ambiguity,takeover cost
+
+**症状与根因**
+schema-valid grant或takeover receipt可以由本地进程手写，无法证明Telegram接受了消息、绑定owner做了操作或需要多少步。
+同时Telegram `sendMessage`没有client idempotency key，send成功后、ACK落盘前崩溃时盲重发会造成重复请求。
+
+**解决与预防**
+- one-shot benchmark collector独占polling，外发前持久化0600 immutable intent，正常路径记录platform ACK。
+- intent有而ACK缺失时不重发；仅exact owner/target/thread/request token的inbound action可完成delivery reconciliation。
+- 相关错误操作进入hash-chain action ledger；wrong owner和无关消息不计入。terminal decision闭合后不再追加。
+- grant与takeover receipt都逐SHA绑定IM decision、delivery/inbound ACK和owner fingerprint；raw token/identity不进入score artifact。
+
+**相关链接**
+- ADR-0099
+- `src/aico/app/boss_absent_aico_im.py`
+
+### [P-124] 不同Agent标签不等于不同provider execution
+
+**状态**:🟢 RESOLVED(machine binding; formal model run pending)
+**首次踩中**:Round 265
+**最后更新**:2026-07-23
+**影响范围**:multi-Agent benchmark,project assignment,Codex Adapter
+
+**症状与根因**
+旧formal runtime允许CLI直接填写不同`agent_id`。同一Codex thread或同一provider execution换两个标签即可通过distinct-agent门禁，
+但没有发生独立Agent协作。
+
+**解决与预防**
+- contract同时冻结project config SHA与project ID；runtime role必须逐项匹配exact appointment、agent和provider。
+- Task写入project/seat/role assignment context，receipt记录appointment SHA。
+- Codex Adapter从真实JSONL `thread.started`采集provider-issued execution ID，artifact只保存SHA，不泄漏thread ID。
+- collaboration同时要求distinct Agent和distinct provider execution；任一复用都在runner/finalizer fail closed。
+
+**相关链接**
+- ADR-0099
+- `benchmarks/boss-absent-v1/project.json`
+- `src/aico/app/boss_absent_aico_taskbus_runtime.py`
+- `src/aico/core/boss_absent_benchmark.py`

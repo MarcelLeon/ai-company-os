@@ -74,6 +74,7 @@ class CodexAdapter(ClaudeCodeAdapter):
         self._json_tasks: set[str] = set()
         self._bounded_result_tasks: set[str] = set()
         self._task_usage: dict[str, TaskUsage] = {}
+        self._provider_execution_ids: dict[str, str] = {}
 
     def capabilities(self) -> frozenset[Capability]:
         return frozenset(
@@ -108,6 +109,9 @@ class CodexAdapter(ClaudeCodeAdapter):
 
     def task_usage(self, task_id: str) -> TaskUsage | None:
         return self._task_usage.get(task_id)
+
+    def provider_execution_id(self, task_id: str) -> str | None:
+        return self._provider_execution_ids.get(task_id)
 
     def _command_for_task(self, task: Task) -> tuple[str, ...]:
         if preauthorized_execution_mode(task) is not None:
@@ -148,6 +152,15 @@ class CodexAdapter(ClaudeCodeAdapter):
         except (TypeError, json.JSONDecodeError):
             return None
         if not isinstance(event, dict):
+            return None
+        if event.get("type") == "thread.started":
+            thread_id = event.get("thread_id")
+            if not isinstance(thread_id, str) or not thread_id or len(thread_id) > 256:
+                raise ValueError("Codex thread.started event is missing a bounded thread ID")
+            existing = self._provider_execution_ids.get(task_id)
+            if existing is not None and existing != thread_id:
+                raise ValueError("Codex provider execution identity changed during one task")
+            self._provider_execution_ids[task_id] = thread_id
             return None
         if event.get("type") == "turn.completed":
             usage = _task_usage_from_event(event)

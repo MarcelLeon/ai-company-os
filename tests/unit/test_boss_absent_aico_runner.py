@@ -60,6 +60,8 @@ def _contract(*, budget: int = 1_000) -> BossAbsentBenchmarkContract:
         wall_window_seconds=600,
         max_total_tokens=budget,
         task_set_sha256="b" * 64,
+        project_id="benchmark-project",
+        project_assignment_sha256="c" * 64,
     )
 
 
@@ -105,6 +107,8 @@ def _observation(
         dispatch_id=request.dispatch_id,
         role=request.role,
         agent_id=f"agent-{request.role}",
+        assignment_sha256=f"{request.sequence + 4:x}" * 64,
+        provider_execution_sha256=f"{request.sequence + 8:x}" * 64,
         runtime_instance_sha256=instance,
         input_fixture_sha256=hashlib.sha256(request.fixture.encode()).hexdigest(),
         artifact_sha256=f"{request.sequence + 2:x}" * 64,
@@ -317,6 +321,32 @@ async def test_runner_rejects_one_agent_role_play(tmp_path: Path) -> None:
     await advance_aico_benchmark_task(contract, task, _admission(contract), runtime, store)
 
     with pytest.raises(ValueError, match="reused an earlier benchmark agent"):
+        await advance_aico_benchmark_task(
+            contract,
+            task,
+            _admission(contract),
+            runtime,
+            store,
+        )
+
+
+@pytest.mark.asyncio
+async def test_runner_rejects_two_agent_labels_on_one_provider_execution(
+    tmp_path: Path,
+) -> None:
+    contract = _contract()
+    task = _task()
+    store = JsonAicoBenchmarkStateStore((tmp_path / "state.json").absolute())
+
+    class SharedExecutionRuntime(FakeRuntime):
+        async def execute_role(self, request: AicoRoleRequest) -> AicoRoleObservation:
+            observation = await super().execute_role(request)
+            return observation.model_copy(update={"provider_execution_sha256": "9" * 64})
+
+    runtime = SharedExecutionRuntime()
+    await advance_aico_benchmark_task(contract, task, _admission(contract), runtime, store)
+
+    with pytest.raises(ValueError, match="reused an earlier provider execution"):
         await advance_aico_benchmark_task(
             contract,
             task,

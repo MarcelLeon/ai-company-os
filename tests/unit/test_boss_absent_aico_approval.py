@@ -10,6 +10,12 @@ from aico.app.boss_absent_aico_approval import (
     AicoApprovalActionIntent,
     AicoBenchmarkApprovalGrant,
     execute_aico_approval_action,
+    write_aico_approval_grant_from_im,
+)
+from aico.app.boss_absent_aico_im import (
+    AicoImDecision,
+    AicoImDecisionReceipt,
+    AicoImExchangeKind,
 )
 from aico.app.boss_absent_aico_runner import (
     AicoBenchmarkRunPhase,
@@ -41,6 +47,8 @@ def _contract() -> BossAbsentBenchmarkContract:
         wall_window_seconds=600,
         max_total_tokens=1_000,
         task_set_sha256="b" * 64,
+        project_id="benchmark-project",
+        project_assignment_sha256="c" * 64,
     )
 
 
@@ -98,6 +106,8 @@ def _pending_state(
                 dispatch_id="1" * 64,
                 role="implementer",
                 agent_id="agent-implementer",
+                assignment_sha256="2" * 64,
+                provider_execution_sha256="3" * 64,
                 runtime_instance_sha256="a" * 64,
                 input_fixture_sha256=hashlib.sha256(task.fixture.encode()).hexdigest(),
                 artifact_sha256="c" * 64,
@@ -115,18 +125,41 @@ def _grant(
     task: BossAbsentTask,
     *,
     expires_at: datetime = datetime(2027, 1, 1, tzinfo=UTC),
-) -> None:
+) -> Path:
+    decision_path = path.with_name("decision.json")
+    decision_path.write_text(
+        AicoImDecisionReceipt(
+            kind=AicoImExchangeKind.APPROVAL,
+            contract_sha256=canonical_sha256(contract),
+            task_id=task.task_id,
+            subject_sha256=_request_sha(contract, task),
+            request_sha256="d" * 64,
+            owner_binding_sha256="e" * 64,
+            delivery_ack_sha256="f" * 64,
+            inbound_ack_sha256="1" * 64,
+            decision=AicoImDecision.APPROVED,
+            actions=1,
+            elapsed_seconds=5,
+            decided_at=datetime(2026, 7, 23, tzinfo=UTC),
+        ).model_dump_json(indent=2)
+        + "\n",
+        encoding="utf-8",
+    )
+    decision_path.chmod(0o600)
     path.write_text(
         AicoBenchmarkApprovalGrant(
             contract_sha256=canonical_sha256(contract),
             task_id=task.task_id,
             request_sha256=_request_sha(contract, task),
+            decision_receipt_sha256=hashlib.sha256(decision_path.read_bytes()).hexdigest(),
             granted_at=datetime(2026, 7, 23, tzinfo=UTC),
             expires_at=expires_at,
-        ).model_dump_json(),
+        ).model_dump_json(indent=2)
+        + "\n",
         encoding="utf-8",
     )
     path.chmod(0o600)
+    return decision_path
 
 
 def test_approval_executor_writes_once_and_releases_runner(tmp_path: Path) -> None:
@@ -136,7 +169,7 @@ def test_approval_executor_writes_once_and_releases_runner(tmp_path: Path) -> No
     store = JsonAicoBenchmarkStateStore((tmp_path / "state.json").absolute())
     store.save(_pending_state(contract, task, admission))
     grant = tmp_path / "grant.json"
-    _grant(grant, contract, task)
+    decision = _grant(grant, contract, task)
     intent = (tmp_path / "approval" / "intent.json").absolute()
     receipt = (tmp_path / "approval" / "receipt.json").absolute()
     mutation_root = (tmp_path / "mutation").absolute()
@@ -147,6 +180,7 @@ def test_approval_executor_writes_once_and_releases_runner(tmp_path: Path) -> No
         admission,
         store,
         grant_path=grant,
+        decision_receipt_path=decision,
         mutation_root=mutation_root,
         intent_path=intent,
         receipt_path=receipt,
@@ -158,6 +192,7 @@ def test_approval_executor_writes_once_and_releases_runner(tmp_path: Path) -> No
         admission,
         store,
         grant_path=grant,
+        decision_receipt_path=decision,
         mutation_root=mutation_root,
         intent_path=intent,
         receipt_path=receipt,
@@ -174,6 +209,31 @@ def test_approval_executor_writes_once_and_releases_runner(tmp_path: Path) -> No
     assert resumed.approval_checkpoint is not None
 
 
+def test_approval_grant_can_only_be_issued_from_exact_im_decision(
+    tmp_path: Path,
+) -> None:
+    contract = _contract()
+    task = _task()
+    admission = _admission(contract)
+    state = _pending_state(contract, task, admission)
+    discarded = tmp_path / "discarded-grant.json"
+    decision = _grant(discarded, contract, task)
+    output = (tmp_path / "issued-grant.json").absolute()
+
+    grant = write_aico_approval_grant_from_im(
+        contract,
+        task,
+        state,
+        decision_receipt_path=decision,
+        grant_path=output,
+        now=datetime(2026, 7, 23, 0, 1, tzinfo=UTC),
+        expires_at=datetime(2026, 7, 23, 2, tzinfo=UTC),
+    )
+
+    assert grant.decision_receipt_sha256 == hashlib.sha256(decision.read_bytes()).hexdigest()
+    assert output.stat().st_mode & 0o777 == 0o600
+
+
 def test_approval_executor_reconciles_write_after_crash_without_rewriting(
     tmp_path: Path,
 ) -> None:
@@ -183,7 +243,7 @@ def test_approval_executor_reconciles_write_after_crash_without_rewriting(
     store = JsonAicoBenchmarkStateStore((tmp_path / "state.json").absolute())
     store.save(_pending_state(contract, task, admission))
     grant = tmp_path / "grant.json"
-    _grant(grant, contract, task)
+    decision = _grant(grant, contract, task)
     mutation_root = (tmp_path / "mutation").absolute()
     target = mutation_root / "isolated-fixture" / "release-status.txt"
     target.parent.mkdir(mode=0o700, parents=True)
@@ -216,6 +276,7 @@ def test_approval_executor_reconciles_write_after_crash_without_rewriting(
         admission,
         store,
         grant_path=grant,
+        decision_receipt_path=decision,
         mutation_root=mutation_root,
         intent_path=intent_path,
         receipt_path=(tmp_path / "approval" / "receipt.json").absolute(),
@@ -233,7 +294,7 @@ def test_approval_executor_rejects_expired_or_wrong_target_state(tmp_path: Path)
     store = JsonAicoBenchmarkStateStore((tmp_path / "state.json").absolute())
     store.save(_pending_state(contract, task, admission))
     grant = tmp_path / "grant.json"
-    _grant(
+    decision = _grant(
         grant,
         contract,
         task,
@@ -247,6 +308,7 @@ def test_approval_executor_rejects_expired_or_wrong_target_state(tmp_path: Path)
             admission,
             store,
             grant_path=grant,
+            decision_receipt_path=decision,
             mutation_root=(tmp_path / "mutation").absolute(),
             intent_path=(tmp_path / "approval" / "intent.json").absolute(),
             receipt_path=(tmp_path / "approval" / "receipt.json").absolute(),
@@ -261,7 +323,7 @@ def test_approval_executor_rejects_preexisting_target_without_intent(tmp_path: P
     store = JsonAicoBenchmarkStateStore((tmp_path / "state.json").absolute())
     store.save(_pending_state(contract, task, admission))
     grant = tmp_path / "grant.json"
-    _grant(grant, contract, task)
+    decision = _grant(grant, contract, task)
     mutation_root = (tmp_path / "mutation").absolute()
     target = mutation_root / "isolated-fixture" / "release-status.txt"
     target.parent.mkdir(mode=0o700, parents=True)
@@ -277,6 +339,7 @@ def test_approval_executor_rejects_preexisting_target_without_intent(tmp_path: P
             admission,
             store,
             grant_path=grant,
+            decision_receipt_path=decision,
             mutation_root=mutation_root,
             intent_path=(tmp_path / "approval" / "intent.json").absolute(),
             receipt_path=(tmp_path / "approval" / "receipt.json").absolute(),

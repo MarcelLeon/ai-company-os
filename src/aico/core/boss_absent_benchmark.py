@@ -119,6 +119,8 @@ class BossAbsentBenchmarkContract(FrozenModel):
     takeover_action_cap: int = Field(default=20, ge=1, le=1_000)
     takeover_seconds_cap: int = Field(default=900, ge=1, le=86_400)
     task_set_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    project_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,63}$")
+    project_assignment_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def validate_frozen_at(self) -> BossAbsentBenchmarkContract:

@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-07-23
-**当前轮次**:Round 264(Frozen-fixture independent AICO harness)
+**当前轮次**:Round 265(Owner-bound IM + formal provider execution evidence)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是个人开发者可直接使用的远程IM指挥、
@@ -22,6 +22,25 @@ recovery/alert/dead-man、component DR primitive和bounded/auditable autonomy，
 Round 241为独立receiver增加可选different-origin fallback与1-of-2/2-of-2 ACK quorum；schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝配置漂移，原2-of-2事件不能在重启后被1-of-2降级结算。单通知provider或credential失效不再必然切断老板通知，但不同URL、local ACK和unit test仍不冒充真实provider/账号/网络独立或human read。
 
 Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增加默认关闭、显式opt-in的`silent-route-probe-v1`：复用真实双route URL/token/POST，exact intent跨restart；一个失败窗口为suspect/PENDING，连续达到阈值才通过既有edge主动告警，ACK后恢复。bridge不能证明silent handling时必须保持disabled，local ACK不冒充human read或commercial HA。Round 244新增strict install admission，Round 245让它贯穿每次runtime启动；Round 246再要求incident alert与dead-man pulse使用不同exact URL及不同非空bearer，防止两个strict协议共用authority却判绿。Round 247检测运行中dotenv代际漂移；Round 248让dead-man当前验收显式拒绝超龄artifact、过期/未完成probe和非healthy route；Round 249把reviewed config、dotenv generation与strict evidence绑定成expiring commissioning receipt并持续纳入required health。Round 200-249累计合同以本段和下方最新Round为准。
+
+---
+
+## Round 265 完成:Owner-bound IM + formal provider execution evidence
+
+- [x] 新增one-shot formal IM collector：外发前0600 immutable intent，正常保存Telegram platform ACK；send后/ACK前崩溃时重启
+  不盲重发，可由exact owner inbound callback完成delivery reconciliation。
+- [x] owner、target、thread、request token和有效期逐项绑定；匹配request的无效操作进入hash-chain action ledger并计入接手成本，
+  wrong owner与无关消息忽略，terminal decision只能闭合一次。
+- [x] `collect-aico-approval-im`只从环境读取bot token，approved decision才生成grant；grant、mutation executor与observer逐SHA
+  复核IM decision。`collect-aico-takeover-im`把final checkpoint、delivery/inbound ACK、owner fingerprint、actions和seconds闭合。
+- [x] benchmark contract新增frozen `project.json` SHA与project ID；role target必须匹配exact appointment，Task携带project/seat/role。
+- [x] Codex Adapter从真实JSONL `thread.started`采集provider-issued execution ID，role receipt只存SHA；runner/finalizer同时要求
+  distinct Agent与distinct provider execution，防止一个thread换多个标签冒充协作。
+- [x] 新增ADR-0099、Goal Brief和P-123/P-124；定向`80 passed`；排除用户工作区既有空
+  `examples/release-room/aico-project.json`对应3项后，full root`1129 passed, 1 skipped, 3 deselected`，不排除时严格只有
+  这3项JSON parse失败。SME`53 passed`；Ruff、root/SME mypy(253/38 files)、format、结构、project JSON和diff通过。
+- [ ] 本轮仍未实际发送Telegram或调用模型，不产生benchmark成绩；下一步先做一次真实owner Telegram approval/takeover dogfood，
+  再解决Codex native host admission并申请两侧formal token预算。
 
 ---
 

@@ -88,6 +88,8 @@ class AicoRoleObservation(FrozenModel):
     dispatch_id: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     role: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,31}$")
     agent_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,63}$")
+    assignment_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+    provider_execution_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     runtime_instance_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     input_fixture_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     artifact_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
@@ -112,6 +114,8 @@ class AicoRoleCheckpoint(FrozenModel):
     dispatch_id: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     role: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,31}$")
     agent_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,63}$")
+    assignment_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+    provider_execution_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     runtime_instance_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     input_fixture_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     artifact_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
@@ -368,6 +372,8 @@ def _commit_observation(
         dispatch_id=request.dispatch_id,
         role=request.role,
         agent_id=observation.agent_id,
+        assignment_sha256=observation.assignment_sha256,
+        provider_execution_sha256=observation.provider_execution_sha256,
         runtime_instance_sha256=observation.runtime_instance_sha256,
         input_fixture_sha256=observation.input_fixture_sha256,
         artifact_sha256=observation.artifact_sha256,
@@ -413,6 +419,11 @@ def _validate_observation(
         checkpoint.agent_id == observation.agent_id for checkpoint in state.checkpoints
     ):
         raise ValueError("AICO collaboration reused an earlier benchmark agent")
+    if task.collaboration_required and any(
+        checkpoint.provider_execution_sha256 == observation.provider_execution_sha256
+        for checkpoint in state.checkpoints
+    ):
+        raise ValueError("AICO collaboration reused an earlier provider execution")
     if request.restart_from_runtime_instance_sha256 is not None:
         if observation.runtime_instance_sha256 == request.restart_from_runtime_instance_sha256:
             raise ValueError("AICO restart scenario reused the prior runtime instance")
@@ -553,6 +564,10 @@ def _validate_loaded_state(
         {checkpoint.agent_id for checkpoint in state.checkpoints}
     ) != len(state.checkpoints):
         raise ValueError("AICO benchmark persisted collaboration reused an agent")
+    if task.collaboration_required and len(
+        {checkpoint.provider_execution_sha256 for checkpoint in state.checkpoints}
+    ) != len(state.checkpoints):
+        raise ValueError("AICO benchmark persisted collaboration reused a provider execution")
     if len({checkpoint.artifact_sha256 for checkpoint in state.checkpoints}) != len(
         state.checkpoints
     ):

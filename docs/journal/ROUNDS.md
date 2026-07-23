@@ -13233,3 +13233,38 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
   at-most-once isolated mutation已经完成，不再重做本地gate。
 - 绑定formal role target到project assignment与独立ephemeral provider execution；随后才申请owner授权AICO模型run。
 - Codex Goal baseline继续等待第一方native continuation host adapter/build；没有它不运行不公平baseline。
+
+## Round 265 — 2026-07-23 — Codex
+
+### 输入与目标
+
+- 延续boss-absent目标，关闭formal AICO的真实IM owner decision与独立Agent身份两个证据缺口。
+- 不调用模型、不实际发送IM；先完成可跨进程恢复的production协议、CLI和no-network机器验收。
+
+### 关键发现与决策
+
+- 本地schema-valid grant/ACK可手写，不能证明Telegram platform ACK、owner inbound或真实接手成本。
+- Telegram `sendMessage`没有client idempotency key；send后ACK前崩溃必须等待inbound对账，不能自动重发。
+- runtime配置的不同`agent_id`仍可由同一provider thread扮演；formal协作必须同时绑定project appointment和provider-issued execution。
+- 选择ADR-0099：durable IM intent/delivery/action/decision链；contract冻结project config；Codex `thread.started`成为execution事实来源。
+
+### 实现与验证
+
+- 新增`boss_absent_aico_im.py`：owner-only exchange store、immutable intent/delivery/decision、hash-chain action ledger与exclusive collector。
+  exact owner/target/thread/token/window才可决策；wrong owner忽略，匹配request的无效操作计入actions；terminal decision只闭合一次。
+- 正常发送绑定Telegram `SentMessage` ACK；intent已有而delivery缺失时禁止重发，真实owner inbound可生成reconciliation ACK。
+- CLI新增`collect-aico-approval-im`与`collect-aico-takeover-im`；bot token仅从环境读取，并要求显式确认collector独占polling。
+- approval grant新增IM decision SHA；grant producer、mutation executor和observer均复核approved decision。takeover receipt逐项绑定
+  final checkpoint、request、delivery/inbound ACK、owner fingerprint、actions与elapsed seconds。
+- 新增frozen `project.json`；contract绑定project SHA/ID。runtime逐role核对appointment，Task注入project/seat/role metadata。
+- Adapter新增可选provider execution报告合同；Codex从JSONL `thread.started`采集ID，role receipt仅保存SHA。runner、observer和
+  finalizer拒绝assignment漂移、缺execution identity或同一execution跨role复用。
+- 新增ADR-0099、Goal Brief与P-123/P-124；定向`80 passed`。排除用户工作区既有空
+  `examples/release-room/aico-project.json`对应3项后，full root`1129 passed, 1 skipped, 3 deselected`；不排除时严格只有
+  这3项JSON parse失败。SME`53 passed`；Ruff、root/SME mypy(253/38 files)、format、结构、project JSON和diff通过。
+
+### 下一步
+
+- 在独占Telegram polling窗口跑一次真实owner approval与terminal takeover，保存platform ACK/inbound receipt但不调用模型。
+- 实现/接入第一方Codex native continuation host admission；之后才申请owner授权相同模型/task/预算的两侧formal run。
+- GitHub push仍等待owner对精确远端、分支和提交范围的外发授权。

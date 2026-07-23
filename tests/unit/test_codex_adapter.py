@@ -298,6 +298,7 @@ async def test_codex_adapter_extracts_json_message_and_post_run_usage() -> None:
         "inspection complete\n"
     ]
     assert adapter.task_usage("task-1") is not None
+    assert adapter.provider_execution_id("task-1") == "thread-1"
     assert adapter.task_usage("task-1").model_dump() == {  # type: ignore[union-attr]
         "input_tokens": 80,
         "output_tokens": 20,

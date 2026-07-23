@@ -42,3 +42,10 @@ class TaskUsageReportingAdapter(Protocol):
     """Optional post-run provider usage contract."""
 
     def task_usage(self, task_id: str) -> TaskUsage | None: ...
+
+
+@runtime_checkable
+class ProviderExecutionReportingAdapter(Protocol):
+    """Optional provider-issued execution identity observed from the CLI stream."""
+
+    def provider_execution_id(self, task_id: str) -> str | None: ...

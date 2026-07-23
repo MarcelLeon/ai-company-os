@@ -45,6 +45,8 @@ def _contract() -> BossAbsentBenchmarkContract:
         wall_window_seconds=600,
         max_total_tokens=1_000,
         task_set_sha256="b" * 64,
+        project_id="benchmark-project",
+        project_assignment_sha256="c" * 64,
     )
 
 
@@ -79,6 +81,8 @@ def _state(
         dispatch_id="1" * 64,
         role="lead",
         agent_id="agent-lead",
+        assignment_sha256="1" * 64,
+        provider_execution_sha256="a" * 64,
         runtime_instance_sha256="a" * 64,
         input_fixture_sha256=hashlib.sha256(task.fixture.encode()).hexdigest(),
         artifact_sha256="c" * 64,
@@ -89,6 +93,8 @@ def _state(
         dispatch_id="2" * 64,
         role="reviewer",
         agent_id="agent-reviewer",
+        assignment_sha256="2" * 64,
+        provider_execution_sha256="b" * 64,
         runtime_instance_sha256=("b" if task.restart_required else "a") * 64,
         input_fixture_sha256=hashlib.sha256(task.fixture.encode()).hexdigest(),
         artifact_sha256="d" * 64,

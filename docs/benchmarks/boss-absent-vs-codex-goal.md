@@ -30,8 +30,8 @@ turn chain、来源、人工介入与Goal/provider usage。没有exact host buil
 
 1. **无人值守完成率** = 在 window 内达到全部 acceptance 且无人工介入的 tasks / eligible tasks。
 2. **跨 Agent 协作完成率** = required role checkpoints 全部具名、有产物、有下游引用的 tasks / 要求协作的 tasks。
-   每个required role必须恰有一个checkpoint且来自不同`agent_id`；一个Agent更换role label不算跨Agent协作，两侧都必须提供
-   可审计agent identity与消费链。
+   每个required role必须恰有一个checkpoint、来自frozen project appointment中的不同`agent_id`，并绑定不同provider-issued
+   execution fingerprint；一个Agent或一个provider thread更换role label都不算跨Agent协作，两侧都必须提供可审计identity与消费链。
 3. **接手成本** = owner 从 IM/状态入口判断 done/blocked/next action 所需的中位操作数；同时记录中位秒数，操作数为主指标。
 4. **预算失控率** = provider usage缺失或 `total_tokens > owner max` 的 runs / dispatched runs。已经发生但被拒绝采信仍算失控，不能洗掉。
 5. **证据完整度** = 满足 terminal state、每项 acceptance、source fingerprint/current、test gate、budget receipt 五类证据的项数 / 应有项数。
@@ -76,7 +76,9 @@ Round 258已完成frozen task set、result schema、deterministic scorer、离�
 process terminate/new-process resume receipt替换restart synthetic hash，但仍不证明AICO/Codex Goal本身跨重启，也不产生胜负结论。
 Round 259再完成真实Codex Goal persistent app-server no-model admission与isolated home/cleanup intent。Round 263完成AICO exact-model
 TaskBus/Adapter transport及跨runtime role handoff机器验收。Round 264把actual bounded fixture纳入task-set SHA，增加一次一role的
-clean-checkout runtime CLI和owner-only independent observation ledger/finalization；但配置身份尚不等于正式独立Agent证据，
-approval runner pause与intent-first at-most-once isolated mutation已接通，Telegram owner grant/takeover仍未live连接。
+clean-checkout runtime CLI和owner-only independent observation ledger/finalization。Round 265冻结project assignment并把每个role
+绑定exact appointment与provider-issued execution fingerprint；approval/takeover均接入durable intent、Telegram platform ACK、
+owner-bound inbound action ledger和exact decision receipt。当前仍未执行真实Telegram/model dogfood，也未获得Codex native host build，
+因此没有正式成绩。
 首次正式对比仍须另行授权实际模型调用并由isolated harness注入五类事件；
 不能把protocol receipt、实现测试或synthetic fixture反向当成benchmark成绩。

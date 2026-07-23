@@ -6,7 +6,11 @@ from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from time import monotonic
 
-from aico.adapter import AIAdapter, TaskUsageReportingAdapter
+from aico.adapter import (
+    AIAdapter,
+    ProviderExecutionReportingAdapter,
+    TaskUsageReportingAdapter,
+)
 from aico.core.adapter_registry import AdapterRegistry
 from aico.core.approval import (
     DEFAULT_APPROVAL_MAX_AGE_SECONDS,
@@ -577,6 +581,13 @@ def task_usage_for_task(task_bus: TaskBus, task_id: str) -> TaskUsage | None:
     if not isinstance(adapter, TaskUsageReportingAdapter):
         return None
     return adapter.task_usage(task_id)
+
+
+def provider_execution_id_for_task(task_bus: TaskBus, task_id: str) -> str | None:
+    adapter = task_bus._adapter_for_task(task_id)  # noqa: SLF001
+    if not isinstance(adapter, ProviderExecutionReportingAdapter):
+        return None
+    return adapter.provider_execution_id(task_id)
 
 
 def _preauthorized_refusal(

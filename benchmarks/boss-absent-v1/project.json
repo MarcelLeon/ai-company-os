@@ -1,0 +1,98 @@
+{
+  "agents": {
+    "benchmark-lead": {
+      "id": "benchmark-lead",
+      "provider": "codex",
+      "title": "Benchmark Lead",
+      "capabilities": [],
+      "max_concurrent_tasks": 1,
+      "recommended_max_appointments": 1
+    },
+    "benchmark-reviewer": {
+      "id": "benchmark-reviewer",
+      "provider": "codex",
+      "title": "Benchmark Reviewer",
+      "capabilities": [],
+      "max_concurrent_tasks": 1,
+      "recommended_max_appointments": 1
+    },
+    "benchmark-implementer": {
+      "id": "benchmark-implementer",
+      "provider": "codex",
+      "title": "Benchmark Implementer",
+      "capabilities": [],
+      "max_concurrent_tasks": 1,
+      "recommended_max_appointments": 1
+    }
+  },
+  "roles": {
+    "lead": {
+      "id": "lead",
+      "title": "Lead",
+      "default_permissions": [],
+      "approval_required": []
+    },
+    "reviewer": {
+      "id": "reviewer",
+      "title": "Reviewer",
+      "default_permissions": [],
+      "approval_required": []
+    },
+    "implementer": {
+      "id": "implementer",
+      "title": "Implementer",
+      "default_permissions": [],
+      "approval_required": []
+    }
+  },
+  "projects": {
+    "boss-absent-benchmark": {
+      "id": "boss-absent-benchmark",
+      "name": "Boss Absent Benchmark",
+      "repo": ".",
+      "default_role": "lead",
+      "roles": {
+        "lead": {
+          "role": "lead"
+        },
+        "reviewer": {
+          "role": "reviewer"
+        },
+        "implementer": {
+          "role": "implementer"
+        }
+      },
+      "standing_charter": []
+    }
+  },
+  "appointments": [
+    {
+      "seat": "benchmark-lead-seat",
+      "project": "boss-absent-benchmark",
+      "agent": "benchmark-lead",
+      "role": "lead",
+      "session_policy": "ephemeral_per_role",
+      "risk_policy": "benchmark_read_only",
+      "permissions": []
+    },
+    {
+      "seat": "benchmark-reviewer-seat",
+      "project": "boss-absent-benchmark",
+      "agent": "benchmark-reviewer",
+      "role": "reviewer",
+      "session_policy": "ephemeral_per_role",
+      "risk_policy": "benchmark_read_only",
+      "permissions": []
+    },
+    {
+      "seat": "benchmark-implementer-seat",
+      "project": "boss-absent-benchmark",
+      "agent": "benchmark-implementer",
+      "role": "implementer",
+      "session_policy": "ephemeral_per_role",
+      "risk_policy": "benchmark_read_only",
+      "permissions": []
+    }
+  ],
+  "assignments": []
+}
