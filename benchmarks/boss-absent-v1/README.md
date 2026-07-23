@@ -76,6 +76,19 @@ benchmark runner must never synthesize a continuation prompt for standalone app-
 runner records only bounded input/turn hashes, source, Goal/provider usage, status, and human-intervention counts. Until an exact host build passes
 that admission contract, the Codex Goal formal runner is not executable.
 
+Generate a machine-checkable attestation of that host boundary whenever the Codex CLI changes:
+
+```bash
+uv run aico-benchmark probe-codex-goal-host \
+  --contract /private/new-run/contract.json \
+  --output /private/new-run/codex-goal-host-surface.json
+```
+
+The command regenerates the installed experimental schema and binds its complete bundle SHA to the frozen contract. It verifies Goal state methods,
+persistent resume, mandatory client input for `turn/start`, remote-control transport and any continuation-named candidate. The resulting `0600`
+receipt is deliberately never a native-host admission: a candidate protocol method still requires a first-party exact host build receipt proving
+who owns continuation and how turn/provider usage is observed.
+
 ## Advance the real AICO runtime
 
 Each invocation advances at most one frozen role. The checkout must be absolute, clean, and exactly match the contract revision. The external harness

@@ -49,12 +49,16 @@ benchmark专用提示词可能被隐藏成无人值守能力。
 ## 当前证据
 
 - 本机0.144.5 generated schema有Goal state API、`turn/start`与turn notification，但没有continuation request/notification。
+- Round 266新增`probe-codex-goal-host`，现场生成experimental schema并绑定bundle SHA。当前真实receipt为
+  `356a6f6bb546f89d464df44effd103622538b340d059e61d57287f32bf6b7b94`：Goal控制面、persistent resume和remote-control
+  transport存在，`turn/start`仍强制client input，continuation候选为空，formal admission为false。
 - 当前`get_goal`只能返回objective/status/tokens/time，不暴露host continuation prompt或调度器合同。
 - offline host admission/ledger tests覆盖standalone app-server、runner自造input、能力缺失、usage/chain漂移和terminal后续跑拒绝。
 
 ## 残余边界
 
-- 尚未取得可供isolated formal runner调用的第一方Codex host adapter/build receipt，因此formal run仍未admit。
+- 尚未取得可供isolated formal runner调用的第一方Codex host adapter/build receipt，因此formal run仍未admit；B-015跟踪该唯一
+  baseline host阻塞。
 - opaque input SHA只能证明观察到的bytes identity，不能解释host内部prompt质量；公平性依赖exact host build与同一frozen task合同。
 - owner/harness输入是场景事件，不是native continuation；评分时必须保留其来源和人工介入计数。
 

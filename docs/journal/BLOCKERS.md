@@ -560,6 +560,44 @@ source；系统只提供最多64 KiB的allowlisted原始path/line片段，同时
 - ADR-0076
 - B-010
 
+### [B-015] Codex Goal正式baseline缺第一方native continuation host出口
+
+**状态**:🔴 BLOCKING
+**提出于**:Round 266
+**最后更新**:2026-07-23(Round 266)
+**影响**:五项boss-absent对比不能生成公平的Codex Goal正式样本；AICO正式链可继续准备，但在baseline未admit前不能宣称胜出。
+
+**问题描述**
+本机`codex-cli 0.144.5`有stable Goal feature、persistent app-server thread、Goal set/get/clear、token/time usage与
+`thread/resume`。但experimental schema里的`turn/start`仍要求调用方提供`input`，没有continuation request/notification。
+`remote-control`只提供app-server远程接入与配对，不证明谁拥有自动续跑。若AICO benchmark runner自行发送“继续”prompt，
+测到的是AICO外置loop，不是当前Codex Goal能力。
+
+**已完成的机器证据**
+- ADR-0093冻结native host ownership与turn source/usage/chain合同，standalone app-server不能通过admission。
+- `probe-codex-goal`已证明隔离persistent Goal控制面、zero usage与安全cleanup。
+- Round 266新增`probe-codex-goal-host`：现场生成并有界解析experimental schema，绑定contract、CLI version与完整bundle SHA。
+- 当前真实schema SHA为`356a6f6bb546f89d464df44effd103622538b340d059e61d57287f32bf6b7b94`；Goal控制面、
+  persistent resume与remote-control transport存在，client-required turn input成立，continuation候选为空。
+- surface receipt固定不等于host admission；未来即使出现continuation-named method，也仍要求exact first-party host build receipt。
+
+**需要什么才能解开**
+1. 第一方Codex宿主提供可由隔离formal harness调用或导出的exact host build identity。
+2. host明确标记initial task、native continuation、owner takeover和harness injection来源，且runner无法构造native input。
+3. persistent thread跨host restart继续，turn chain与Goal/provider usage可独立观察，默认能力和frozen model/effort/budget不漂移。
+4. 用no-model capability run先生成通过ADR-0093的host admission receipt，再申请两侧相同预算的正式模型run。
+
+**当前 workaround**
+- app-server只用于Goal控制面与协议探测；不运行runner-managed continuation，不把单turn或remote-control称作Codex Goal baseline。
+- AICO侧继续完成真实Telegram dogfood和formal harness准备，但scorer没有两侧完整样本时固定不能返回胜出。
+
+**相关链接**
+- ADR-0092
+- ADR-0093
+- `src/aico/app/boss_absent_codex_goal_capability.py`
+- `src/aico/app/boss_absent_codex_goal_host.py`
+- Round 266
+
 ### [B-009] aico-view 本地 attachment 缺少策略允许的真实浏览器截图入口
 
 **状态**:🟡 DEFERRED

@@ -51,6 +51,10 @@ from aico.app.boss_absent_aico_taskbus_runtime import (
     TaskBusAicoBenchmarkRuntime,
 )
 from aico.app.boss_absent_benchmark_restart_probe import run_restart_probe
+from aico.app.boss_absent_codex_goal_capability import (
+    CodexGoalHostSurfaceReceipt,
+    probe_codex_goal_host_surface,
+)
 from aico.app.boss_absent_codex_goal_probe import (
     CodexGoalProtocolReceipt,
     probe_codex_goal_protocol,
@@ -121,6 +125,15 @@ def run(
             output.write(
                 "Codex Goal protocol admitted without model calls: "
                 f"version={receipt.codex_cli_version} tokens_used={receipt.tokens_used}\n"
+            )
+            return 0
+        if args.command == "probe-codex-goal-host":
+            host_surface = _probe_codex_goal_host(args)
+            output.write(
+                "Codex Goal host surface attested: "
+                f"version={host_surface.codex_cli_version} "
+                f"formal_run_admitted={str(host_surface.formal_run_admitted).lower()} "
+                f"blocking={','.join(host_surface.blocking_reasons)}\n"
             )
             return 0
         if args.command == "finalize-aico":
@@ -258,6 +271,17 @@ def _probe_codex_goal(args: argparse.Namespace) -> CodexGoalProtocolReceipt:
         cwd=args.cwd,
         cleanup_intent_path=args.output.with_name(f"{args.output.name}.cleanup-intent.json"),
         isolated_home_path=args.output.with_name(f"{args.output.name}.codex-home"),
+    )
+    _write_new_model(args.output, receipt)
+    return receipt
+
+
+def _probe_codex_goal_host(args: argparse.Namespace) -> CodexGoalHostSurfaceReceipt:
+    contract = _read_model(args.contract, BossAbsentBenchmarkContract)
+    receipt = probe_codex_goal_host_surface(
+        executable=args.codex,
+        expected_cli_version=contract.codex_cli_version,
+        contract_sha256=canonical_sha256(contract),
     )
     _write_new_model(args.output, receipt)
     return receipt
@@ -781,6 +805,13 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument("--cwd", type=Path, required=True)
     probe.add_argument("--output", type=Path, required=True)
     probe.add_argument("--codex", default="codex")
+    host_probe = subparsers.add_parser(
+        "probe-codex-goal-host",
+        help="Attest why the installed app-server is not a native Goal continuation host.",
+    )
+    host_probe.add_argument("--contract", type=Path, required=True)
+    host_probe.add_argument("--output", type=Path, required=True)
+    host_probe.add_argument("--codex", default="codex")
     finalize = subparsers.add_parser(
         "finalize-aico",
         help="Bind an AICO role state to independent scenario evidence.",

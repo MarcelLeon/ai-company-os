@@ -25,6 +25,25 @@ Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增�
 
 ---
 
+## Round 266 完成:Codex Goal host surface machine attestation
+
+- [x] 新增`probe-codex-goal-host`：从冻结contract读取exact CLI版本，现场生成experimental app-server schema，限制文件数、
+  单文件/总大小并拒绝symlink、duplicate JSON和不完整Goal surface。
+- [x] receipt绑定contract SHA、CLI版本与完整schema bundle SHA；机器确认Goal set/get/clear、persistent thread resume、
+  `turn/start`仍强制client input，并单独记录remote-control transport与任何future continuation候选。
+- [x] app-server surface receipt固定`formal_run_admitted=false`；即使未来发现continuation-named method，没有第一方native host
+  build receipt仍拒绝入场，benchmark runner不能借机自造续跑prompt。
+- [x] 本机`codex-cli 0.144.5`真实no-model attestation：schema SHA
+  `356a6f6bb546f89d464df44effd103622538b340d059e61d57287f32bf6b7b94`，Goal控制面/resume/remote-control存在，
+  continuation候选为空；blocking=`native_continuation_surface_absent,native_host_build_receipt_required`。
+- [x] Gate：Codex Goal/benchmark定向`45 passed`；排除用户既有空release-room JSON对应3项后，full root
+  `1133 passed, 1 skipped, 3 deselected`，不排除时严格只有这3项失败；SME`53 passed`。Ruff、root/SME
+  mypy(255/38 files)、format、结构与diff通过。
+- [ ] B-015仍阻塞Codex Goal正式样本：需要第一方host导出exact build、native continuation来源与turn/usage链；当前结果不产生
+  baseline成绩，也不能据此宣称AICO胜出。
+
+---
+
 ## Round 265 完成:Owner-bound IM + formal provider execution evidence
 
 - [x] 新增one-shot formal IM collector：外发前0600 immutable intent，正常保存Telegram platform ACK；send后/ACK前崩溃时重启

@@ -11,6 +11,7 @@ import pytest
 
 from aico.app.boss_absent_benchmark_cli import run
 from aico.app.boss_absent_benchmark_restart_probe import BenchmarkRestartProbeReceipt
+from aico.app.boss_absent_codex_goal_capability import CodexGoalHostSurfaceReceipt
 from aico.app.boss_absent_codex_goal_probe import CodexGoalProtocolReceipt
 from aico.core.boss_absent_benchmark import (
     BenchmarkEvidenceProof,
@@ -575,6 +576,46 @@ def test_benchmark_cli_writes_no_model_codex_goal_protocol_receipt(
     assert exit_code == 0
     assert "tokens_used=0" in stdout.getvalue()
     assert CodexGoalProtocolReceipt.model_validate_json(output_path.read_text()) == receipt
+
+
+def test_benchmark_cli_writes_non_admitted_codex_goal_host_surface(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract_path = tmp_path / "contract.json"
+    assert run(_freeze_args(contract_path)) == 0
+    contract = BossAbsentBenchmarkContract.model_validate_json(contract_path.read_text())
+    receipt = CodexGoalHostSurfaceReceipt(
+        contract_sha256=canonical_sha256(contract),
+        codex_cli_version=contract.codex_cli_version,
+        schema_bundle_sha256="b" * 64,
+        remote_control_transport_present=True,
+        blocking_reasons=(
+            "native_continuation_surface_absent",
+            "native_host_build_receipt_required",
+        ),
+    )
+    monkeypatch.setattr(
+        "aico.app.boss_absent_benchmark_cli.probe_codex_goal_host_surface",
+        lambda **_: receipt,
+    )
+    output_path = tmp_path / "goal-host-surface.json"
+    stdout = StringIO()
+
+    exit_code = run(
+        [
+            "probe-codex-goal-host",
+            "--contract",
+            str(contract_path),
+            "--output",
+            str(output_path),
+        ],
+        stdout=stdout,
+    )
+
+    assert exit_code == 0
+    assert "formal_run_admitted=false" in stdout.getvalue()
+    assert CodexGoalHostSurfaceReceipt.model_validate_json(output_path.read_text()) == receipt
 
 
 def test_benchmark_cli_refuses_overwrite_duplicate_json_and_valid_non_win(

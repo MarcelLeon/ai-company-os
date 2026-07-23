@@ -13268,3 +13268,39 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - 在独占Telegram polling窗口跑一次真实owner approval与terminal takeover，保存platform ACK/inbound receipt但不调用模型。
 - 实现/接入第一方Codex native continuation host admission；之后才申请owner授权相同模型/task/预算的两侧formal run。
 - GitHub push仍等待owner对精确远端、分支和提交范围的外发授权。
+
+## Round 266 — 2026-07-23 — Codex
+
+### 输入与目标
+
+- 在等待精确GitHub外发授权期间继续推进active boss-absent目标，关闭“Codex CLI看似有Goal/remote-control，实际host能力未知”的
+  证据缺口。
+- 不调用模型、不启动正式benchmark；把当前host阻塞变成可随CLI升级重复执行的机器attestation。
+
+### 关键发现与决策
+
+- 本机仍为`codex-cli 0.144.5`，stable Goal、persistent resume和remote-control均存在。
+- 现场experimental schema确认`turn/start`的required字段仍包含`input`，没有continuation-named method；remote-control只证明
+  transport/pairing，不能代表自动续跑所有权。
+- 延续ADR-0093：schema surface只能产生non-admitted receipt。未来即使出现candidate method，也必须额外取得第一方exact host build
+  receipt，不能由AICO runner补写continue prompt。
+
+### 实现与验证
+
+- 新增`boss_absent_codex_goal_capability.py`：有界schema生成/读取、duplicate/symlink/size门禁、bundle SHA与方法面attestation。
+- CLI新增`probe-codex-goal-host`，receipt绑定frozen contract SHA与exact CLI version，固定
+  `surface_kind=standalone_app_server`和`formal_run_admitted=false`。
+- 新增3个纯schema测试与1个CLI wiring测试，覆盖当前无continuation、future candidate仍缺host receipt、控制面/input漂移拒绝。
+- 真实no-model运行成功：contract SHA`5d8ece7122dfceadde4a907d04b4f9df6c314546749089d74d9f5ca7be7d658e`，
+  schema SHA`356a6f6bb546f89d464df44effd103622538b340d059e61d57287f32bf6b7b94`，
+  blocking=`native_continuation_surface_absent,native_host_build_receipt_required`。
+- 新增P-125与B-015；Codex Goal/benchmark定向`45 passed`。排除用户既有空release-room JSON对应3项后，full root
+  `1133 passed, 1 skipped, 3 deselected`，不排除时严格只有这3项失败；SME`53 passed`。Ruff、root/SME
+  mypy(255/38 files)、format、结构与diff通过。一次并行full gate中旧provider-auth输出上限用例出现时序性通用错误，
+  单项2/2及随后独占full gate均通过，未修改该无关模块。
+
+### 下一步
+
+- B-015等待第一方Codex host build/export surface；在此之前不生成不公平baseline结果。
+- AICO侧继续真实owner Telegram approval/takeover dogfood准备，正式模型预算仍需单独owner授权。
+- GitHub push仍等待owner对`d41fee1`、`03337a6`、`16907b9`及本轮后续提交的精确外发授权。

@@ -4247,3 +4247,26 @@ schema-valid grant或takeover receipt可以由本地进程手写，无法证明T
 - `benchmarks/boss-absent-v1/project.json`
 - `src/aico/app/boss_absent_aico_taskbus_runtime.py`
 - `src/aico/core/boss_absent_benchmark.py`
+
+### [P-125] 有Goal API和remote-control不等于有native continuation host
+
+**状态**:🟢 RESOLVED(machine attestation; first-party host pending B-015)
+**首次踩中**:Round 266
+**最后更新**:2026-07-23
+**影响范围**:Codex Goal baseline fairness,host admission,automatic continuation
+
+**症状与根因**
+Codex CLI同时展示stable `goals`、persistent app-server、`remote-control`和`thread/resume`，容易把这些能力合并推断为“宿主会自动
+继续Goal”。实际experimental schema里`turn/start`仍强制client提供input，remote-control只是transport/pairing；控制面、远程入口和
+续跑所有权是三件事。
+
+**解决与预防**
+- `probe-codex-goal-host`每次从exact CLI现场生成schema，不依赖文档记忆或方法名猜测。
+- receipt绑定contract/version/bundle SHA并逐项验证Goal控制面、resume、required input、remote-control与continuation候选。
+- app-server surface receipt固定`formal_run_admitted=false`；即使出现candidate method，也必须再有第一方exact host build receipt。
+- benchmark runner永远不发送native continuation input；缺host admission时两侧formal scorer不得运行。
+
+**相关链接**
+- ADR-0093
+- B-015
+- `src/aico/app/boss_absent_codex_goal_capability.py`
