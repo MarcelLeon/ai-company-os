@@ -54,11 +54,17 @@ benchmark专用提示词可能被隐藏成无人值守能力。
   transport存在，`turn/start`仍强制client input，continuation候选为空，formal admission为false。
 - 当前`get_goal`只能返回objective/status/tokens/time，不暴露host continuation prompt或调度器合同。
 - offline host admission/ledger tests覆盖standalone app-server、runner自造input、能力缺失、usage/chain漂移和terminal后续跑拒绝。
+- Round 268发现当前Codex App `com.openai.codex` `26.715.72359 (5718)`内嵌CLI为`0.145.0-alpha.30`，不同于PATH中的
+  `0.144.5`。新experimental schema的`thread/fork.deferGoalContinuation`明确声明initial automatic continuation可延迟，
+  下一显式turn后normal automatic continuation恢复。
+- `probe-codex-app-host`已在非沙箱系统验证App与内嵌CLI的Apple code signature、OpenAI Team ID `2DC432GLL2`、
+  stapled notarization、bundle/build、完整CDHash与schema SHA。真实candidate receipt仍固定formal false。
 
 ## 残余边界
 
-- 尚未取得可供isolated formal runner调用的第一方Codex host adapter/build receipt，因此formal run仍未admit；B-015跟踪该唯一
-  baseline host阻塞。
+- 第一方build identity与native continuation surface已取得；尚缺一次isolated Goal fork的live host observation，必须捕获
+  automatic turn source、跨host restart resume、Goal/provider usage和默认能力，且runner不能提交continuation input。
+  因此formal run仍未admit；B-015只跟踪这两个剩余观察门槛。
 - opaque input SHA只能证明观察到的bytes identity，不能解释host内部prompt质量；公平性依赖exact host build与同一frozen task合同。
 - owner/harness输入是场景事件，不是native continuation；评分时必须保留其来源和人工介入计数。
 

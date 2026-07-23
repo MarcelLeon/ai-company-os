@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-07-23
-**当前轮次**:Round 267(真实 owner IM dogfood + launchd lifecycle recovery)
+**当前轮次**:Round 268(Signed Codex App native Goal host candidate)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是个人开发者可直接使用的远程IM指挥、
@@ -25,6 +25,27 @@ Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增�
 
 ---
 
+## Round 268 完成:Signed Codex App native Goal host candidate
+
+- [x] 发现PATH CLI与当前Codex App不是同一build：PATH仍是`0.144.5`；App `com.openai.codex`
+  `26.715.72359 (5718)`内嵌`codex-cli 0.145.0-alpha.30`。
+- [x] 新schema不再只有Goal控制面：`ThreadForkParams.deferGoalContinuation`明确说明可延迟initial automatic continuation，
+  下一显式turn后normal automatic continuation恢复；`turn/start`仍要求client input，因此runner不能伪造native continuation。
+- [x] 新增`probe-codex-app-host`：验证App/内嵌CLI均通过`codesign --verify --deep --strict`，Team ID为`2DC432GLL2`，
+  notarization ticket stapled，并绑定bundle/build、两个完整CDHash、contract与schema SHA。
+- [x] 真实no-model candidate receipt为0600：contract SHA
+  `8d2b4caf98520d5d3842c37064f77a32b363acc3981acb98954c1f50cb84e47d`，schema SHA
+  `e4b6f57e97436d617719daa1802430889dbafbb2a4dc8ff6ea65ab9946584d4b`。
+- [x] candidate仍固定`formal_run_admitted=false`；B-015已从“缺第一方build/continuation出口”收窄为
+  `live_native_continuation_observation_required`与`isolated_run_state_observation_required`。
+- [x] Gate：本轮定向`29 passed`；raw root仍严格只有用户既有空release-room JSON导致的3项失败，精确排除后
+  `1142 passed, 1 skipped, 3 deselected`；SME`53 passed`。Ruff、root/SME mypy(255/37 files)、format、
+  production class/function结构与diff通过。
+- [ ] 不能把当前线程确实发生的自动Goal续跑反向手写成正式receipt；下一步需要一次owner授权的隔离Goal fork，
+  由独立observer捕获host自动发起的turn、跨host restart resume与usage链。
+
+---
+
 ## Round 267 完成:真实 owner IM dogfood + launchd lifecycle recovery
 
 - [x] 在独占Telegram polling窗口完成两条真实owner-bound决策：approval与takeover均由Bot API真实发送、Telegram Web当前
@@ -41,7 +62,8 @@ Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增�
 - [x] Gate：相关定向`101 passed`；raw root仅用户既有空release-room JSON导致`3 failed, 1136 passed, 1 skipped`，
   精确排除这3项后`1136 passed, 1 skipped, 3 deselected`；SME`53 passed`。Ruff、root/SME mypy(255/37 files)、
   format、结构与diff通过。
-- [ ] 正式模型benchmark仍未运行；B-015的第一方Codex native continuation host出口仍是公平对比的唯一blocking边界。
+- [ ] 正式模型benchmark仍未运行；Round 268已找到签名native host出口，但B-015的live isolated observation仍是公平对比的
+  唯一blocking边界。
 
 ---
 
@@ -59,8 +81,8 @@ Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增�
 - [x] Gate：Codex Goal/benchmark定向`45 passed`；排除用户既有空release-room JSON对应3项后，full root
   `1133 passed, 1 skipped, 3 deselected`，不排除时严格只有这3项失败；SME`53 passed`。Ruff、root/SME
   mypy(255/38 files)、format、结构与diff通过。
-- [ ] B-015仍阻塞Codex Goal正式样本：需要第一方host导出exact build、native continuation来源与turn/usage链；当前结果不产生
-  baseline成绩，也不能据此宣称AICO胜出。
+- [x] Round 268已取得第一方signed build与native continuation surface；B-015仅剩live isolated continuation/restart/usage观察。
+  当前结果仍不产生baseline成绩，也不能据此宣称AICO胜出。
 
 ---
 
@@ -3510,7 +3532,7 @@ AICO 的产品边界是 absence-first:
    - AICO managed role runner、五类scenario finalizer、exact-model TaskBus transport、frozen actual fixture、single-role CLI与
      independent file/receipt observer、approval runner pause与at-most-once isolated mutation已完成；owner grant与takeover
      receipt的真实Telegram ACK/inbound dogfood也已通过，role target已绑定project assignment/provider execution。
-     Codex侧仍必须等待可编程native host adapter/build receipt，禁止自创continuation prompt。
+     Codex侧signed App host candidate已取得；仍须等待owner授权的live isolated Goal fork observation，禁止自创continuation prompt。
    - receipt采集与scorer分离；Goal tokensUsed、turn/provider usage任一缺失或不一致都按budget loss，不能信被测系统自报。
    - 任何正式模型benchmark需owner另行授权，且必须使用冻结contract和真实provider usage，见
      `docs/benchmarks/boss-absent-vs-codex-goal.md`与ADR-0091。

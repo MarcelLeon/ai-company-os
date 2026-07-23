@@ -4296,3 +4296,28 @@ Codex CLI同时展示stable `goals`、persistent app-server、`remote-control`�
 - ADR-0038
 - ROUNDS Round 267
 - `src/aico/app/service_cli.py`
+
+### [P-127] PATH中的Codex CLI不等于Codex App实际宿主build
+
+**状态**:🟢 RESOLVED(machine candidate receipt; live admission pending B-015)
+**首次踩中**:Round 268
+**最后更新**:2026-07-23
+**影响范围**:Codex Goal baseline identity,native continuation discovery,fair benchmark
+
+**症状与根因**
+只探测`command -v codex`会看到全局`0.144.5`，其schema没有automatic continuation surface；但当前Codex App实际内嵌
+`0.145.0-alpha.30`，两者不是同一build。若把PATH CLI当成桌面宿主，会错误结论“第一方出口不存在”；反过来只看到App版本号、
+Team ID或某个字段，又可能未经签名验证就过早admit。
+
+**解决与预防**
+- host candidate必须从App bundle内的exact embedded CLI生成schema，不复用PATH解析结果。
+- 同时验证App与embedded CLI的`codesign --verify --deep --strict`、同一OpenAI Team ID、notarization、bundle/build和完整CDHash。
+- 只有`deferGoalContinuation`的boolean类型及完整Goal生命周期语义同时存在，才记为native surface candidate。
+- code signature在Codex workspace sandbox内可能假阴性；live probe需在正常系统权限上下文运行，失败时不降级只信metadata。
+- candidate仍不能代替live isolated continuation/usage receipt；B-015继续fail closed。
+
+**相关链接**
+- ADR-0093
+- B-015
+- ROUNDS Round 268
+- `src/aico/app/boss_absent_codex_goal_capability.py`

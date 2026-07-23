@@ -7,13 +7,14 @@
 
 ## Frozen Baseline
 
-基线为本机 `codex-cli 0.144.5` app-server的公开Goal合同：persistent thread上的objective/status，可按continuation继续，并记录
-token/time usage；`complete`/`blocked`由Goal状态表达。`codex exec`没有Goal接口，不能用一次性exec冒充baseline。不要把Codex普通
-multi-agent或其他产品能力自动算进Goal基线，也不要声称其不存在未经观测的内部能力。
+历史admission基线为PATH中的`codex-cli 0.144.5` app-server Goal合同。当前正式候选已更新为签名Codex App
+`26.715.72359 (5718)`内嵌的`codex-cli 0.145.0-alpha.30`：persistent thread上的objective/status、token/time usage与
+`thread/fork.deferGoalContinuation`声明的automatic continuation。正式run必须重新冻结exact候选版本；`codex exec`没有Goal接口，
+不能用一次性exec冒充baseline。不要把Codex普通multi-agent或其他产品能力自动算进Goal基线，也不要声称其不存在未经观测的内部能力。
 
-app-server本身不是continuation宿主：0.144.5 schema没有自动续跑方法，`turn/start`仍要求调用方提交input。正式baseline必须由
-ADR-0093第一方Codex host admission证明native continuation；benchmark runner禁止自造continue prompt，只能记录opaque input SHA、
-turn chain、来源、人工介入与Goal/provider usage。没有exact host build receipt时，formal Codex Goal run不具备评分资格。
+0.144.5 standalone app-server本身不是continuation宿主；新签名App build已经给出native Goal生命周期语义，但`turn/start`仍要求
+调用方提交input。正式baseline必须由ADR-0093 live isolated host admission证明automatic continuation；benchmark runner禁止自造
+continue prompt，只能记录opaque input SHA、turn chain、来源、人工介入与Goal/provider usage。candidate build receipt不是正式成绩。
 
 每个正式 run 必须记录 exact CLI version、model、reasoning effort、task revision、token budget、开始时间和原始状态证据。
 运行前必须通过ADR-0092 no-model admission；正式Goal thread使用run-isolated Codex home，不能与桌面Codex state DB竞争。
@@ -82,6 +83,8 @@ owner-bound inbound action ledger和exact decision receipt。当前仍未执行�
 因此Round 265结束时没有正式成绩。
 Round 267已补齐真实Telegram approval与takeover transport dogfood：两次都由当前owner在Telegram Web执行1次操作，并产生0600
 platform ACK/inbound/decision/grant或takeover receipt。该样本使用synthetic/no-model state，未执行mutation，只关闭IM协议的
-外部可用性缺口；正式model run与Codex native host build仍未发生，因此仍无正式成绩。
+外部可用性缺口；Round 267结束时正式model run与Codex native host build仍未发生，因此仍无正式成绩。
+Round 268进一步找到并绑定签名Codex App build与明确automatic continuation surface；正式缺口已收窄为live isolated Goal fork、
+跨host restart和usage观测，candidate receipt仍不参与评分。
 首次正式对比仍须另行授权实际模型调用并由isolated harness注入五类事件；
 不能把protocol receipt、实现测试或synthetic fixture反向当成benchmark成绩。

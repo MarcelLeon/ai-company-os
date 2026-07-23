@@ -11,7 +11,10 @@ import pytest
 
 from aico.app.boss_absent_benchmark_cli import run
 from aico.app.boss_absent_benchmark_restart_probe import BenchmarkRestartProbeReceipt
-from aico.app.boss_absent_codex_goal_capability import CodexGoalHostSurfaceReceipt
+from aico.app.boss_absent_codex_goal_capability import (
+    CodexGoalHostSurfaceReceipt,
+    CodexGoalNativeHostCandidateReceipt,
+)
 from aico.app.boss_absent_codex_goal_probe import CodexGoalProtocolReceipt
 from aico.core.boss_absent_benchmark import (
     BenchmarkEvidenceProof,
@@ -616,6 +619,48 @@ def test_benchmark_cli_writes_non_admitted_codex_goal_host_surface(
     assert exit_code == 0
     assert "formal_run_admitted=false" in stdout.getvalue()
     assert CodexGoalHostSurfaceReceipt.model_validate_json(output_path.read_text()) == receipt
+
+
+def test_benchmark_cli_writes_signed_codex_app_host_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract_path = tmp_path / "contract.json"
+    assert run(_freeze_args(contract_path)) == 0
+    contract = BossAbsentBenchmarkContract.model_validate_json(contract_path.read_text())
+    receipt = CodexGoalNativeHostCandidateReceipt(
+        contract_sha256=canonical_sha256(contract),
+        app_version="26.715.72359",
+        app_build="5718",
+        app_cdhash_sha256="b" * 64,
+        embedded_cli_cdhash_sha256="c" * 64,
+        team_identifier="2DC432GLL2",
+        codex_cli_version=contract.codex_cli_version,
+        schema_bundle_sha256="d" * 64,
+    )
+    monkeypatch.setattr(
+        "aico.app.boss_absent_benchmark_cli.probe_codex_goal_native_host_candidate",
+        lambda **_: receipt,
+    )
+    output_path = tmp_path / "codex-app-host.json"
+    stdout = StringIO()
+
+    exit_code = run(
+        [
+            "probe-codex-app-host",
+            "--contract",
+            str(contract_path),
+            "--output",
+            str(output_path),
+        ],
+        stdout=stdout,
+    )
+
+    assert exit_code == 0
+    assert "formal_run_admitted=false" in stdout.getvalue()
+    assert (
+        CodexGoalNativeHostCandidateReceipt.model_validate_json(output_path.read_text()) == receipt
+    )
 
 
 def test_benchmark_cli_refuses_overwrite_duplicate_json_and_valid_non_win(

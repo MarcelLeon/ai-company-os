@@ -13342,3 +13342,44 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - B-015继续等待第一方Codex native continuation host/build receipt；没有它不运行不公平baseline、不宣称AICO胜出。
 - 当前代码完成完整Gate后本地提交；GitHub push按仓库外部动作合同核对exact remote/branch/commit range。
 - 新目标可以进入定义/基线讨论，但不能把本轮synthetic IM dogfood包装为formal model benchmark结果。
+
+## Round 268 — 2026-07-23 — Codex
+
+### 输入与目标
+
+- Goal自动续跑触发本轮，继续攻击B-015而不是停在push授权；重新核对当前工作树、Codex App、PATH CLI与第一方工具面。
+- 不创建新thread、不调用模型；先回答“第一方native host到底是否已出现”，并把答案做成可重复机器receipt。
+
+### 关键发现与决策
+
+- PATH中`codex-cli 0.144.5`不是当前App宿主build。`com.openai.codex` App版本`26.715.72359 (5718)`内嵌
+  `codex-cli 0.145.0-alpha.30`，两者必须分开attest。
+- 新experimental schema的`ThreadForkParams.deferGoalContinuation`不是模糊关键词：明确写出可延迟initial automatic
+  continuation，下一显式turn拥有Goal lifecycle，之后normal automatic continuation恢复。`turn/start`仍强制client input。
+- 这足以证明first-party native continuation surface candidate，但不足以证明隔离run、restart、usage和实际automatic turn；
+  因此不能直接调用现有formal admission。
+- workspace sandbox内`codesign --verify`返回假阴性；同一命令在获准的系统上下文验证App和embedded CLI均valid on disk，
+  App被`spctl`接受为Notarized Developer ID。探针不降级信任只读metadata。
+
+### 实现与验证
+
+- schema attestor新增严格的`thread/fork.deferGoalContinuation`语义识别：要求exact method、boolean字段以及三段Goal生命周期描述。
+- 新增`CodexGoalNativeHostCandidateReceipt`与`probe-codex-app-host`：验证absolute in-bundle regular paths、bounded Info.plist、
+  App/CLI签名、同一Team ID `2DC432GLL2`、stapled ticket、bundle/build、完整CDHash和schema SHA。
+- candidate模型固定`live_native_continuation_observed=false`、`isolated_run_state_observed=false`与
+  `formal_run_admitted=false`，blocking只能是对应两个live观察门槛。
+- 新增surface语义、signed candidate、wrong bundle/team/notarization及CLI wiring测试；定向`29 passed`。
+- 真实no-model candidate receipt为0600：contract SHA
+  `8d2b4caf98520d5d3842c37064f77a32b363acc3981acb98954c1f50cb84e47d`，App CDHash
+  `d6bd5bce41f3c067e8af719001804010a7a416a99331d4eb03fb25bd57bf8bd4`，embedded CLI CDHash
+  `0967a78e0991180f97cdde9e0692a8b2940ee14b487bdc78f36a812b0b9a731f`，schema SHA
+  `e4b6f57e97436d617719daa1802430889dbafbb2a4dc8ff6ea65ab9946584d4b`。
+- raw root仍严格只有用户既有空release-room JSON导致的3项失败；精确排除后
+  `1142 passed, 1 skipped, 3 deselected`。SME`53 passed`；Ruff、root/SME mypy(255/37 files)、format、
+  production class/function结构与diff通过。
+
+### 下一步
+
+- 设计独立live host observer；owner授权后创建一个隔离Goal fork，以最小预算捕获automatic continuation、restart resume与usage。
+- 只有live receipt通过ADR-0093后才启动五task正式两侧benchmark；当前仍不宣称AICO强于Codex Goal。
+- Round 267提交`4447968`及此前4个提交仍等待精确push授权；本轮完成Gate后另行提交，不夹带用户空JSON。

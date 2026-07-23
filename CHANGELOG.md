@@ -24,6 +24,9 @@
 - Codex Goal host surface attestation:`probe-codex-goal-host`现场生成当前CLI experimental schema，绑定contract/version/schema
   SHA并机器验证Goal控制面、persistent resume、client-required turn input、remote-control transport和continuation候选；输出永远
   不是native-host admission，缺第一方host build receipt时formal baseline继续fail closed。
+- Signed Codex App Goal host candidate:`probe-codex-app-host`验证App与内嵌CLI的Apple code signature、OpenAI Team ID、
+  bundle/build、完整CDHash和experimental schema SHA；识别`thread/fork.deferGoalContinuation`明确声明的initial/normal automatic
+  continuation语义。candidate receipt保持formal false，直到独立live continuation与isolated run state被观测。
 - Restart-safe AICO benchmark runner:核心按frozen roles编排不同Agent，所有role共享同一remaining-token budget并消费前一artifact
   SHA；provider调用前原子保存稳定dispatch intent，跨进程只按id对账、unknown outcome禁止重放，restart必须更换runtime instance。
   scorer同步拒绝单Agent更换role label的伪协作；超预算provider usage即使不采信checkpoint也完整计入budget loss证据。

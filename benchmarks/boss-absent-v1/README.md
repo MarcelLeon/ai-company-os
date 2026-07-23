@@ -89,6 +89,18 @@ persistent resume, mandatory client input for `turn/start`, remote-control trans
 receipt is deliberately never a native-host admission: a candidate protocol method still requires a first-party exact host build receipt proving
 who owns continuation and how turn/provider usage is observed.
 
+For the signed Codex App candidate, freeze the contract against its embedded CLI version and run:
+
+```bash
+uv run aico-benchmark probe-codex-app-host \
+  --contract /private/new-run/contract-for-embedded-cli.json \
+  --output /private/new-run/codex-app-host-candidate.json
+```
+
+This verifies the App and embedded CLI signatures, OpenAI Team ID, bundle/build, full CDHashes, and
+`thread/fork.deferGoalContinuation` semantics. It makes no model call and remains a non-formal candidate until an independent live isolated
+continuation/usage observation is attached.
+
 ## Advance the real AICO runtime
 
 Each invocation advances at most one frozen role. The checkout must be absolute, clean, and exactly match the contract revision. The external harness

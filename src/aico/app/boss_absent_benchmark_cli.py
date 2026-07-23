@@ -53,7 +53,9 @@ from aico.app.boss_absent_aico_taskbus_runtime import (
 from aico.app.boss_absent_benchmark_restart_probe import run_restart_probe
 from aico.app.boss_absent_codex_goal_capability import (
     CodexGoalHostSurfaceReceipt,
+    CodexGoalNativeHostCandidateReceipt,
     probe_codex_goal_host_surface,
+    probe_codex_goal_native_host_candidate,
 )
 from aico.app.boss_absent_codex_goal_probe import (
     CodexGoalProtocolReceipt,
@@ -127,15 +129,8 @@ def run(
                 f"version={receipt.codex_cli_version} tokens_used={receipt.tokens_used}\n"
             )
             return 0
-        if args.command == "probe-codex-goal-host":
-            host_surface = _probe_codex_goal_host(args)
-            output.write(
-                "Codex Goal host surface attested: "
-                f"version={host_surface.codex_cli_version} "
-                f"formal_run_admitted={str(host_surface.formal_run_admitted).lower()} "
-                f"blocking={','.join(host_surface.blocking_reasons)}\n"
-            )
-            return 0
+        if args.command in {"probe-codex-goal-host", "probe-codex-app-host"}:
+            return _run_codex_host_probe(args, output)
         if args.command == "finalize-aico":
             result = _finalize_aico(args)
             output.write(
@@ -282,6 +277,42 @@ def _probe_codex_goal_host(args: argparse.Namespace) -> CodexGoalHostSurfaceRece
         executable=args.codex,
         expected_cli_version=contract.codex_cli_version,
         contract_sha256=canonical_sha256(contract),
+    )
+    _write_new_model(args.output, receipt)
+    return receipt
+
+
+def _run_codex_host_probe(args: argparse.Namespace, output: TextIO) -> int:
+    if args.command == "probe-codex-goal-host":
+        receipt = _probe_codex_goal_host(args)
+        output.write(
+            "Codex Goal host surface attested: "
+            f"version={receipt.codex_cli_version} "
+            f"formal_run_admitted={str(receipt.formal_run_admitted).lower()} "
+            f"blocking={','.join(receipt.blocking_reasons)}\n"
+        )
+        return 0
+    candidate = _probe_codex_app_host(args)
+    output.write(
+        "Codex signed app host candidate attested: "
+        f"app={candidate.app_version}+{candidate.app_build} "
+        f"version={candidate.codex_cli_version} "
+        f"formal_run_admitted={str(candidate.formal_run_admitted).lower()} "
+        f"blocking={','.join(candidate.blocking_reasons)}\n"
+    )
+    return 0
+
+
+def _probe_codex_app_host(
+    args: argparse.Namespace,
+) -> CodexGoalNativeHostCandidateReceipt:
+    contract = _read_model(args.contract, BossAbsentBenchmarkContract)
+    receipt = probe_codex_goal_native_host_candidate(
+        app_bundle=args.app_bundle.expanduser().resolve(),
+        embedded_codex=args.embedded_codex.expanduser().resolve(),
+        expected_cli_version=contract.codex_cli_version,
+        contract_sha256=canonical_sha256(contract),
+        expected_team_identifier=args.team_identifier,
     )
     _write_new_model(args.output, receipt)
     return receipt
@@ -805,13 +836,7 @@ def _parser() -> argparse.ArgumentParser:
     probe.add_argument("--cwd", type=Path, required=True)
     probe.add_argument("--output", type=Path, required=True)
     probe.add_argument("--codex", default="codex")
-    host_probe = subparsers.add_parser(
-        "probe-codex-goal-host",
-        help="Attest why the installed app-server is not a native Goal continuation host.",
-    )
-    host_probe.add_argument("--contract", type=Path, required=True)
-    host_probe.add_argument("--output", type=Path, required=True)
-    host_probe.add_argument("--codex", default="codex")
+    _add_codex_host_probe_arguments(subparsers)
     finalize = subparsers.add_parser(
         "finalize-aico",
         help="Bind an AICO role state to independent scenario evidence.",
@@ -893,6 +918,35 @@ def _add_freeze_arguments(subparsers: argparse._SubParsersAction[argparse.Argume
     freeze.add_argument("--max-total-tokens", type=int, required=True)
     freeze.add_argument("--takeover-action-cap", type=int, default=20)
     freeze.add_argument("--takeover-seconds-cap", type=int, default=900)
+
+
+def _add_codex_host_probe_arguments(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    host_probe = subparsers.add_parser(
+        "probe-codex-goal-host",
+        help="Attest why the installed app-server is not a native Goal continuation host.",
+    )
+    host_probe.add_argument("--contract", type=Path, required=True)
+    host_probe.add_argument("--output", type=Path, required=True)
+    host_probe.add_argument("--codex", default="codex")
+    app_host_probe = subparsers.add_parser(
+        "probe-codex-app-host",
+        help="Bind a signed first-party Codex App build to native Goal continuation semantics.",
+    )
+    app_host_probe.add_argument("--contract", type=Path, required=True)
+    app_host_probe.add_argument("--output", type=Path, required=True)
+    app_host_probe.add_argument(
+        "--app-bundle",
+        type=Path,
+        default=Path("/Applications/ChatGPT.app"),
+    )
+    app_host_probe.add_argument(
+        "--embedded-codex",
+        type=Path,
+        default=Path("/Applications/ChatGPT.app/Contents/Resources/codex"),
+    )
+    app_host_probe.add_argument("--team-identifier", default="2DC432GLL2")
 
 
 def _add_im_arguments(parser: argparse.ArgumentParser) -> None:
