@@ -39,6 +39,7 @@ def _turn(
     after: int,
     status: GoalStatus = "active",
     previous: str | None = None,
+    runtime: str = "a",
 ) -> CodexGoalHostTurnReceipt:
     return CodexGoalHostTurnReceipt(
         sequence=sequence,
@@ -46,6 +47,7 @@ def _turn(
         previous_turn_sha256=previous,
         turn_sha256=f"{sequence:x}" * 64,
         opaque_input_sha256=f"{sequence + 8:x}" * 64,
+        runtime_instance_sha256=runtime * 64,
         goal_status_after=status,
         goal_tokens_before=before,
         goal_tokens_after=after,
@@ -171,6 +173,7 @@ def test_turn_rejects_goal_provider_usage_mismatch_and_hidden_human_input() -> N
             source=CodexGoalTurnSource.INITIAL_TASK,
             turn_sha256="1" * 64,
             opaque_input_sha256="9" * 64,
+            runtime_instance_sha256="a" * 64,
             goal_status_after="active",
             goal_tokens_before=0,
             goal_tokens_after=101,

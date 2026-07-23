@@ -564,7 +564,7 @@ source；系统只提供最多64 KiB的allowlisted原始path/line片段，同时
 
 **状态**:🔴 BLOCKING
 **提出于**:Round 266
-**最后更新**:2026-07-23(Round 270)
+**最后更新**:2026-07-23(Round 271)
 **影响**:五项boss-absent对比不能生成公平的Codex Goal正式样本；第一方build/surface已找到，但live admission前不能宣称胜出。
 
 **问题描述**
@@ -591,13 +591,16 @@ Round 268确认当前签名Codex App内嵌`0.145.0-alpha.30`新增
   read-only Goal state、provider usage与capability context，要求旧host退出和restart后完整`source="goal"`turn完成。
 - Round 270新增正式Codex Goal result finalizer：host admission/run仍不能直接得分，必须再绑定独立observer看到的逐role
   Agent identity、provider execution、runtime instance、source turn、fixture与artifact消费链；复用Agent或execution都会被拒绝。
+- Round 271关闭“scenario receipt可手写”的本地缺口：observer只读解析native parent/child session，拒绝hidden/extra/nested Agent，
+  并用owner-only hash-chain ledger派生五类场景receipt。host turn与role runtime现在逐SHA绑定。
 - 当前真实日常Goal因没有冻结token budget被observer正确拒绝，未写intent；synthetic测试不能关闭本blocker。
 
 **需要什么才能解开**
 1. owner授权创建一个隔离Goal fork、冻结小额token budget，并允许在该样本中重启一次Codex App。
 2. 执行已实现的observer start → restart → finish；任何PID/session/prefix/source/usage/capability漂移均保留失败证据。
 3. live capability receipt通过ADR-0093 admission后，再申请两侧相同预算的五task正式模型run。
-4. 每个Codex Goal task由独立scenario observer产出receipt，再经`finalize-codex-goal`生成结果；不允许手写role或场景结论。
+4. 每个Codex Goal task运行ADR-0100 raw-session/scenario observer，经`finalize-codex-goal-observations`派生receipt，再由
+   `finalize-codex-goal`生成结果；不允许手写role或场景结论。
 
 **当前 workaround**
 - 签名App candidate只用于build/surface admission；不运行runner-managed continuation，不把schema或当前聊天体验称作正式baseline。

@@ -13456,3 +13456,40 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - B-015仍只剩owner授权的一次isolated Goal capability run：创建专用fork、冻结预算、observer start、重启App、observer finish。
 - capability admission通过后，两侧五task正式模型run仍需单独exact budget/side-effect授权；当前没有真实胜负结果。
 - 本轮提交必须排除用户空`examples/release-room/aico-project.json`；GitHub push继续等待exact remote/branch/commit list确认。
+
+## Round 271 — 2026-07-23 — Codex
+
+### 输入与目标
+
+- 继续收尾boss-absent对比：Round 270的scenario receipt仍可由外部直接填写role/execution SHA与场景flags，不能证明Codex Goal
+  实际创建了native subagent，也不能阻止hidden provider execution被排除在预算证据之外。
+- 不调用模型、不创建thread、不重启App；先从现有Codex Desktop parent/child session格式建立只读observer与失败门禁。
+
+### 关键发现与决策
+
+- parent session的`spawn_agent` function call与`sub_agent_activity kind=started`给出child thread；child `session_meta`同时绑定
+  parent thread、agent path和`thread_spawn`来源，`task_started/turn_context/task_complete`给出provider execution、模型、
+  权限边界与最终产物。
+- 正式role assignment必须是child input中的exact marked envelope，绑定canonical contract/task、完整冻结task、role sequence与
+  前序artifact SHA。runner不能主动调用`spawn_agent`，否则测到的是harness编排而不是native Goal能力。
+- scenario receipt只允许从owner-only append/hash-chain ledger派生；approval grant必须保持mutation前置fence，并由host run中
+  唯一owner turn消费exact IM grant。
+
+### 实现与验证
+
+- 新增native role observer：交叉验证parent/child session、required child全集、source host turn、runtime instance、
+  provider execution、最终assistant artifact与逐role consumption chain；hidden/extra/nested/reused Agent以及模型、权限、
+  JSON、文件权限或terminal漂移全部fail closed。
+- 新增独立scenario observer/store：从role sessions、fixture/drift、source pressure、external checks、budget、restart、
+  approval、takeover与terminal事实形成owner-only hash-chain ledger，并派生`CodexGoalScenarioEvidenceReceipt`。
+- CLI新增`finalize-codex-goal-observations`；host turn补runtime instance SHA，finalizer再次校验role runtime与source turn及
+  approval owner turn的exact grant binding。新增ADR-0100与P-130，并更新B-015、benchmark runbook/status和CHANGELOG。
+- boss-absent定向`137 passed`。raw root严格只有用户既有空release-room JSON导致
+  `3 failed, 1178 passed, 1 skipped`；精确排除后`1178 passed, 1 skipped, 3 deselected`。SME`53 passed`；
+  Ruff、root/SME mypy(265/37 files)、format(265/38 files)、production structure、tracked JSON、CLI与diff通过。
+
+### 下一步
+
+- B-015只剩owner授权的一次isolated Goal capability run：专用fork、冻结预算、observer start、App restart、observer finish。
+- capability admission通过后，再单独冻结两侧同模型/任务/预算的五task正式run；没有完整两侧样本前scorer固定不能宣称AICO胜出。
+- 提交必须继续排除用户既有空`examples/release-room/aico-project.json`。

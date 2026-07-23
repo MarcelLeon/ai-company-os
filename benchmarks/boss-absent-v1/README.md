@@ -131,8 +131,37 @@ bytes, a terminated old host, a newly started exact desktop app-server command, 
 `task_complete → task_started → turn_context → source="goal"` state transition whose new turn completes. Goal and provider usage must both advance
 without budget/capability drift. The observer opens no `turn/start` channel. A normal Goal without a frozen token budget is rejected.
 
-The live host receipt only admits the native host; it is not a task result. After the isolated harness has recorded one owner-safe scenario receipt,
-bind it to the exact admission and host-run ledgers:
+The live host receipt only admits the native host; it is not a task result. During each formal task, the benchmark runner submits only the canonical
+frozen task. It does not call `spawn_agent`. If native Codex Goal delegates a required role, the child user input must contain exactly one:
+
+```text
+<aico_boss_absent_role_assignment>
+{"version":1,"contract_sha256":"...","task_sha256":"...","task":{...},"sequence":1,
+ "role":"lead","consumed_checkpoint_sha256":null,
+ "artifact_contract":"final_agent_message_sha256"}
+</aico_boss_absent_role_assignment>
+```
+
+The independent observer reads the owner-private parent and child Codex session JSONL directly. It binds parent
+`spawn_agent → sub_agent_activity` to child `session_meta → task_started → turn_context → task_complete`, requires exact model/effort and
+read-only/no-network execution, hashes the final agent message as the artifact, and rejects hidden, extra, reused, or nested subagents. Raw thread,
+turn, prompt, and artifact text stay private.
+
+Scenario harness events are appended to `observations.json` through
+`IndependentCodexGoalScenarioObserver`. After role sessions, fixture/drift, approval, source pressure, external acceptance/test, budget, takeover,
+and terminal observations are complete, derive—not handwrite—the scenario receipt:
+
+```bash
+uv run aico-benchmark finalize-codex-goal-observations \
+  --contract /private/new-run/contract-for-embedded-cli.json \
+  --tasks benchmarks/boss-absent-v1/tasks.json \
+  --host-admission /private/new-run/codex/host-admission.json \
+  --host-run /private/new-run/codex/normal-release-audit/host-run.json \
+  --observations /private/new-run/codex/normal-release-audit/observations.json \
+  --output /private/new-run/codex/normal-release-audit/scenario-evidence.json
+```
+
+Then bind that receipt to the exact admission and host-run ledgers:
 
 ```bash
 uv run aico-benchmark finalize-codex-goal \

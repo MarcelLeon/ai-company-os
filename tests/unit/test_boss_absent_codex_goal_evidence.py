@@ -89,6 +89,7 @@ def _host_run(
         source=CodexGoalTurnSource.INITIAL_TASK,
         turn_sha256="1" * 64,
         opaque_input_sha256=canonical_sha256(task),
+        runtime_instance_sha256="a" * 64,
         goal_status_after="active",
         goal_tokens_before=0,
         goal_tokens_after=100,
@@ -105,7 +106,8 @@ def _host_run(
         source=source,
         previous_turn_sha256=first.turn_sha256,
         turn_sha256="2" * 64,
-        opaque_input_sha256="9" * 64,
+        opaque_input_sha256=("a" * 64 if task.approval_required else "9" * 64),
+        runtime_instance_sha256=("b" if task.restart_required else "a") * 64,
         goal_status_after="complete",
         goal_tokens_before=100,
         goal_tokens_after=220,
@@ -179,6 +181,7 @@ def _receipt(
         "task_id": task.task_id,
         "host_admission_sha256": canonical_sha256(admission),
         "host_run_sha256": canonical_sha256(host_run),
+        "role_chain_observation_sha256": "c" * 64,
         "observer_build": "harness-test",
         "events_sha256": "f" * 64,
         "terminal_status": BenchmarkTerminalStatus.COMPLETE,
@@ -274,13 +277,23 @@ def test_finalizer_rejects_unobserved_turn_or_same_restart_instance() -> None:
             _receipt(contract, task, admission, host_run, roles=unobserved),
         )
     same_runtime = (roles[0], roles[1].model_copy(update={"runtime_instance_sha256": "a" * 64}))
-    with pytest.raises(ValueError, match="no-replay restart"):
+    with pytest.raises(ValueError, match="runtime drifted"):
         finalize_codex_goal_benchmark_result(
             contract,
             task,
             admission,
             host_run,
             _receipt(contract, task, admission, host_run, roles=same_runtime),
+        )
+    second_turn = host_run.turns[1].model_copy(update={"runtime_instance_sha256": "a" * 64})
+    same_host_run = host_run.model_copy(update={"turns": (host_run.turns[0], second_turn)})
+    with pytest.raises(ValueError, match="no-replay restart"):
+        finalize_codex_goal_benchmark_result(
+            contract,
+            task,
+            admission,
+            same_host_run,
+            _receipt(contract, task, admission, same_host_run, roles=same_runtime),
         )
 
 

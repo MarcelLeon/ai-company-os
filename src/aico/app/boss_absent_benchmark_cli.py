@@ -69,6 +69,10 @@ from aico.app.boss_absent_codex_goal_probe import (
     CodexGoalProtocolReceipt,
     probe_codex_goal_protocol,
 )
+from aico.app.boss_absent_codex_goal_scenario_observer import (
+    IndependentCodexGoalScenarioObserver,
+    JsonCodexGoalScenarioObservationStore,
+)
 from aico.channel.telegram import TelegramChannel
 from aico.core.boss_absent_benchmark import (
     BenchmarkRate,
@@ -139,30 +143,8 @@ def run(
             return 0
         if args.command in {"probe-codex-goal-host", "probe-codex-app-host"}:
             return _run_codex_host_probe(args, output)
-        if args.command == "finalize-aico":
-            result = _finalize_aico(args)
-            output.write(
-                "AICO scenario evidence finalized: "
-                f"task={result.task_id} status={result.terminal_status.value} "
-                f"tokens={result.total_tokens}\n"
-            )
-            return 0
-        if args.command == "finalize-codex-goal":
-            result = _finalize_codex_goal(args)
-            output.write(
-                "Codex Goal scenario evidence finalized: "
-                f"task={result.task_id} status={result.terminal_status.value} "
-                f"tokens={result.total_tokens}\n"
-            )
-            return 0
-        if args.command == "finalize-aico-observations":
-            observation_receipt = _finalize_aico_observations(args)
-            output.write(
-                "AICO independent observations finalized: "
-                f"task={observation_receipt.task_id} "
-                f"events={observation_receipt.events_sha256}\n"
-            )
-            return 0
+        if args.command.startswith("finalize-"):
+            return _run_finalizer(args, output)
         if args.command == "advance-aico":
             state = asyncio.run(_advance_aico(args))
             output.write(
@@ -198,6 +180,40 @@ def run(
 
 def main() -> None:
     raise SystemExit(run())
+
+
+def _run_finalizer(args: argparse.Namespace, output: TextIO) -> int:
+    if args.command == "finalize-aico":
+        result = _finalize_aico(args)
+        output.write(
+            "AICO scenario evidence finalized: "
+            f"task={result.task_id} status={result.terminal_status.value} "
+            f"tokens={result.total_tokens}\n"
+        )
+        return 0
+    if args.command == "finalize-codex-goal":
+        result = _finalize_codex_goal(args)
+        output.write(
+            "Codex Goal scenario evidence finalized: "
+            f"task={result.task_id} status={result.terminal_status.value} "
+            f"tokens={result.total_tokens}\n"
+        )
+        return 0
+    if args.command == "finalize-codex-goal-observations":
+        codex_receipt = _finalize_codex_goal_observations(args)
+        output.write(
+            "Codex Goal independent observations finalized: "
+            f"task={codex_receipt.task_id} events={codex_receipt.events_sha256}\n"
+        )
+        return 0
+    if args.command == "finalize-aico-observations":
+        aico_receipt = _finalize_aico_observations(args)
+        output.write(
+            f"AICO independent observations finalized: task={aico_receipt.task_id} "
+            f"events={aico_receipt.events_sha256}\n"
+        )
+        return 0
+    raise AssertionError("unknown benchmark finalizer command")
 
 
 def _freeze_contract(args: argparse.Namespace) -> BossAbsentBenchmarkContract:
@@ -369,6 +385,35 @@ def _finalize_codex_goal(args: argparse.Namespace) -> BossAbsentTaskResult:
     )
     _write_new_model(args.output, result)
     return result
+
+
+def _finalize_codex_goal_observations(
+    args: argparse.Namespace,
+) -> CodexGoalScenarioEvidenceReceipt:
+    contract = _read_model(args.contract, BossAbsentBenchmarkContract)
+    task_set = _read_model(args.tasks, BossAbsentTaskSet)
+    admission = _read_model(args.host_admission, CodexGoalHostAdmissionReceipt)
+    host_run = _read_model(args.host_run, CodexGoalHostRunReceipt)
+    if canonical_sha256(task_set) != contract.task_set_sha256:
+        raise ValueError("benchmark task set fingerprint mismatch")
+    store = JsonCodexGoalScenarioObservationStore(args.observations)
+    ledger = store.load()
+    if ledger is None:
+        raise ValueError("Codex Goal scenario observation ledger is missing")
+    task = next((item for item in task_set.tasks if item.task_id == ledger.task_id), None)
+    if task is None:
+        raise ValueError("Codex Goal observation ledger references an unknown frozen task")
+    observer = IndependentCodexGoalScenarioObserver(
+        contract,
+        task,
+        admission,
+        host_run,
+        store,
+        observer_build=ledger.observer_build,
+    )
+    receipt = observer.build_receipt()
+    _write_new_model(args.output, receipt)
+    return receipt
 
 
 def _finalize_aico_observations(
@@ -1001,6 +1046,16 @@ def _add_codex_finalize_arguments(
     finalize.add_argument("--host-run", type=Path, required=True)
     finalize.add_argument("--scenario-evidence", type=Path, required=True)
     finalize.add_argument("--output", type=Path, required=True)
+    observations = subparsers.add_parser(
+        "finalize-codex-goal-observations",
+        help="Derive Codex Goal scenario evidence from an independent hash-chain ledger.",
+    )
+    observations.add_argument("--contract", type=Path, required=True)
+    observations.add_argument("--tasks", type=Path, required=True)
+    observations.add_argument("--host-admission", type=Path, required=True)
+    observations.add_argument("--host-run", type=Path, required=True)
+    observations.add_argument("--observations", type=Path, required=True)
+    observations.add_argument("--output", type=Path, required=True)
 
 
 def _add_im_arguments(parser: argparse.ArgumentParser) -> None:

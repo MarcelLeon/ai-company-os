@@ -4372,3 +4372,27 @@ ADR-0093 host admission/run能证明第一方宿主拥有续跑、turn链和prov
 - ADR-0093
 - B-015
 - `src/aico/app/boss_absent_codex_goal_evidence.py`
+
+### [P-130] 不同role/execution SHA字段不等于真实Codex subagent
+
+**状态**:🟢 RESOLVED(machine native-session observer; live samples pending B-015)
+**首次踩中**:Round 271
+**最后更新**:2026-07-23
+**影响范围**:Codex Goal collaboration evidence,hidden provider cost,restart attribution
+
+**症状与根因**
+在scenario receipt里增加`agent_identity_sha256`和`provider_execution_sha256`只能约束字段不同；若receipt可以直接填写，一个main
+thread仍可生成多组hash冒充multi-agent。额外/重复subagent若未进入required role列表，还可能隐藏provider成本和restart replay。
+
+**解决与预防**
+- 只从Codex Desktop parent `spawn_agent/sub_agent_activity`与child session metadata/turn events派生身份，不接受SUT自报ID。
+- child必须绑定parent thread和exact assignment envelope；provider turn必须在exact model/effort、never approval、read-only/no-network
+  context中完整结束，final agent message成为artifact。
+- parent所有started subagent必须与required child集合完全相等；child再次spawn、session复用、错误source host turn或runtime均拒绝。
+- 原始JSONL保持owner-private，score artifact只保存domain-separated SHA；场景receipt必须由hash-chain ledger派生。
+
+**相关链接**
+- ADR-0100
+- B-015
+- `src/aico/app/boss_absent_codex_goal_role_observer.py`
+- `src/aico/app/boss_absent_codex_goal_scenario_observer.py`

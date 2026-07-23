@@ -34,6 +34,10 @@
 - Independent Codex Goal scenario finalization:`aico-benchmark finalize-codex-goal`把native host admission/run与外部scenario
   receipt绑定为唯一可评分结果；required role逐项分开绑定Agent identity、provider execution、runtime instance、source turn、
   fixture和artifact消费链，防止单一Goal线程更换角色标签冒充multi-agent，并对称验证五类场景。
+- Native Codex Goal role/scenario observer:只读解析Codex Desktop parent `spawn_agent/sub_agent_activity`与child
+  `session_meta/task_started/turn_context/task_complete`，从第一方JSONL派生Agent/execution/runtime/source-turn/artifact消费链；
+  hidden/extra或nested Agent、模型/权限/终态漂移全部拒绝。场景事实写入owner-only hash-chain ledger，再由
+  `finalize-codex-goal-observations`派生正式receipt。
 - Restart-safe AICO benchmark runner:核心按frozen roles编排不同Agent，所有role共享同一remaining-token budget并消费前一artifact
   SHA；provider调用前原子保存稳定dispatch intent，跨进程只按id对账、unknown outcome禁止重放，restart必须更换runtime instance。
   scorer同步拒绝单Agent更换role label的伪协作；超预算provider usage即使不采信checkpoint也完整计入budget loss证据。

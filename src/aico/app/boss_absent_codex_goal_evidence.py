@@ -54,6 +54,7 @@ class CodexGoalScenarioEvidenceReceipt(FrozenModel):
     task_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,63}$")
     host_admission_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     host_run_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+    role_chain_observation_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     observer_kind: Literal["independent_harness"] = "independent_harness"
     observer_build: str = Field(min_length=1, max_length=128)
     events_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
@@ -216,9 +217,15 @@ def _validate_roles(
     fixture_sha = hashlib.sha256(task.fixture.encode("utf-8")).hexdigest()
     if any(role.input_fixture_sha256 != fixture_sha for role in receipt.roles):
         raise ValueError("Codex Goal scenario fixture fingerprint drifted")
-    turn_shas = {turn.turn_sha256 for turn in host_run.turns}
-    if any(role.source_turn_sha256 not in turn_shas for role in receipt.roles):
+    turns_by_sha = {turn.turn_sha256: turn for turn in host_run.turns}
+    if any(role.source_turn_sha256 not in turns_by_sha for role in receipt.roles):
         raise ValueError("Codex Goal role evidence references an unobserved host turn")
+    if any(
+        role.runtime_instance_sha256
+        != turns_by_sha[role.source_turn_sha256].runtime_instance_sha256
+        for role in receipt.roles
+    ):
+        raise ValueError("Codex Goal role evidence runtime drifted from its source turn")
     for index, role in enumerate(receipt.roles):
         expected = None if index == 0 else receipt.roles[index - 1].artifact_sha256
         if role.consumed_checkpoint_sha256 != expected:
@@ -298,6 +305,7 @@ def _validate_approval(
             or any(value is None for value in identity)
             or len(owner_turns) != 1
             or receipt.approval_turn_sha256 != owner_turns[0].turn_sha256
+            or receipt.approval_grant_sha256 != owner_turns[0].opaque_input_sha256
         ):
             raise ValueError("Codex Goal approval scenario did not preserve the approval fence")
         return

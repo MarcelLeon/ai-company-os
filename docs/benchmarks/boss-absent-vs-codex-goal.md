@@ -91,5 +91,7 @@ per-thread session、restart后`source="goal"`完整turn、Goal/provider usage�
 token budget被正确拒绝；尚缺owner授权的isolated fork/restart真实样本。
 Round 270补齐Codex Goal正式结果边界：native host run不能直接进入scorer，必须再由独立scenario receipt逐项绑定required role的
 不同Agent identity与provider execution、runtime instance、source turn、frozen fixture与artifact消费链，并对称关闭五类场景门禁。
+Round 271再把receipt来源收紧到Codex Desktop原生parent/child session JSONL和owner-only scenario hash-chain ledger；
+hidden/extra/nested Agent、错误模型/权限、无关source消费或手写场景flag均不能进入finalizer。
 首次正式对比仍须另行授权实际模型调用并由isolated harness注入五类事件；
 不能把protocol receipt、实现测试或synthetic fixture反向当成benchmark成绩。

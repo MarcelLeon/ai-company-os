@@ -61,6 +61,7 @@ class CodexGoalHostTurnReceipt(FrozenModel):
     previous_turn_sha256: Sha256 | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     turn_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     opaque_input_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+    runtime_instance_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     goal_status_after: GoalStatus
     goal_tokens_before: int = Field(ge=0)
     goal_tokens_after: int = Field(ge=0)
