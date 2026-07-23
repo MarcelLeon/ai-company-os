@@ -267,7 +267,7 @@ owner-bound grant：
 ```bash
 install -m 600 docs/examples/standing-autonomy.example.json \
   /absolute/private/aico-standing-autonomy.json
-# 编辑外部文件：替换 identity/binding/expiry/run/duration/token threshold，保留 mode=read_only
+# 编辑外部文件：替换 identity/binding/expiry/run/duration/max_total_tokens/token threshold，保留 mode=read_only
 export AICO_STANDING_AUTONOMY_GRANT_PATH="/absolute/private/aico-standing-autonomy.json"
 uv run aico-service --repo . doctor
 ```
@@ -278,8 +278,9 @@ boundary；检查过程不创建state/log/lock、不调用CLI或网络。`grant 
 
 该文件必须是当前用户所有的普通文件、`0600`、位于所有 managed project repo 之外；示例中的
 `replace-with-*` 不能启动。grant 的 channel/target/thread/project 必须与上面的 scheduled morning 配置逐字段一致，
-charter 必须任命给 executable 为 `codex` 的 Codex Adapter。运行时固定使用 read-only、no-network、no-resume、
-no-collaboration 命令，并在 dispatch 前扣除持久化 `max_runs`。`/inbox`、手工 `/morning`、`/proposals` 和 runtime
+charter 必须任命给 executable 为 `codex` 的 Codex Adapter，并配置不超过8个bounded `evidence_sources`。运行时只向模型提供
+不超过64 KiB的allowlisted path/line片段，固定使用 read-only、tool-free、no-network、no-resume、no-collaboration 命令，
+并在 dispatch 前扣除持久化 `max_runs`。`/inbox`、手工 `/morning`、`/proposals` 和 runtime
 startup 本身永远不会消费 grant。
 
 先用 `max_runs=1`、短 `max_duration_seconds` 和保守`token_stop_threshold`验收；确认 task history 写入 preauthorized grant identity、输出只回
@@ -290,7 +291,8 @@ startup 本身永远不会消费 grant。
 `interrupted`表示timeout/restart中断，`failed/rejected`需要`/task <id>`，`evidence_missing`表示预算已扣但没有匹配的
 task/grant evidence或provider usage缺失。后者是保守的at-most-once crash window，必须人工核对，禁止自动换grant重跑。
 terminal receipt的`tokens=N`来自Codex `turn.completed`，同grant累计值达到`token_stop_threshold`后下一次run才停授；
-因此它不是当前run硬上限，也不等于美元计费、provider质量或远端IM业务验收。
+`budget=within_limit/N`或`budget=exceeded/N`则按grant的单次`max_total_tokens`与同一usage比较。超过时usage仍留存、结果不采信；
+该token envelope仍不等于美元计费、provider内部quota、provider质量或远端IM业务验收。
 
 Round 238起，实际dispatch还会生成独立`Scheduled autonomy outcome`：source status/outcome/criteria/source/evidence或failure
 从authoritative proposal/task/result投影，exact content先写主state DB再发送。平台失败只按同一notification重试，不会重跑

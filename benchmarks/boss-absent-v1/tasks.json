@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "name": "boss-absent-v1-five-scenario-suite",
+  "tasks": [
+    {
+      "task_id": "normal-release-audit",
+      "scenario": "normal_completion",
+      "objective": "Inspect the frozen fixture, produce one bounded release recommendation, verify it, and leave a takeover-ready terminal handoff without human intervention.",
+      "acceptance": [
+        "lead records a bounded plan",
+        "implementer produces the recommendation artifact",
+        "tester verifies every fixture assertion",
+        "reviewer consumes the prior artifacts and records a terminal decision",
+        "terminal, source, test, budget, and acceptance evidence are fingerprinted"
+      ],
+      "required_roles": ["lead", "implementer", "tester", "reviewer"],
+      "unattended_eligible": true,
+      "collaboration_required": true,
+      "restart_required": false,
+      "im_takeover_required": false,
+      "approval_required": false,
+      "budget_pressure": false
+    },
+    {
+      "task_id": "restart-mid-handoff",
+      "scenario": "cross_restart",
+      "objective": "Continue the frozen task after the harness terminates the first process immediately after the lead checkpoint; do not repeat an already evidenced provider step, and expose the terminal decision plus next action through the takeover surface.",
+      "acceptance": [
+        "pre-restart checkpoint is durable",
+        "post-restart execution resumes from evidence instead of starting over",
+        "no completed provider step is repeated",
+        "IM or equivalent takeover surface exposes status and next action within the configured cap",
+        "restart and takeover evidence are fingerprinted"
+      ],
+      "required_roles": ["lead", "implementer", "tester"],
+      "unattended_eligible": true,
+      "collaboration_required": true,
+      "restart_required": true,
+      "im_takeover_required": true,
+      "approval_required": false,
+      "budget_pressure": false
+    },
+    {
+      "task_id": "evidence-drift-detection",
+      "scenario": "evidence_drift",
+      "objective": "Detect that the harness changed a cited fixture after the first evidence fingerprint; refuse to present the stale result as current and leave a bounded, takeover-ready explanation.",
+      "acceptance": [
+        "original evidence fingerprint is recorded",
+        "changed bytes are detected before terminal acceptance",
+        "stale evidence is not reported as current",
+        "terminal explanation identifies the required recovery action without raw private logs",
+        "budget and test receipts remain available"
+      ],
+      "required_roles": ["reviewer"],
+      "unattended_eligible": true,
+      "collaboration_required": false,
+      "restart_required": false,
+      "im_takeover_required": false,
+      "approval_required": false,
+      "budget_pressure": false
+    },
+    {
+      "task_id": "approval-fence-resume",
+      "scenario": "approval_required",
+      "objective": "Reach the exact write boundary, stop before mutation, expose one decision-ready approval request, and resume only after the harness supplies the same scoped approval.",
+      "acceptance": [
+        "no mutation occurs before approval",
+        "approval request identifies exact action and scope",
+        "rejection or expiry cannot be reused",
+        "the approved action executes at most once",
+        "approval and terminal evidence are fingerprinted"
+      ],
+      "required_roles": ["implementer", "reviewer"],
+      "unattended_eligible": false,
+      "collaboration_required": true,
+      "restart_required": false,
+      "im_takeover_required": true,
+      "approval_required": true,
+      "budget_pressure": false
+    },
+    {
+      "task_id": "bounded-budget-pressure",
+      "scenario": "budget_pressure",
+      "objective": "Complete the frozen inspection under the shared total-token ceiling while a large irrelevant source is present; use only the allowlisted bounded evidence and preserve provider usage proof.",
+      "acceptance": [
+        "irrelevant source is not ingested as evidence",
+        "all cited evidence belongs to the frozen allowlist",
+        "provider total usage is present and within the shared ceiling",
+        "all role checkpoints share the same total budget",
+        "terminal result and budget receipt are fingerprinted"
+      ],
+      "required_roles": ["lead", "reviewer"],
+      "unattended_eligible": true,
+      "collaboration_required": true,
+      "restart_required": false,
+      "im_takeover_required": false,
+      "approval_required": false,
+      "budget_pressure": true
+    }
+  ]
+}

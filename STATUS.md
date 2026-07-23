@@ -3,12 +3,13 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-07-22
-**当前轮次**:Round 256(Standing autonomy real acceptance)
+**最后更新**:2026-07-23
+**当前轮次**:Round 263(Exact-model TaskBus benchmark transport)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是个人开发者可直接使用的远程IM指挥、
-owner-bound standing autonomy、durable result/outcome delivery与真实日常dogfood。风险审批、owner ingress、
+owner-bound standing autonomy、durable result/outcome delivery与真实日常dogfood。新目标已启动：在相同模型、任务集和总预算下，
+让boss-absent AICO在无人值守完成率、跨Agent协作、接手成本、预算失控率和证据完整度上优于当前Codex Goal基线。风险审批、owner ingress、
 授权时钟、tamper-evident ledger、scheduled backup/custody/retention/drill和required component incident均已形成机器合同；所有local
 receipt继续不冒充off-device来源、full business recovery或老板已读。当前state schema v13、receiver/evidence schema v5，
 recovery-set schema v6仍固定`business_restore_ready=false`。默认与交互入口不自执行；Round 200-249累计补齐durable runtime、
@@ -21,6 +22,150 @@ recovery/alert/dead-man、component DR primitive和bounded/auditable autonomy，
 Round 241为独立receiver增加可选different-origin fallback与1-of-2/2-of-2 ACK quorum；schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝配置漂移，原2-of-2事件不能在重启后被1-of-2降级结算。单通知provider或credential失效不再必然切断老板通知，但不同URL、local ACK和unit test仍不冒充真实provider/账号/网络独立或human read。
 
 Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增加默认关闭、显式opt-in的`silent-route-probe-v1`：复用真实双route URL/token/POST，exact intent跨restart；一个失败窗口为suspect/PENDING，连续达到阈值才通过既有edge主动告警，ACK后恢复。bridge不能证明silent handling时必须保持disabled，local ACK不冒充human read或commercial HA。Round 244新增strict install admission，Round 245让它贯穿每次runtime启动；Round 246再要求incident alert与dead-man pulse使用不同exact URL及不同非空bearer，防止两个strict协议共用authority却判绿。Round 247检测运行中dotenv代际漂移；Round 248让dead-man当前验收显式拒绝超龄artifact、过期/未完成probe和非healthy route；Round 249把reviewed config、dotenv generation与strict evidence绑定成expiring commissioning receipt并持续纳入required health。Round 200-249累计合同以本段和下方最新Round为准。
+
+---
+
+## Round 263 完成:Exact-model TaskBus benchmark transport
+
+- [x] preauthorized task新增可选且成对的exact model/reasoning effort合同；benchmark缺Adapter机器能力时provider调用前拒绝，
+  既有standing-autonomy未携带该metadata的任务保持兼容。
+- [x] Codex Adapter的benchmark只读命令显式传递`--model`与`model_reasoning_effort` strict config；本机仅运行`--help`
+  参数解析烟测，不调用模型、不消费token。
+- [x] 新增真实`TaskBusAicoBenchmarkRuntime`：role经TaskBus/Adapter提交和收集，provider usage缺失或非DONE拒绝；
+  frozen role映射不同agent id，下一role只读取前一内容寻址artifact的exact SHA。
+- [x] artifact与observation receipt均owner-only；provider成功后先持久receipt再返回runner，新runtime可按stable dispatch id恢复。
+  确定性preflight拒绝或授权已过期时不再写pending intent，未知provider outcome仍保持`dispatch_ambiguous`且禁止盲重放。
+- [x] restart集成测试由第二个runtime instance读取同一0600 state/artifact/receipt继续reviewer，完成distinct-agent role chain、
+  exact checkpoint消费和shared usage记账。
+- [x] 新增ADR-0096、Goal Brief与P-119；定向`45 passed`；精确排除外部0字节配置影响的3条release-room测试后root
+  `1104 passed, 1 skipped, 3 deselected`，未排除时仅这3条失败；SME `53 passed`。Ruff、root/SME mypy(247/37 files)、
+  root/SME format、结构、CLI no-model参数解析与diff通过。
+- [ ] 当前role target仍是runtime配置身份，尚未绑定正式project assignment/独立provider session；scenario receipt也仍缺真实
+  filesystem/process/approval/Telegram/source collector。因此本轮不产生benchmark成绩，不宣称已强于Codex Goal。
+
+---
+
+## Round 262 完成:Independent AICO scenario evidence finalization
+
+- [x] 新增独立harness scenario receipt与纯finalizer；绑定contract/task/role-state/observer/events SHA，执行系统不再用自身
+  `role_chain_complete`直接声称task complete。
+- [x] finalizer再次验证frozen role order、distinct agent、checkpoint chain、terminal消费final artifact、shared provider usage与present
+  budget receipt，再生成schema-valid `BossAbsentTaskResult`。
+- [x] 五类scenario机器门禁完成：restart要求不同runtime/exact一次generation/零dispatch replay；approval要求exact request+grant、
+  审批前零mutation和一个人工介入；drift要求injected+detected且不发布stale；budget pressure要求暴露但不消费irrelevant source；
+  IM takeover要求actions/seconds/evidence完整。
+- [x] 新增`aico-benchmark finalize-aico`：bounded regular JSON输入、frozen task-set SHA/identity复核、fresh output-only；不调用模型、不改state。
+- [x] 新增ADR-0095、Goal Brief与P-118；AICO evidence/runner/benchmark定向`37 passed`；exact deselect外部0字节配置影响的3条
+  release-room tests后root `1096 passed, 1 skipped, 3 deselected`，SME `53 passed`；Ruff、root/SME mypy(245/37 files)、
+  35个变更Python与SME format、CLI help和diff通过。
+- [ ] 当前scenario receipt仍由no-model fake harness生成；下一切片需实现真实fault/filesystem/approval/Telegram collector与TaskBus/Adapter
+  transport，fixture不得进入正式成绩。
+
+---
+
+## Round 261 完成:Restart-safe AICO managed multi-agent runner
+
+- [x] 明确standing-autonomy single-response安全边界不能直接证明multi-agent；新增AICO benchmark runtime Protocol与admission，
+  绑定exact model/effort、isolated state、managed roles、hard remaining-token cap、provider usage和durable reconciliation。
+- [x] runner按frozen `required_roles`顺序派发不同Agent；每个role消费前一artifact SHA，所有role共享一个task总预算，
+  `remaining_tokens`随已观察provider usage递减，禁止按角色扩预算。
+- [x] provider调用前原子落owner-only `0600` stable dispatch intent；runner crash后只按dispatch id调用`recover_role`，unknown outcome保持
+  `dispatch_ambiguous`且不重放provider。state拒绝symlink、identity/pending/checkpoint drift。
+- [x] restart task在首checkpoint后进入`restart_pending`，后续checkpoint必须来自不同runtime instance SHA；超预算或blocked/failed
+  observation保留实际usage和observation SHA，不因checkpoint未采信而隐藏budget loss。
+- [x] 修复benchmark协作指标漏洞：每个required role必须恰有一个checkpoint且来自不同`agent_id`；单Agent切换role label不再得分。
+- [x] 新增ADR-0094、Goal Brief与P-117；runner+benchmark定向`26 passed`；exact deselect外部0字节配置影响的3条
+  release-room tests后root `1085 passed, 1 skipped, 3 deselected`，SME `53 passed`；Ruff、root/SME mypy(243/37 files)、
+  33个变更Python与SME format、diff通过。
+- [ ] `role_chain_complete`仍是中间态，不是可评分terminal result；下一切片需接入approval/evidence-drift/budget-pressure/IM takeover及
+  terminal/source/test/acceptance receipts，再连接真实TaskBus/Codex Adapter runtime。
+
+---
+
+## Round 260 完成:Native Codex Goal host continuation contract
+
+- [x] generated 0.144.5 app-server schema审计确认：Goal API只提供objective/status/budget/usage；协议没有automatic continuation方法，
+  `turn/start`仍要求调用方提交input。app-server因此只算control plane/observation surface，不能独立代表Codex Goal宿主。
+- [x] 新增ADR-0093与native host admission：formal baseline必须冻结第一方host build，并证明native continuation、persistent resume、
+  isolated state、provider usage observation与default capability边界；standalone app-server或runner constructed input直接拒绝。
+- [x] 新增无raw prompt turn/run ledger：只保存opaque input/turn SHA、来源、Goal状态、双usage与介入次数；initial task、native host
+  continuation、owner takeover、harness injection严格分源，只有owner takeover计human intervention。
+- [x] sequence、previous SHA、跨turn token continuity、Goal delta/provider total、frozen budget和terminal stop全部fail closed；
+  host admission/ledger只证明baseline身份和证据完整性，不产生任务完成或胜出结论。
+- [x] 新增Goal Brief与P-116；Codex Goal/benchmark定向`37 passed`；exact deselect外部0字节配置影响的3条release-room tests后
+  root `1074 passed, 1 skipped, 3 deselected`，SME `53 passed`；Ruff、root/SME mypy(241/37 files)、变更文件format与diff通过。
+  全仓format只报告未触碰的既有`projects/data-agent-v1/src/data_agent_v1/engine.py`。
+- [ ] formal runner仍缺可编程的第一方Codex host adapter/build receipt；在此之前不允许用standalone app-server自造continue loop替代。
+- [ ] 尚未启动任何正式模型benchmark；当前仍没有AICO vs Codex Goal真实成绩，禁止“强于Codex Goal”声明。
+
+---
+
+## Round 259 完成:Persistent Codex Goal baseline admission
+
+- [x] 本机`codex-cli 0.144.5`能力审计确认：`codex exec`没有Goal接口；真实baseline必须走app-server
+  `thread/start`、`thread/goal/set|get|clear`与后续`turn/start`，否则测到的是错误对象。
+- [x] schema与live no-model探测确认Goal拒绝ephemeral thread。新增`aico-benchmark probe-codex-goal`，从frozen contract绑定exact
+  CLI/model/token budget，创建persistent read-only/no-network thread，要求active/0 tokens/0 seconds，再clear Goal和delete thread。
+- [x] 直接共享桌面`CODEX_HOME`出现过SQLite state runtime初始化失败；probe改用run-isolated owner-only Codex home，成功receipt不含
+  thread ID/path/prompt/identity，正常结束删除全部isolated state。
+- [x] thread创建后立即落`0600` cleanup intent；断线保留intent+isolated home，下次启动先重连删除旧thread。新增ADR-0092、
+  Goal Brief与P-115；external create/local intent不可原子提交的微小crash window保持公开。
+- [x] installed CLI live验收：persistent=true、model=`gpt-5.6-sol`、budget=50,000、tokens/time=0、goal cleared、thread deleted、
+  isolated home/cleanup intent均已删除；未调用`turn/start`、未消费模型token。
+- [x] 新增app-server turn transport接口与offline supervisor：固定exact model/effort/never approval，等待matching `turn/completed`和
+  `thread/tokenUsage/updated`，再以Goal tokens delta交叉验证provider total；缺失、非complete或不一致fail closed。
+- [x] supervisor继续覆盖`turn/interrupt`的durable interrupted确认，以及新app-server `thread/resume`后model/sandbox/approval与
+  Goal tokens保留；当前仍不自动猜测Codex host的continuation prompt。
+- [x] isolated owner-only home挂载现有`auth.json`符号链接的local status probe返回`Logged in using ChatGPT`；未复制secret、未发模型请求，
+  Codex临时helper与home均已删除。正式turn仍需owner预算授权。
+- [x] benchmark/Goal admission+turn定向`25 passed`；exact deselect外部0字节配置影响的3条release-room tests后root
+  `1062 passed, 1 skipped, 3 deselected`；SME`53 passed`；Ruff、root/SME mypy(239/37 files)、format、结构、JSON和diff通过。
+- [ ] 正式Codex Goal runner仍缺owner-authorized isolated credential injection、turn supervision、continuation与scenario receipt采集；
+  admission receipt不产生任何胜负结论。
+
+---
+
+## Round 258 完成:Evidence-first boss-absent benchmark runner
+
+- [x] 冻结`benchmarks/boss-absent-v1/tasks.json`五类scenario，canonical SHA为
+  `cb4898fed0a958a5778dd8744bbe910c2e179a3918a03153ed07cabd14ef9f34`；两侧共享model、reasoning、revision、window和
+  单一总token budget，AICO多Agent usage必须聚合到task。
+- [x] 新增contract/result/summary/verdict机器合同与deterministic scorer；漏task保留在completion/evidence分母，漏usage/超预算计
+  budget loss，漏takeover按cap+1惩罚，unknown/duplicate/drifted result和伪造checkpoint/evidence hash fail closed。
+- [x] `aico-benchmark freeze|score`完成有界non-symlink输入、duplicate-key/non-finite JSON拒绝、新目录only输出和0/1/2退出语义；
+  installed CLI实跑完成help、freeze和拒绝二次覆盖。新增Accepted ADR-0091、Goal Brief与harness/result记录说明。
+- [x] 新增equal-observation `dry-run`：两侧各5条result、100条synthetic scenario events经同一scorer得到`aico_wins=false`/0项更优；
+  另为两侧启动helper、落durable checkpoint、真实SIGTERM并由新进程校验exact SHA，receipt绑定result；不冒充被测系统恢复或正式成绩。
+- [x] 胜出同时要求五项至少四项严格更优、无人值守和预算严格更优，并要求AICO全task dispatch/complete、全协作、零预算失控、
+  complete样本全证据和restart/IM/approval独立证据；relative score不能绕过商业可用绝对线。
+- [x] benchmark定向`14 passed`；排除外部0字节release-room配置直接导致的exact 3 tests后root`1051 passed, 1 skipped,
+  3 deselected`；SME`53 passed`；Ruff、root/SME mypy(235/37 source files)、root/SME format、变更JSON与diff通过。
+- [ ] 当前只完成synthetic scorer/CLI/event harness与fake process restart probe，不产生正式胜负结论；下一切片仍需isolated
+  system executor采集真实usage/checkpoint/drift/approval/budget receipts，
+  正式两侧模型benchmark必须owner另行授权。
+- [ ] `examples/release-room/aico-project.json`仍是外部0字节改动；最近一次未deselect full root准确结果为`3 failed, 1048 passed,
+  1 skipped`（随后新增3条benchmark tests已单独/排除外因后通过），本轮未恢复、未stage，也不把这3条失败归因于benchmark代码。
+
+---
+
+## Round 257 完成:Tool-free budgeted standing evidence pack + benchmark contract
+
+- [x] grant schema升级v2并强制`max_total_tokens`；Phase 1 preflight同时验证read-only与budget Adapter能力。Codex预授权命令把owner
+  limit写入rollout budget/context window，并显式禁用shell、unified exec、multi-agent、apps、browser、computer、image与web工具。
+- [x] standing charter新增bounded `evidence_sources`；系统生成最多8源、1 MiB/源、384行/片段、64 KiB总量的fingerprinted pack，
+  prompt只含allowlisted原始path/line。absolute/traversal/symlink/non-UTF8/marker ambiguity/oversize/drift全部fail closed。
+- [x] result只能引用pack列出的行；provider terminal usage超过`max_total_tokens`时usage仍durable保存但result不采信，outcome/morning/
+  inbox明确显示`budget=within_limit|exceeded`。`token_stop_threshold`继续只表示下一run前累计熔断。
+- [x] 当前AICO/SME真实配置pack分别约29.0K/40.8K字符；326 KiB的AICO `STATUS.md`只暴露116行目标片段，不再整文件进模型。
+- [x] 新增Accepted ADR-0090、Goal Brief和`boss-absent-vs-codex-goal` benchmark v1；冻结五项指标、公平合同和胜出条件，
+  当前不宣称已优于Codex Goal。
+- [x] 定向339 tests、full root`1040 passed, 1 skipped`、SME`53 passed`、Ruff、root/SME mypy(230/37 source files)、
+  format、133生产文件/2725 definitions、JSON、Compose与diff通过；本轮未创建grant、调用付费provider、发送Telegram、
+  修改`.env`/LaunchAgent。
+- [ ] gate后出现非本轮并发改动：`examples/release-room/aico-project.json`被清为0字节，最终full rerun因此有3条JSON parse失败；
+  排除该文件对应3个test files后`1035 passed, 1 skipped`。本轮不擅自恢复、不纳入交付，后续stage/commit必须显式排除。
+- [ ] B-014只剩一次owner-authorized v2真实定时复验：必须同时得到`budget=within_limit`、`outcome=complete`、
+  `evidence=current`和delivery/criteria/source全覆盖；Codex response后记账及美元quota残余边界保持诚实。
 
 ---
 
@@ -3277,13 +3422,23 @@ AICO 的产品边界是 absence-first:
 
 > Agent 接手时,如果没有明确任务,从这里挑最高优先级。
 
-1. **【最高】Boss-absent 单次硬预算 + bounded evidence pack**:
-   - Round 256已证明真实scheduled morning、Telegram ACK、只读Codex、durable usage/outcome和`max_runs=1`第二次阻断；控制面通过。
-   - 当前不能上线：一次inspection实耗227,252 tokens，而50,000 threshold只能阻止下一次run；结果又因引用324 KiB的`STATUS.md`
-     超过256 KiB source cap而`invalid/source_too_large`。在修复前保持standing autonomy disabled，不再付费重验。
-   - 下一切片先选择可执行的单次硬token/cost边界；若Provider无可靠硬限额，就改为系统生成小型、指纹化、allowlisted evidence pack，
-     不允许Agent遍历`STATUS.md`/`ROUNDS.md`等大文件。随后再用新的`max_runs=1` grant做一次`outcome=complete + evidence=current`验收，见B-014。
-2. **【OWNER 已暂停】独立 dead-man receiver 部署 + 真实 outage sample**:
+1. **【最高】Boss-absent isolated system turn runner**:
+   - Round 259已证明Codex Goal必须走persistent app-server并完成no-model admission；Round 260进一步冻结native Codex host
+     continuation边界；Round 258已有frozen tasks/scorer/dry-run。
+     当前仍没有真实AICO/Codex turn结果，禁止提前写“强于Codex Goal”。
+   - AICO managed role runner、五类scenario finalizer与exact-model TaskBus/Adapter transport已完成shared budget、distinct agents、
+     dispatch reconciliation、restart、approval/drift/source-pressure/IM takeover机器合同；下一切片实现真实independent harness
+     collector，并把role target绑定正式project assignment与独立provider session证据。
+     Codex侧仍必须等待可编程native host adapter/build receipt，禁止自创continuation prompt。
+   - receipt采集与scorer分离；Goal tokensUsed、turn/provider usage任一缺失或不一致都按budget loss，不能信被测系统自报。
+   - 任何正式模型benchmark需owner另行授权，且必须使用冻结contract和真实provider usage，见
+     `docs/benchmarks/boss-absent-vs-codex-goal.md`与ADR-0091。
+2. **【OWNER 真实授权后】B-014 v2 standing autonomy 一次性复验**:
+   - 机器缺口已由ADR-0090关闭；签发新的external `0600` schema-v2 grant，`max_runs=1`，只跑一次当前AICO pack。
+   - 必须看到delivery/intent/outcome delivered、`status=done`、`budget=within_limit`、`outcome=complete`、
+     `evidence=current`和criteria/source全覆盖；任何越界/usage缺失按失败留证，不换grant重跑。
+   - 通过后才关闭B-014并讨论默认启用层级；token envelope不升级为美元hard quota。
+3. **【OWNER 已暂停】独立 dead-man receiver 部署 + 真实 outage sample**:
    - Round 255起不再跟进、不作为发布或goal阻塞；以下内容只保留未来重开时的历史上下文。
    - Round 210 已完成可部署 receiver、持久 armed/current/outage/outbox、auth、worker-progress readiness、evidence export/verifier、容器和 runbook；当前只缺
      第二故障域、TLS/secret/owner notification endpoint 与真实 kill/launch-failure/network open-resolved 样本,见 B-012。
@@ -3293,7 +3448,7 @@ AICO 的产品边界是 absence-first:
      一次 resolved。每类导出bundle并用strict offline verifier及`aico-commission`绑定当前runtime generation，同时保存host/TLS/fault操作证据；
      永久 uninstall 前显式 disarm,普通 stop/restart不解除监控。
    - ADR-0088已Accepted并完成Ed25519 signed evidence envelope；它不改变本项owner-paused状态，也不阻塞普通用户启动。
-3. **【OWNER 已暂停】全资产 off-device 备份策略 + 隔离checkout业务恢复演练**:
+4. **【OWNER 已暂停】全资产 off-device 备份策略 + 隔离checkout业务恢复演练**:
    - Round 255起不再跟进、不作为发布或goal阻塞；以下内容只保留未来出现明确数据损失成本时的历史上下文。
    - Round 211-212 已完成主SQLite recovery primitive；Round 223-225完成tamper-evident audit与owner-fenced recovery；
      Round 227完成同等级memory recovery并用bounded-window core set绑定三者；Round 228绑定独立reviewed Git revision/config；

@@ -32,7 +32,14 @@ from aico.core.models import (
 )
 from aico.core.preauthorized_execution import (
     PREAUTHORIZED_GRANT_ID_KEY,
+    PREAUTHORIZED_MAX_TOTAL_TOKENS_KEY,
     task_with_preauthorized_execution,
+)
+from aico.core.standing_evidence_pack import (
+    StandingEvidencePack,
+    StandingEvidencePackError,
+    render_standing_evidence_pack,
+    standing_evidence_pack_sha256,
 )
 from aico.core.standing_proposal import (
     StandingProposal,
@@ -55,6 +62,7 @@ _MAX_GRANT_FILE_BYTES = 65_536
 _MAX_RECEIPT_EVIDENCE_CHECKS = 5
 _PLACEHOLDER_ID_FRAGMENTS = ("replace-with", "replace-me", "<", ">")
 SCHEDULED_AUTONOMY_INTENT_ID_KEY = "aico.scheduled_autonomy_intent_id"
+STANDING_EVIDENCE_PACK_SHA256_KEY = "aico.standing_evidence_pack_sha256"
 log = logging.getLogger(__name__)
 
 PreauthorizedTaskRunner = Callable[
@@ -65,6 +73,7 @@ PreauthorizedPreflight = Callable[[Task], str | None]
 TaskUsageLookup = Callable[[str], TaskUsage | None]
 TaskStatusLookup = Callable[[str], TaskStatus | None]
 EvidenceRootLookup = Callable[[str], Path | None]
+EvidencePackLookup = Callable[[StandingProposal], StandingEvidencePack]
 AuthorizationTimeRefusal = Callable[[], str | None]
 
 
@@ -84,6 +93,7 @@ class StandingAutonomyGrant(FrozenModel):
     expires_at: datetime
     max_runs: int = Field(ge=1, le=1000)
     max_duration_seconds: float = Field(ge=0.01, le=3600)
+    max_total_tokens: int = Field(ge=16_384, le=1_000_000)
     token_stop_threshold: int = Field(ge=1, le=1_000_000_000)
 
     @model_validator(mode="after")
@@ -109,7 +119,7 @@ class StandingAutonomyGrant(FrozenModel):
 
 
 class StandingAutonomyGrantSet(FrozenModel):
-    version: Literal[1] = 1
+    version: Literal[2] = 2
     grants: tuple[StandingAutonomyGrant, ...] = ()
 
     @model_validator(mode="after")
@@ -150,6 +160,11 @@ class StandingAutonomyOutcomeStatus(StrEnum):
     BLOCKED = "blocked"
     INVALID = "invalid"
     DRIFTED = "drifted"
+
+
+class StandingAutonomyBudgetStatus(StrEnum):
+    WITHIN_LIMIT = "within_limit"
+    EXCEEDED = "exceeded"
 
 
 class StandingAutonomyRunDisposition(StrEnum):
@@ -200,6 +215,8 @@ class StandingAutonomyReceipt(FrozenModel):
     finished_at: datetime | None = None
     elapsed_seconds: float | None = Field(default=None, ge=0)
     total_tokens: int | None = Field(default=None, ge=0)
+    max_total_tokens: int | None = Field(default=None, ge=1)
+    budget_status: StandingAutonomyBudgetStatus | None = None
     outcome_status: StandingAutonomyOutcomeStatus
     criteria_met: int | None = Field(default=None, ge=0)
     criteria_total: int | None = Field(default=None, ge=1)
@@ -248,6 +265,7 @@ class StandingAutonomyCoordinator:
         usage_for_task: TaskUsageLookup,
         status_for_task: TaskStatusLookup,
         evidence_root_for_project: EvidenceRootLookup,
+        evidence_pack_for_proposal: EvidencePackLookup,
         authorization_time_refusal: AuthorizationTimeRefusal,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
@@ -259,6 +277,7 @@ class StandingAutonomyCoordinator:
         self._usage_for_task = usage_for_task
         self._status_for_task = status_for_task
         self._evidence_root_for_project = evidence_root_for_project
+        self._evidence_pack_for_proposal = evidence_pack_for_proposal
         self._authorization_time_refusal = authorization_time_refusal
         self._clock = clock
 
@@ -300,11 +319,20 @@ class StandingAutonomyCoordinator:
         usage_refusal = self._usage_refusal(grant)
         if usage_refusal is not None:
             return await self._hold(target, proposal, usage_refusal, intent_id=intent_id)
+        try:
+            evidence_pack = self._evidence_pack_for_proposal(proposal)
+        except StandingEvidencePackError:
+            return await self._hold(
+                target,
+                proposal,
+                "bounded evidence pack unavailable",
+                intent_id=intent_id,
+            )
         message = _grant_message(target, grant, proposal)
         prepared = self._proposals.prepare_task(
             message,
             proposal,
-            payload=_preauthorized_prompt(proposal),
+            payload=_preauthorized_prompt(proposal, evidence_pack),
         )
         if prepared is None:
             return await self._hold(
@@ -314,7 +342,7 @@ class StandingAutonomyCoordinator:
                 intent_id=intent_id,
             )
         task, _ = prepared
-        task = _secure_preauthorized_task(task, grant)
+        task = _secure_preauthorized_task(task, grant, evidence_pack)
         task = _task_with_scheduled_intent(task, intent_id)
         refusal = self._preflight(task)
         if refusal is not None:
@@ -348,6 +376,8 @@ class StandingAutonomyCoordinator:
             task=task,
             output=output,
             intent_id=intent_id,
+            grant=grant,
+            evidence_pack=evidence_pack,
         )
 
     async def _record_completed_dispatch(
@@ -359,6 +389,8 @@ class StandingAutonomyCoordinator:
         task: Task,
         output: str,
         intent_id: str,
+        grant: StandingAutonomyGrant,
+        evidence_pack: StandingEvidencePack,
     ) -> StandingAutonomyRunReceipt:
         usage = self._usage_for_task(task.task_id)
         if usage is None:
@@ -370,6 +402,14 @@ class StandingAutonomyCoordinator:
             )
             return _recorded_run_receipt(intent_id, accepted)
         recorded = self._proposals.record_usage(accepted, usage)
+        if usage.total_tokens > grant.max_total_tokens:
+            await self._hold(
+                target,
+                recorded,
+                "single-run token budget exceeded",
+                intent_id=intent_id,
+            )
+            return _recorded_run_receipt(intent_id, recorded)
         if self._status_for_task(task.task_id) is not TaskStatus.DONE:
             await self._hold(
                 target,
@@ -383,6 +423,7 @@ class StandingAutonomyCoordinator:
             acceptance_evidence=proposal.acceptance_evidence,
             stop_conditions=proposal.stop_conditions,
             evidence_root=self._evidence_root_for_project(proposal.project_id),
+            evidence_pack=evidence_pack,
             clock=self._clock,
         )
         self._proposals.record_result(recorded, result)
@@ -566,6 +607,10 @@ def standing_autonomy_outcome_envelope(
         details.append(f"evidence={outcome.evidence_status.value}")
     if outcome.result_failure is not None:
         details.append(f"failure={outcome.result_failure.value}")
+    if outcome.budget_status is not None:
+        details.append(f"budget={outcome.budget_status.value}")
+    if outcome.max_total_tokens is not None:
+        details.append(f"limit={outcome.max_total_tokens}")
     details.append(f"intent={run_receipt.intent_id}")
     content = MessageContent(text=" ".join(details))
     return StandingAutonomyOutcomeEnvelope(
@@ -597,7 +642,10 @@ def _grant_message(
     )
 
 
-def _preauthorized_prompt(proposal: StandingProposal) -> str:
+def _preauthorized_prompt(
+    proposal: StandingProposal,
+    evidence_pack: StandingEvidencePack,
+) -> str:
     evidence = "\n".join(
         f"A{index}: {item}" for index, item in enumerate(proposal.acceptance_evidence, start=1)
     )
@@ -611,25 +659,43 @@ def _preauthorized_prompt(proposal: StandingProposal) -> str:
         f"objective: {proposal.objective}\n\n"
         f"Acceptance evidence:\n{evidence}\n\n"
         f"Stop conditions:\n{stops}\n\n"
-        "Observe and report only. The enforced execution boundary is read-only. "
+        "Observe and report only. The enforced execution boundary is read-only and tool-free. "
+        "Use only the bounded evidence pack below; do not request or infer unlisted files. "
         "Return JSON only under the enforced schema. Cite repository-relative source paths "
         "and 1-based line numbers for every criterion. Mark complete only when every A item "
         "is met and gaps is empty; otherwise mark blocked with at least one gap. Confirm every "
         f"S item with observed=true. Keep the entire serialized JSON at or below "
         f"{MAX_STANDING_RESULT_CHARS} characters. Use no more than "
         f"{MAX_STANDING_VERIFIED_SOURCES} distinct source references and cite only files at "
-        f"or below {MAX_STANDING_SOURCE_FILE_BYTES} bytes."
+        f"or below {MAX_STANDING_SOURCE_FILE_BYTES} bytes unless supplied by the pack.\n\n"
+        f"{render_standing_evidence_pack(evidence_pack)}"
     )
 
 
-def _secure_preauthorized_task(task: Task, grant: StandingAutonomyGrant) -> Task:
+def _secure_preauthorized_task(
+    task: Task,
+    grant: StandingAutonomyGrant,
+    evidence_pack: StandingEvidencePack,
+) -> Task:
     secured = task_without_provider_session(task)
     secured = task_with_exact_output_constraint(secured)
+    secured = secured.model_copy(
+        update={
+            "metadata": (
+                *secured.metadata,
+                MetadataEntry(
+                    key=STANDING_EVIDENCE_PACK_SHA256_KEY,
+                    value=standing_evidence_pack_sha256(evidence_pack),
+                ),
+            )
+        }
+    )
     return task_with_preauthorized_execution(
         secured,
         grant_id=grant.grant_id,
         expires_at=grant.expires_at,
         max_duration_seconds=grant.max_duration_seconds,
+        max_total_tokens=grant.max_total_tokens,
     )
 
 
@@ -686,6 +752,7 @@ def _standing_autonomy_receipt(
             outcome_status=StandingAutonomyOutcomeStatus.MISSING,
         )
     assert snapshot is not None
+    max_total_tokens = _snapshot_max_total_tokens(snapshot)
     if snapshot.status not in _ACTIVE_TASK_STATUSES and proposal.usage is None:
         return StandingAutonomyReceipt(
             proposal_id=proposal.proposal_id,
@@ -696,6 +763,7 @@ def _standing_autonomy_receipt(
             decided_at=decided_at,
             finished_at=snapshot.updated_at,
             elapsed_seconds=max(0.0, (snapshot.updated_at - decided_at).total_seconds()),
+            max_total_tokens=max_total_tokens,
             outcome_status=StandingAutonomyOutcomeStatus.MISSING,
         )
     status = StandingAutonomyReceiptStatus(snapshot.status.value)
@@ -735,6 +803,8 @@ def _standing_autonomy_receipt(
             max(0.0, (snapshot.updated_at - decided_at).total_seconds()) if terminal else None
         ),
         total_tokens=None if proposal.usage is None else proposal.usage.total_tokens,
+        max_total_tokens=max_total_tokens,
+        budget_status=_budget_status(proposal.usage, max_total_tokens),
         outcome_status=outcome,
         criteria_met=None if result is None else result.criteria_met,
         criteria_total=None if result is None else result.criteria_total,
@@ -755,6 +825,31 @@ def _snapshot_matches_proposal(
         metadata.get("aico.standing_proposal_id") == proposal.proposal_id
         and metadata.get(PREAUTHORIZED_GRANT_ID_KEY) == proposal.authorization_id
     )
+
+
+def _snapshot_max_total_tokens(snapshot: TaskSnapshot) -> int | None:
+    value = next(
+        (
+            entry.value
+            for entry in snapshot.metadata
+            if entry.key == PREAUTHORIZED_MAX_TOTAL_TOKENS_KEY
+        ),
+        None,
+    )
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def _budget_status(
+    usage: TaskUsage | None,
+    max_total_tokens: int | None,
+) -> StandingAutonomyBudgetStatus | None:
+    if usage is None or max_total_tokens is None:
+        return None
+    if usage.total_tokens > max_total_tokens:
+        return StandingAutonomyBudgetStatus.EXCEEDED
+    return StandingAutonomyBudgetStatus.WITHIN_LIMIT
 
 
 _ACTIVE_TASK_STATUSES = {TaskStatus.RUNNING, TaskStatus.WAITING_APPROVAL}

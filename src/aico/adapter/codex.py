@@ -17,6 +17,8 @@ from aico.core.models import Capability, Task, TaskUsage
 from aico.core.preauthorized_execution import (
     PreauthorizedExecutionMode,
     preauthorized_execution_mode,
+    preauthorized_max_total_tokens,
+    preauthorized_model_contract,
 )
 from aico.core.standing_result import MAX_STANDING_RESULT_CHARS
 
@@ -31,6 +33,20 @@ DEFAULT_CODEX_COMMAND = (
     "never",
 )
 STANDING_RESULT_SCHEMA_PATH = Path(__file__).with_name("schemas") / "standing-result-v1.schema.json"
+MIN_PREAUTHORIZED_TOTAL_TOKENS = 16_384
+MAX_PREAUTHORIZED_TOTAL_TOKENS = 1_000_000
+_PREAUTHORIZED_DISABLED_FEATURES = (
+    "shell_tool",
+    "unified_exec",
+    "multi_agent",
+    "apps",
+    "browser_use",
+    "browser_use_external",
+    "computer_use",
+    "image_generation",
+    "standalone_web_search",
+    "search_tool",
+)
 
 
 class CodexAdapter(ClaudeCodeAdapter):
@@ -76,12 +92,34 @@ class CodexAdapter(ClaudeCodeAdapter):
             and STANDING_RESULT_SCHEMA_PATH.is_file()
         )
 
+    def supports_preauthorized_budget(self, max_total_tokens: int) -> bool:
+        return (
+            Path(self._command[0]).name == "codex"
+            and MIN_PREAUTHORIZED_TOTAL_TOKENS <= max_total_tokens <= MAX_PREAUTHORIZED_TOTAL_TOKENS
+        )
+
+    def supports_preauthorized_model(self, model: str, reasoning_effort: str) -> bool:
+        return (
+            Path(self._command[0]).name == "codex"
+            and bool(model.strip())
+            and 0 < len(reasoning_effort) <= 32
+            and all(char.isalnum() or char in {"-", "_"} for char in reasoning_effort)
+        )
+
     def task_usage(self, task_id: str) -> TaskUsage | None:
         return self._task_usage.get(task_id)
 
     def _command_for_task(self, task: Task) -> tuple[str, ...]:
         if preauthorized_execution_mode(task) is not None:
-            command = _preauthorized_read_only_command(self._command[0], task.payload)
+            max_total_tokens = preauthorized_max_total_tokens(task)
+            if max_total_tokens is None:
+                raise ValueError("preauthorized task is missing a single-run token budget")
+            command = _preauthorized_read_only_command(
+                self._command[0],
+                task.payload,
+                max_total_tokens=max_total_tokens,
+                model_contract=preauthorized_model_contract(task),
+            )
             self._json_tasks.add(task.task_id)
             self._bounded_result_tasks.add(task.task_id)
             return command
@@ -141,18 +179,51 @@ class CodexAdapter(ClaudeCodeAdapter):
         return f"Codex exited with code {return_code}"
 
 
-def _preauthorized_read_only_command(executable: str, payload: str) -> tuple[str, ...]:
+def _preauthorized_read_only_command(
+    executable: str,
+    payload: str,
+    *,
+    max_total_tokens: int,
+    model_contract: tuple[str, str] | None = None,
+) -> tuple[str, ...]:
+    reminder_tokens = max(1, max_total_tokens // 2)
+    rollout_budget = (
+        "features.rollout_budget={"
+        f"limit_tokens={max_total_tokens},"
+        f"reminder_at_remaining_tokens=[{reminder_tokens}],"
+        "sampling_token_weight=1.0,prefill_token_weight=1.0}"
+    )
+    disabled_features = tuple(
+        part for feature in _PREAUTHORIZED_DISABLED_FEATURES for part in ("--disable", feature)
+    )
+    model_options: tuple[str, ...] = ()
+    if model_contract is not None:
+        model, reasoning_effort = model_contract
+        model_options = (
+            "--model",
+            model,
+            "-c",
+            f'model_reasoning_effort="{reasoning_effort}"',
+        )
     return (
         executable,
         "--ask-for-approval",
         "never",
         "--sandbox",
         "read-only",
+        *model_options,
+        *disabled_features,
         "exec",
         "--ignore-user-config",
         "--ignore-rules",
         "--ephemeral",
         "--strict-config",
+        "-c",
+        rollout_budget,
+        "-c",
+        f"model_context_window={max_total_tokens}",
+        "-c",
+        'web_search="disabled"',
         "--output-schema",
         str(STANDING_RESULT_SCHEMA_PATH),
         "--color",

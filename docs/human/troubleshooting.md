@@ -173,6 +173,10 @@ Round 232/233/238起scheduler health同时读取durable morning delivery、sched
    `source_status=evidence_missing`是accepted后缺task/usage证据的主动告警，不授权自动provider replay。
 10. outcome `delivered`只证明exact trusted target返回平台ACK；正文、target和raw message id不会出现在`aico-state`，也不能据此
     声称human read或业务验收完成。
+11. `bounded evidence pack unavailable`表示charter未配置source、heading marker漂移、路径/软链/UTF-8或size/line/总字符上限失败；
+    修正owner-reviewed project config后重新doctor，不要放宽cap或让Agent浏览全仓库。
+12. `budget=exceeded`表示provider已报告本run超过grant的`max_total_tokens`；系统保留usage但拒绝结果。它仍算预算失控样本，
+    不得通过换grant重跑洗掉；先保留state/audit并复核CLI/provider budget行为。
 
 ### 启动日志显示 recovery audit sink unavailable
 
@@ -372,9 +376,11 @@ startup 会失败而不会错误确认 delivered;LaunchAgent 可能按异常退�
 
 1. 先确认这是 scheduler 的 morning tick；手工 `/morning`、`/inbox`、`/proposals` 按设计不消费 grant。
 2. grant path 必须绝对、文件必须当前用户所有、`0600`、非 symlink，且位于所有 managed project repo 外。
-3. 替换全部 `replace-with-*`；expiry 必须含时区且尚未到期，`max_runs`/duration/`token_stop_threshold`必须在允许范围。
+3. 替换全部 `replace-with-*`；expiry 必须含时区且尚未到期，`max_runs`/duration/`max_total_tokens`/
+   `token_stop_threshold`必须在允许范围；旧schema-v1 grant会fail closed。
 4. channel/target/thread/project 必须与 `AICO_MORNING_PUSH_*` 精确一致，charter id 必须存在。
-5. charter role 必须任命给真正的 `codex` executable；Claude/Cursor/包装脚本即使声称只读也会 fail closed。
+5. charter role 必须任命给真正的 `codex` executable，并配置可构建的bounded `evidence_sources`；Claude/Cursor/包装脚本即使
+   声称只读也会 fail closed。
 6. 查 `/proposals` 和 task/audit history：同 `grant_id` 的 preauthorized decision 数已达到 `max_runs` 时只会返回
    `run budget exhausted`，编辑同一 grant 不会重置预算。
 7. timeout 会先扣预算再 interrupt；不要通过放大 duration 或换 grant id 隐藏失败，先查 bounded output/Adapter health。

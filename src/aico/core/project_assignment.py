@@ -9,6 +9,10 @@ from typing import Annotated
 from pydantic import Field
 
 from aico.core.models import Capability, FrozenModel, MetadataEntry, Task
+from aico.core.standing_evidence_pack import (
+    MAX_STANDING_EVIDENCE_SOURCES,
+    StandingEvidenceSourceSpec,
+)
 from aico.core.standing_result import (
     MAX_STANDING_CRITERIA,
     MAX_STANDING_STOPS,
@@ -70,6 +74,10 @@ class StandingCharterItem(FrozenModel):
     stop_conditions: tuple[_StandingCharterText, ...] = Field(
         min_length=1,
         max_length=MAX_STANDING_STOPS,
+    )
+    evidence_sources: tuple[StandingEvidenceSourceSpec, ...] = Field(
+        default=(),
+        max_length=MAX_STANDING_EVIDENCE_SOURCES,
     )
     cooldown_hours: int = Field(default=168, ge=1)
 

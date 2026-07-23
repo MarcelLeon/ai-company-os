@@ -16,6 +16,7 @@ dependencies = [
 [project.scripts]
 aico = "aico.app.cli:main"
 aico-audit = "aico.app.audit_cli:main"
+aico-benchmark = "aico.app.boss_absent_benchmark_cli:main"
 aico-dead-man-evidence = "aico.app.dead_man_evidence_cli:main"
 aico-commission = "aico.app.runtime_commissioning_cli:main"
 aico-dead-man-recovery = "aico.app.dead_man_receiver_recovery_cli:main"

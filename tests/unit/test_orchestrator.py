@@ -55,6 +55,7 @@ from aico.core import (
     SQLiteStandingProposalStore,
     SQLiteTaskStateStore,
     StandingCharterItem,
+    StandingEvidenceSourceSpec,
     StandingProposal,
     StandingProposalDecisionMode,
     StandingProposalStatus,
@@ -70,9 +71,13 @@ from aico.core import (
 from aico.core.authorization_clock import AUTHORIZATION_CLOCK_ROLLBACK_REASON
 from aico.core.collaboration import collaboration_disabled
 from aico.core.ingress_authorization import OwnerBoundIngressAuthorizer
-from aico.core.preauthorized_execution import preauthorized_execution_mode
+from aico.core.preauthorized_execution import (
+    preauthorized_execution_mode,
+    preauthorized_max_total_tokens,
+)
 from aico.core.standing_autonomy import (
     SCHEDULED_AUTONOMY_INTENT_ID_KEY,
+    STANDING_EVIDENCE_PACK_SHA256_KEY,
     StandingAutonomyGrant,
     StandingAutonomyGrantSet,
     StandingAutonomyReceiptStatus,
@@ -162,6 +167,9 @@ class SafeReadOnlyAdapter(ScriptedAdapter):
     def supports_preauthorized_execution(self, mode: str) -> bool:
         return mode == "read_only"
 
+    def supports_preauthorized_budget(self, max_total_tokens: int) -> bool:
+        return max_total_tokens == 50_000
+
     def task_usage(self, task_id: str) -> TaskUsage | None:
         if task_id in self.interrupted_task_ids:
             return None
@@ -174,6 +182,12 @@ class HangingSafeReadOnlyAdapter(SafeReadOnlyAdapter):
         await asyncio.Event().wait()
         if False:  # pragma: no cover - keeps this an async generator
             yield TaskOutput(task_id="never", sequence=0, type=OutputType.DONE, content="")
+
+
+class OverBudgetSafeReadOnlyAdapter(SafeReadOnlyAdapter):
+    def task_usage(self, task_id: str) -> TaskUsage | None:
+        del task_id
+        return TaskUsage(input_tokens=40_000, output_tokens=10_001, total_tokens=50_001)
 
 
 class FailedSafeReadOnlyAdapter(SafeReadOnlyAdapter):
@@ -2253,10 +2267,12 @@ async def test_scheduled_morning_executes_exact_owner_bound_read_only_grant() ->
     task = adapter.received_tasks[0]
     assert task.requester_id == "owner-telegram-123"
     assert preauthorized_execution_mode(task) == "read_only"
+    assert preauthorized_max_total_tokens(task) == 50_000
     assert collaboration_disabled(task)
     assert provider_session_from_task(task) is None
     assert _metadata_value(task, "aico.standing_proposal_id") == proposal.proposal_id
     assert _metadata_value(task, SCHEDULED_AUTONOMY_INTENT_ID_KEY) == proposal.scheduled_intent_id
+    assert isinstance(_metadata_value(task, STANDING_EVIDENCE_PACK_SHA256_KEY), str)
     evidence = orchestrator.scheduled_autonomy_evidence(
         project_id="aico",
         intent_id=proposal.scheduled_intent_id,
@@ -2282,8 +2298,78 @@ async def test_scheduled_morning_executes_exact_owner_bound_read_only_grant() ->
     assert "[done]" in channel.sent_messages[-1].text
     assert "task=task-aut" in channel.sent_messages[-1].text
     assert "tokens=100" in channel.sent_messages[-1].text
+    assert "budget=within_limit/50000" in channel.sent_messages[-1].text
     assert "outcome=complete" in channel.sent_messages[-1].text
     assert "evidence=current" in channel.sent_messages[-1].text
+
+
+async def test_scheduled_morning_holds_provider_result_above_single_run_budget() -> None:
+    adapter = OverBudgetSafeReadOnlyAdapter(
+        name="claude-code",
+        output_texts=(_standing_result_json(),),
+    )
+    channel = RecordingChannel()
+    store = InMemoryStandingProposalStore()
+    orchestrator = Orchestrator(
+        channel=channel,
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-over-budget"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(),
+        standing_proposal_store=store,
+        standing_autonomy_grants=_standing_autonomy_grants(),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    proposal = store.list_project("aico")[0]
+    assert proposal.usage is not None
+    assert proposal.usage.total_tokens == 50_001
+    assert proposal.result_receipt is None
+    assert any("single-run token budget exceeded" in item.text for item in channel.sent_messages)
+    assert any("budget=exceeded limit=50000" in item.text for item in channel.sent_messages)
+
+
+async def test_scheduled_morning_prompt_contains_only_allowlisted_evidence_lines(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "STATUS.md").write_text(
+        "private-before\n## Selected\nallowed evidence\n## End\nprivate-after\n",
+        encoding="utf-8",
+    )
+    sources = (
+        StandingEvidenceSourceSpec(
+            path="STATUS.md",
+            start_marker="## Selected",
+            end_marker="## End",
+        ),
+    )
+    adapter = SafeReadOnlyAdapter(name="claude-code", output_texts=(_standing_result_json(),))
+    orchestrator = Orchestrator(
+        channel=RecordingChannel(),
+        router=MessageRouter(default_persona="default", task_id_factory=lambda: "task-pack"),
+        task_bus=TaskBus(adapter),
+        agent_directory=_agent_directory(),
+        project_directory=_project_directory_with_standing_charter(
+            repo=str(tmp_path),
+            evidence_sources=sources,
+        ),
+        standing_proposal_store=InMemoryStandingProposalStore(),
+        standing_autonomy_grants=_standing_autonomy_grants(),
+    )
+
+    await orchestrator.send_morning_handoff(
+        ChannelTarget(channel_name="telegram", target_id="chat-1"),
+        project_id="aico",
+    )
+
+    prompt = adapter.received_tasks[0].payload
+    assert 'LINE {"line":3,"path":"STATUS.md","text":"allowed evidence"}' in prompt
+    assert "private-before" not in prompt
+    assert "private-after" not in prompt
 
 
 async def test_start_notification_failure_does_not_block_preauthorized_execution() -> None:
@@ -3911,6 +3997,7 @@ def _project_directory_with_standing_charter(
     *,
     cooldown_hours: int = 168,
     repo: str | None = None,
+    evidence_sources: tuple[StandingEvidenceSourceSpec, ...] | None = None,
 ) -> ProjectAssignmentDirectory:
     config = _project_directory()._config  # noqa: SLF001
     project = config.projects["aico"]
@@ -3920,6 +4007,7 @@ def _project_directory_with_standing_charter(
         role="implementer",
         acceptance_evidence=("one verified contract",),
         stop_conditions=("stop before external sending",),
+        evidence_sources=evidence_sources or (StandingEvidenceSourceSpec(path="pyproject.toml"),),
         cooldown_hours=cooldown_hours,
     )
     return ProjectAssignmentDirectory(
@@ -3943,6 +4031,7 @@ def _standing_autonomy_grants(
     max_duration_seconds: float = 0.1,
     max_runs: int = 1,
     token_stop_threshold: int = 100_000,
+    max_total_tokens: int = 50_000,
 ) -> StandingAutonomyGrantSet:
     return StandingAutonomyGrantSet(
         grants=(
@@ -3956,6 +4045,7 @@ def _standing_autonomy_grants(
                 expires_at=datetime(2027, 1, 1, tzinfo=UTC),
                 max_runs=max_runs,
                 max_duration_seconds=max_duration_seconds,
+                max_total_tokens=max_total_tokens,
                 token_stop_threshold=token_stop_threshold,
             ),
         )

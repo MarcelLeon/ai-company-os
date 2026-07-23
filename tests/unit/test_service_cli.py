@@ -1028,6 +1028,7 @@ def _configure_standing_autonomy(
 ) -> tuple[Path, Path]:
     managed_project = context.repo / "managed-project"
     managed_project.mkdir()
+    (managed_project / "STATUS.md").write_text("# Current status\nEvidence is current.\n")
     project_path = context.repo / "config/standing-projects.json"
     project_path.parent.mkdir()
     project_path.write_text(
@@ -1054,6 +1055,7 @@ def _configure_standing_autonomy(
                                 "role": "reviewer",
                                 "acceptance_evidence": ["one bounded report"],
                                 "stop_conditions": ["stop before external communication"],
+                                "evidence_sources": [{"path": "STATUS.md"}],
                             }
                         ],
                     }
@@ -1084,6 +1086,7 @@ def _configure_standing_autonomy(
                     expires_at=datetime(2027, 1, 1, tzinfo=UTC),
                     max_runs=1,
                     max_duration_seconds=300,
+                    max_total_tokens=50_000,
                     token_stop_threshold=100_000,
                 ),
             )

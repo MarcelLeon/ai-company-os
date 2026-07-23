@@ -1009,7 +1009,8 @@ def test_build_phase1_runtime_loads_external_owner_bound_standing_grant(
                   "objective": "Inspect current recovery evidence.",
                   "role": "reviewer",
                   "acceptance_evidence": ["one bounded report"],
-                  "stop_conditions": ["stop before external communication"]
+                  "stop_conditions": ["stop before external communication"],
+                  "evidence_sources": [{{"path": "pyproject.toml"}}]
                 }}
               ]
             }}
@@ -1040,6 +1041,7 @@ def test_build_phase1_runtime_loads_external_owner_bound_standing_grant(
                     expires_at=datetime(2027, 1, 1, tzinfo=UTC),
                     max_runs=1,
                     max_duration_seconds=300,
+                    max_total_tokens=50_000,
                     token_stop_threshold=100_000,
                 ),
             )
@@ -1087,6 +1089,7 @@ def test_build_phase1_runtime_rejects_grant_for_another_morning_target(
                     expires_at=datetime(2027, 1, 1, tzinfo=UTC),
                     max_runs=1,
                     max_duration_seconds=300,
+                    max_total_tokens=50_000,
                     token_stop_threshold=100_000,
                 ),
             )

@@ -8,6 +8,28 @@
 ## [Unreleased]
 
 ### Added
+- Tool-free budgeted standing evidence pack:standing charter可配置exact section allowlist；系统在派发前生成不超过64 KiB、
+  带完整源SHA和原始path/line的证据包。preauthorized Codex显式禁用所有tool/web/multi-agent能力，并把owner
+  `max_total_tokens`写入rollout/context门禁；超预算usage保留但result不采信，morning/inbox/outcome显示budget状态。
+- Boss-absent vs Codex Goal benchmark v1:新增五类冻结task、contract/result schema、canonical SHA绑定、deterministic scorer与
+  `aico-benchmark freeze|score`离线CLI；缺task/usage/evidence不能移出分母，AICO绝对门槛与五项相对指标同时通过才返回win，
+  equal-observation `dry-run`固定产生non-win，并真实terminate/resume fake helper生成restart receipt；synthetic测试不冒充正式对比成绩。
+- Codex Goal baseline admission:`aico-benchmark probe-codex-goal`使用run-isolated Codex home验证persistent app-server
+  Goal set/get/clear、exact model/token budget、read-only/no-network与zero usage，再删除thread；`0600` cleanup intent支持断线后重连清理，
+  普通`codex exec`不再被允许冒充Goal baseline。offline turn supervisor再绑定model/effort/completion，并用Goal token delta交叉验证
+  matching provider usage notification，覆盖interrupt和跨app-server resume；owner-only auth symlink完成无模型local login admission。
+- Native Codex Goal host contract:明确app-server只负责Goal控制面，正式baseline必须由第一方Codex host拥有continuation；新增
+  fail-closed host admission和无raw prompt turn ledger，拒绝standalone loop、runner自造续跑input、能力/usage/chain漂移、超预算及
+  terminal后续跑，并把owner takeover与harness injection从无人值守continuation中分离。
+- Restart-safe AICO benchmark runner:核心按frozen roles编排不同Agent，所有role共享同一remaining-token budget并消费前一artifact
+  SHA；provider调用前原子保存稳定dispatch intent，跨进程只按id对账、unknown outcome禁止重放，restart必须更换runtime instance。
+  scorer同步拒绝单Agent更换role label的伪协作；超预算provider usage即使不采信checkpoint也完整计入budget loss证据。
+- Independent AICO scenario finalization:`aico-benchmark finalize-aico`把durable role state与独立harness receipt绑定为task result；再次验证
+  terminal checkpoint、distinct agents、shared usage，并分别强制restart no-replay、approval fence、drift rejection、irrelevant source
+  isolation和IM takeover成本。执行者、观察者、scorer保持三层分离，fake receipt不具备正式成绩资格。
+- Exact-model TaskBus benchmark transport:AICO frozen roles通过真实TaskBus/Adapter合同执行，preauthorization与Codex CLI显式绑定
+  exact model/reasoning effort和shared remaining-token budget；内容寻址artifact与owner-only dispatch receipt支持新runtime按id恢复，
+  确定性能力拒绝在provider前fail closed，未知outcome不自动重放。
 - Signed dead-man evidence:独立receiver可用owner-only Ed25519私钥签发domain-separated evidence envelope；离线verifier与strict
   commissioning只信owner-pinned公钥，绑定exact envelope、payload和key identity。unsigned endpoint保留历史审计兼容，signature
   success仍明确不证明receiver物理host、TLS、fault action、provider ACK或human read。

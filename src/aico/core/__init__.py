@@ -155,6 +155,14 @@ from aico.core.project_assignment import (
 from aico.core.prompt_stack import render_appointment_prompt
 from aico.core.risk import TextRiskAssessor
 from aico.core.router import MessageRouter
+from aico.core.standing_evidence_pack import (
+    StandingEvidencePack,
+    StandingEvidencePackError,
+    StandingEvidenceSourceSpec,
+    build_standing_evidence_pack,
+    render_standing_evidence_pack,
+    standing_evidence_pack_sha256,
+)
 from aico.core.standing_proposal import (
     InMemoryStandingProposalStore,
     SQLiteStandingProposalStore,
@@ -289,6 +297,9 @@ __all__ = [
     "RoleProfile",
     "RoleScope",
     "StandingCharterItem",
+    "StandingEvidencePack",
+    "StandingEvidencePackError",
+    "StandingEvidenceSourceSpec",
     "StandingProposal",
     "StandingProposalCoordinator",
     "StandingProposalDecisionMode",
@@ -346,5 +357,8 @@ __all__ = [
     "status_island_to_dict",
     "usage_audit_detail",
     "usage_records_from_audit_events",
+    "build_standing_evidence_pack",
+    "render_standing_evidence_pack",
+    "standing_evidence_pack_sha256",
     "telegram_html_message",
 ]

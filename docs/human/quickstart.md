@@ -317,13 +317,14 @@ receipt会在dead-man age或silent-probe TTL较早者到期；运行中到期显
 ```bash
 install -m 600 docs/examples/standing-autonomy.example.json \
   /absolute/private/aico-standing-autonomy.json
-# 替换外部文件中的所有 replace-with-*、expiry、run/duration 与 token_stop_threshold
+# 替换外部文件中的所有 replace-with-*、expiry、run/duration、max_total_tokens 与 token_stop_threshold
 export AICO_STANDING_AUTONOMY_GRANT_PATH="/absolute/private/aico-standing-autonomy.json"
 uv run aico-service --repo . doctor
 ```
 
 不要把 grant 留在 repo，也不要给 group/world 权限。系统只在 scheduler 的 morning tick 消费，固定 Codex
-read-only/no-network/no-resume/no-collaboration boundary；手工 `/morning` 和 `/inbox` 不会自执行。首次真实验收使用
+read-only/tool-free/no-network/no-resume/no-collaboration boundary；charter还必须配置bounded evidence source，模型只能引用
+系统生成的allowlisted path/line pack。手工 `/morning` 和 `/inbox` 不会自执行。首次真实验收使用
 `max_runs=1`。install前必须看到doctor的`owner-bound runtime binding verified`；该non-mutating preflight会沿真实
 project/charter/persona/Adapter路径验证，而不创建state或调用provider。步骤与停止条件见
 [`daily-ops.md`](daily-ops.md)；没有真实owner grant时保持禁用。
@@ -331,14 +332,16 @@ project/charter/persona/Adapter路径验证，而不创建state或调用provider
 真实运行后再次查看`/morning`：必须有短ID的standing autonomy receipt。`evidence_missing`不是“尚未刷新”，而是
 accepted与task证据不完整；先查`/proposals`/`/tasks`/`/audit`，不要自动retry或refund run budget。
 terminal receipt还应显示provider实际`tokens=N`。`token_stop_threshold`只会在下一次run前按累计实测量停授，不能
-阻止当前run越过阈值；usage缺失同样显示`evidence_missing`并停止后续自治。不要从该值自行推算美元账单。
+阻止当前run越过阈值；单次`max_total_tokens`另显示为`budget=within_limit/N`或`budget=exceeded/N`，超过时结果不采信。
+usage缺失同样显示`evidence_missing`并停止后续自治。不要从该值自行推算美元账单或provider quota。
 Round 217起还要看`outcome=complete criteria=N/N sources=N`：task `[done]`只表示transport结束，不能代替结果合同。
 `outcome=missing/invalid/blocked`都会停止下一次scheduled run；先查`/task`和`/proposals`，人工核对引用的仓库相对
 file/line是否真的支持charter，禁止换grant自动重试。`sources=N`只证明本地位置存在，不证明业务语义正确。
 standing result还固定限制为32K总字符及bounded criteria/source/list/text/path；`result_too_large`或
 `result_schema_invalid`表示provider结果未进入业务验收，只保存了短失败回执。该上限保护本地内存/state，不限制本次
 provider token账单。
-成功回执还应显示`evidence=current`。系统会用最多16个source、单文件256KiB的本地fingerprint，在老板接手和下一次
+成功回执还应显示`evidence=current`。standing pack可读取最多1 MiB源文件，但只向模型提供最多384行/源、64 KiB总量；
+result只能引用pack列出的原始行。系统会用最多16个source的本地fingerprint，在老板接手和下一次
 scheduled run前检测变化；`evidence=drifted/missing`都会停授。老板IM不会显示path/hash/source正文。full-file hash是
 保守的字节漂移锚点，不是签名或业务语义证明；owner检查变更后应重新人工验收，不要自动重跑。
 

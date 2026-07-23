@@ -40,9 +40,9 @@ def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
 
 def _risk_text(payload: str) -> str:
     _, separator, current_task = payload.rpartition("Current task:")
-    if separator:
-        return current_task
-    return payload
+    task_text = current_task if separator else payload
+    bounded_prompt, evidence_separator, _ = task_text.partition("<standing_evidence_pack ")
+    return bounded_prompt if evidence_separator else task_text
 
 
 def _without_negated_write_markers(text: str) -> str:

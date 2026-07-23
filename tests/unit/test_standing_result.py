@@ -6,6 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from aico.core.standing_evidence_pack import (
+    StandingEvidenceSourceSpec,
+    build_standing_evidence_pack,
+    standing_evidence_pack_sha256,
+)
 from aico.core.standing_result import (
     MAX_STANDING_CRITERIA,
     MAX_STANDING_LIST_ITEMS,
@@ -174,6 +179,73 @@ def test_standing_result_rejects_oversized_evidence_file(tmp_path: Path) -> None
     )
 
     assert receipt.failure is StandingResultFailure.SOURCE_TOO_LARGE
+
+
+def test_standing_result_accepts_only_current_lines_from_bounded_pack(tmp_path: Path) -> None:
+    source = tmp_path / "STATUS.md"
+    source.write_text(
+        "x" * (MAX_STANDING_SOURCE_FILE_BYTES + 1) + "\n## Selected\nfirst\nsecond\n## End\n",
+        encoding="utf-8",
+    )
+    pack = build_standing_evidence_pack(
+        tmp_path,
+        project_id="aico",
+        charter_id="absence-loop",
+        source_specs=(
+            StandingEvidenceSourceSpec(
+                path="STATUS.md",
+                start_marker="## Selected",
+                end_marker="## End",
+            ),
+        ),
+    )
+    payload = json.loads(_result())
+    payload["criteria"][0]["sources"][0]["line"] = 3
+    payload["criteria"][1]["sources"][0]["line"] = 4
+
+    direct = validate_standing_result(
+        json.dumps(payload),
+        acceptance_evidence=("one", "two"),
+        stop_conditions=("stop",),
+        evidence_root=tmp_path,
+        clock=lambda: _NOW,
+    )
+    receipt = validate_standing_result(
+        json.dumps(payload),
+        acceptance_evidence=("one", "two"),
+        stop_conditions=("stop",),
+        evidence_root=tmp_path,
+        evidence_pack=pack,
+        clock=lambda: _NOW,
+    )
+
+    assert direct.failure is StandingResultFailure.SOURCE_TOO_LARGE
+    assert receipt.status is StandingResultContractStatus.COMPLETE
+    assert receipt.evidence_pack_sha256 == standing_evidence_pack_sha256(pack)
+    assert standing_result_evidence_status(receipt, tmp_path) is StandingEvidenceStatus.CURRENT
+
+    payload["criteria"][0]["sources"][0]["line"] = 1
+    unlisted = validate_standing_result(
+        json.dumps(payload),
+        acceptance_evidence=("one", "two"),
+        stop_conditions=("stop",),
+        evidence_root=tmp_path,
+        evidence_pack=pack,
+        clock=lambda: _NOW,
+    )
+    assert unlisted.failure is StandingResultFailure.SOURCE_UNVERIFIED
+
+    source.write_text(source.read_text(encoding="utf-8") + "drift\n", encoding="utf-8")
+    drifted = validate_standing_result(
+        json.dumps(payload),
+        acceptance_evidence=("one", "two"),
+        stop_conditions=("stop",),
+        evidence_root=tmp_path,
+        evidence_pack=pack,
+        clock=lambda: _NOW,
+    )
+    assert drifted.failure is StandingResultFailure.EVIDENCE_PACK_DRIFTED
+    assert standing_result_evidence_status(receipt, tmp_path) is StandingEvidenceStatus.DRIFTED
 
 
 def test_standing_result_rejects_too_many_verified_sources(tmp_path: Path) -> None:

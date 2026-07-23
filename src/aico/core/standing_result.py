@@ -13,6 +13,13 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from aico.core.models import FrozenModel, utc_now
+from aico.core.standing_evidence_pack import (
+    MAX_STANDING_EVIDENCE_SOURCE_BYTES,
+    StandingEvidencePack,
+    evidence_pack_is_current,
+    evidence_pack_source,
+    standing_evidence_pack_sha256,
+)
 
 MAX_STANDING_RESULT_CHARS = 32_768
 MAX_STANDING_CRITERIA = 16
@@ -63,6 +70,7 @@ class StandingResultFailure(StrEnum):
     RESULT_TOO_LARGE = "result_too_large"
     SOURCE_TOO_LARGE = "source_too_large"
     SOURCE_LIMIT_EXCEEDED = "source_limit_exceeded"
+    EVIDENCE_PACK_DRIFTED = "evidence_pack_drifted"
 
 
 class StandingSourceRef(FrozenModel):
@@ -88,7 +96,7 @@ class StandingStopConditionResult(FrozenModel):
 class StandingVerifiedSource(FrozenModel):
     path: str = Field(min_length=1, max_length=MAX_STANDING_PATH_CHARS)
     line: int = Field(ge=1, le=_MAX_SOURCE_LINE)
-    size_bytes: int = Field(ge=0, le=MAX_STANDING_SOURCE_FILE_BYTES)
+    size_bytes: int = Field(ge=0, le=MAX_STANDING_EVIDENCE_SOURCE_BYTES)
     file_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -132,6 +140,7 @@ class StandingResultReceipt(FrozenModel):
         max_length=MAX_STANDING_VERIFIED_SOURCES,
     )
     evidence_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    evidence_pack_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 def validate_standing_result(
@@ -140,6 +149,7 @@ def validate_standing_result(
     acceptance_evidence: tuple[str, ...],
     stop_conditions: tuple[str, ...],
     evidence_root: Path | None,
+    evidence_pack: StandingEvidencePack | None = None,
     clock: Callable[[], datetime] = utc_now,
 ) -> StandingResultReceipt:
     """Validate shape, charter coverage, and repository-local source locations."""
@@ -182,7 +192,12 @@ def validate_standing_result(
     if root is None:
         return _invalid_result(result, StandingResultFailure.EVIDENCE_ROOT_UNAVAILABLE, clock)
     sources = tuple(source for criterion in result.criteria for source in criterion.sources)
-    manifest, source_failure = _build_source_manifest(root, sources)
+    if evidence_pack is not None and not evidence_pack_is_current(evidence_pack, root):
+        return _invalid_result(result, StandingResultFailure.EVIDENCE_PACK_DRIFTED, clock)
+    if evidence_pack is None:
+        manifest, source_failure = _build_source_manifest(root, sources)
+    else:
+        manifest, source_failure = _build_pack_source_manifest(evidence_pack, sources)
     if source_failure is not None:
         return _invalid_result(result, source_failure, clock)
     met = sum(item.verdict is StandingCriterionVerdict.MET for item in result.criteria)
@@ -200,6 +215,9 @@ def validate_standing_result(
         checked_at=clock(),
         source_manifest=manifest,
         evidence_sha256=_manifest_sha256(manifest),
+        evidence_pack_sha256=(
+            None if evidence_pack is None else standing_evidence_pack_sha256(evidence_pack)
+        ),
     )
 
 
@@ -213,10 +231,13 @@ def standing_result_evidence_status(
     root = _validated_root(evidence_root)
     if root is None:
         return StandingEvidenceStatus.MISSING
-    sources = tuple(
-        StandingSourceRef(path=item.path, line=item.line) for item in receipt.source_manifest
-    )
-    current, failure = _build_source_manifest(root, sources)
+    if receipt.evidence_pack_sha256 is None:
+        sources = tuple(
+            StandingSourceRef(path=item.path, line=item.line) for item in receipt.source_manifest
+        )
+        current, failure = _build_source_manifest(root, sources)
+    else:
+        current, failure = _revalidate_pack_manifest(root, receipt.source_manifest)
     if failure is StandingResultFailure.SOURCE_UNVERIFIED:
         return StandingEvidenceStatus.MISSING
     if failure is not None:
@@ -263,6 +284,45 @@ def _build_source_manifest(
     return tuple(manifest), None
 
 
+def _build_pack_source_manifest(
+    pack: StandingEvidencePack,
+    sources: tuple[StandingSourceRef, ...],
+) -> tuple[tuple[StandingVerifiedSource, ...], StandingResultFailure | None]:
+    unique_sources = tuple(dict.fromkeys(sources))
+    if len(unique_sources) > MAX_STANDING_VERIFIED_SOURCES:
+        return (), StandingResultFailure.SOURCE_LIMIT_EXCEEDED
+    manifest: list[StandingVerifiedSource] = []
+    for source in unique_sources:
+        packed = evidence_pack_source(pack, source.path, source.line)
+        if packed is None:
+            return (), StandingResultFailure.SOURCE_UNVERIFIED
+        manifest.append(
+            StandingVerifiedSource(
+                path=packed.path,
+                line=source.line,
+                size_bytes=packed.size_bytes,
+                file_sha256=packed.file_sha256,
+            )
+        )
+    return tuple(manifest), None
+
+
+def _revalidate_pack_manifest(
+    root: Path,
+    manifest: tuple[StandingVerifiedSource, ...],
+) -> tuple[tuple[StandingVerifiedSource, ...], StandingResultFailure | None]:
+    current: list[StandingVerifiedSource] = []
+    cache: dict[Path, tuple[int, int, str] | StandingResultFailure] = {}
+    for expected in manifest:
+        source = StandingSourceRef(path=expected.path, line=expected.line)
+        evidence, failure = _verified_pack_source(root, source, cache)
+        if failure is not None:
+            return (), failure
+        assert evidence is not None
+        current.append(evidence)
+    return tuple(current), None
+
+
 def _verified_source(
     root: Path,
     source: StandingSourceRef,
@@ -297,6 +357,53 @@ def _verified_source(
     )
 
 
+def _verified_pack_source(
+    root: Path,
+    source: StandingSourceRef,
+    cache: dict[Path, tuple[int, int, str] | StandingResultFailure],
+) -> tuple[StandingVerifiedSource | None, StandingResultFailure | None]:
+    candidate_path = Path(source.path)
+    if (
+        candidate_path.is_absolute()
+        or ".." in candidate_path.parts
+        or _has_symlink_component(root, candidate_path)
+    ):
+        return None, StandingResultFailure.SOURCE_UNVERIFIED
+    try:
+        candidate = (root / candidate_path).resolve(strict=True)
+    except OSError:
+        return None, StandingResultFailure.SOURCE_UNVERIFIED
+    if not candidate.is_relative_to(root) or not candidate.is_file():
+        return None, StandingResultFailure.SOURCE_UNVERIFIED
+    fact = cache.get(candidate)
+    if fact is None:
+        fact = _pack_source_file_fact(candidate)
+        cache[candidate] = fact
+    if isinstance(fact, StandingResultFailure):
+        return None, fact
+    size_bytes, line_count, file_hash = fact
+    if source.line > line_count:
+        return None, StandingResultFailure.SOURCE_UNVERIFIED
+    return (
+        StandingVerifiedSource(
+            path=candidate.relative_to(root).as_posix(),
+            line=source.line,
+            size_bytes=size_bytes,
+            file_sha256=file_hash,
+        ),
+        None,
+    )
+
+
+def _has_symlink_component(root: Path, relative: Path) -> bool:
+    current = root
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
 def _source_file_fact(path: Path) -> tuple[int, int, str] | StandingResultFailure:
     try:
         with path.open("rb") as source_file:
@@ -307,6 +414,17 @@ def _source_file_fact(path: Path) -> tuple[int, int, str] | StandingResultFailur
         return StandingResultFailure.SOURCE_TOO_LARGE
     line_count = len(content.splitlines())
     return len(content), line_count, sha256(content).hexdigest()
+
+
+def _pack_source_file_fact(path: Path) -> tuple[int, int, str] | StandingResultFailure:
+    try:
+        with path.open("rb") as source_file:
+            content = source_file.read(MAX_STANDING_EVIDENCE_SOURCE_BYTES + 1)
+    except OSError:
+        return StandingResultFailure.SOURCE_UNVERIFIED
+    if len(content) > MAX_STANDING_EVIDENCE_SOURCE_BYTES:
+        return StandingResultFailure.SOURCE_TOO_LARGE
+    return len(content), len(content.splitlines()), sha256(content).hexdigest()
 
 
 def _manifest_sha256(manifest: tuple[StandingVerifiedSource, ...]) -> str:

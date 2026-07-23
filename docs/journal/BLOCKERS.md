@@ -425,14 +425,14 @@ VERIFIED + custody VERIFIED artifact在private disposable workspace执行state/a
 - Goal Brief `docs/superpowers/specs/2026-07-22-continuous-recovery-artifact-custody.md`
 - P-091
 
-### [B-014] Owner-bound standing autonomy 真实样本暴露硬预算与结果证据缺口
+### [B-014] Owner-bound standing autonomy 等待v2预算/证据合同真实复验
 
 **状态**:🟡 DEFERRED
 **提出于**:Round 213
-**最后更新**:2026-07-22(Round 256)
+**最后更新**:2026-07-22(Round 257)
 **影响**:真实owner grant、scheduled morning、Telegram ACK、只读Codex、usage/outcome receipt与`max_runs=1`第二次阻断已经通过；
-但一次inspection实耗227,252 tokens且结果因大文件引用为`invalid/source_too_large`。没有单次硬预算与
-`outcome=complete/evidence=current`样本前，不能声明boss-absent autonomy上线。
+Round 257已补grant v2单次token envelope、tool-free Codex与bounded evidence pack机器合同，但尚未获得新的
+`budget=within_limit + outcome=complete + evidence=current`真实定时样本，不能声明boss-absent autonomy上线。
 
 **问题描述**
 Round 213 实现 external owner-only grant、exact morning binding、persistent run budget、TaskBus fail-closed gate、
@@ -502,13 +502,21 @@ return code 0、status=done、usage与terminal outcome均durable落盘并送达T
 超过result validator的256 KiB source cap，模型仍选择该源，receipt因此`invalid/source_too_large`、criteria 0/3、sources 0。
 这不是IM或Provider可用性问题，而是“单次成本不可硬界定”和“charter允许的证据源与validator上限冲突”两个产品合同缺口。
 
+Round 257实现ADR-0090：grant schema v2强制`max_total_tokens`，Codex preauthorized command同时写入rollout budget与context
+window，并显式禁用shell/unified exec/multi-agent/apps/browser/computer/image/web等工具。charter必须配置bounded evidence
+source；系统只提供最多64 KiB的allowlisted原始path/line片段，同时用完整文件SHA检测派发/接手漂移。provider terminal usage
+超过limit时仍durable保存但拒绝采信result，IM/晨报显示`budget=exceeded`。当前AICO与SME真实配置pack分别约29.0K/40.8K字符，
+机器测试覆盖oversize、symlink、marker、drift、unlisted line和over-budget结果拒绝。
+
+该机器合同关闭Round 256的本地设计缺口，但Codex rollout budget在response后记账，美元账单也不由AICO控制；因此B-014只收窄为
+一次新的owner-authorized真实复验。超预算即使被拒绝采信仍算预算失控，不能用post-check把它写成成功。
+
 **需要什么才能解开**
-1. 选择可执行的单次硬token/cost边界；若当前Provider/CLI不能在生成前强制停止，就不能把post-run
-   `token_stop_threshold`描述为预算，只能通过小型预生成evidence pack、缩小模型/上下文或Provider侧hard quota另行约束。
-2. 让charter证据路由与validator共享同一bounded source事实：禁止向Agent提供超过cap的`STATUS.md`/`ROUNDS.md`整文件，改为
-   allowlisted小文件或带SHA的bounded片段；prompt不得一边要求STATUS证据、一边又要求不引用超限源。
-3. 修复后签发新的`max_runs=1`短期grant，只做一次真实定时复验；必须同时得到delivery/intent/outcome delivered、
-   `status=done`、`outcome=complete`、`evidence=current`、criteria/source全覆盖及可接受的硬预算证据。
+1. owner另行授权后签发新的v2 `max_runs=1`短期grant，只做一次真实定时复验；必须同时得到delivery/intent/outcome delivered、
+   `status=done`、`budget=within_limit`、`outcome=complete`、`evidence=current`及criteria/source全覆盖。
+2. 保存exact Codex CLI version、provider terminal usage、生成命令中的rollout/context配置与pack SHA；若usage越界或缺失，按失败样本
+   保留并停止，不换grant重跑。
+3. 只有真实样本证明当前CLI/provider遵守owner token envelope，才可关闭本blocker；口径仍是token预算，不提升为美元hard quota。
 4. `max_runs=1`第二次hold已经通过；timeout/interrupt真实样本可在不扩大Provider成本的hanging-safe adapter fixture中补，不要求重复付费。
 5. 若商业威胁模型包含同一用户下恶意进程，先选择detached owner signature、Keychain/managed policy或独立OS
    identity，再提升 authorization claim。
@@ -519,7 +527,8 @@ return code 0、status=done、usage与terminal outcome均durable落盘并送达T
 - 本地 example 只是不可直接启用的模板；repo 内 grant 会被拒绝。
 - doctor只有显示`owner-bound runtime binding verified`才可进入install；旧的“grant file verified”不再算ready。
 - 真实样本后下一次`/morning`必须出现对应done/interrupted receipt；若`evidence_missing`，停止并人工核对，不重跑。
-- 真实样本还必须确认`tokens=N`来自本机Codex版本；阈值只是run间熔断，不能作为单次硬成本SLA。
+- 新真实样本必须同时确认`tokens=N`来自本机Codex版本、`budget=within_limit/N`且pack evidence current；
+  run间`token_stop_threshold`与单次`max_total_tokens`必须分开解释，后者仍不是美元hard quota。
 - 真实样本若显示`outcome=missing/invalid/blocked`，立即停止并检查`/task`、`/proposals`、schema/CLI版本与引用内容，
   不得换grant自动重试。
 - 真实样本若显示`evidence=drifted/missing`，先由owner核对仓库变更或丢失文件；确认后通过新的人工验收生成新receipt，

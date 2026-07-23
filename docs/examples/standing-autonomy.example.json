@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "grants": [
     {
       "grant_id": "replace-with-new-owner-grant-id",
@@ -13,6 +13,7 @@
       "expires_at": "2026-07-28T09:00:00+08:00",
       "max_runs": 1,
       "max_duration_seconds": 900,
+      "max_total_tokens": 50000,
       "token_stop_threshold": 200000
     }
   ]

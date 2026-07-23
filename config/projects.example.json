@@ -98,6 +98,18 @@
             "stop before external communication or publication",
             "stop before file, repository, service, or credential mutation"
           ],
+          "evidence_sources": [
+            {
+              "path": "STATUS.md",
+              "start_marker": "## 下一轮建议做什么(优先级从高到低)",
+              "end_marker": "## 当前已知风险"
+            },
+            {
+              "path": "docs/journal/BLOCKERS.md",
+              "start_marker": "### [B-014] Owner-bound standing autonomy 等待v2预算/证据合同真实复验",
+              "end_marker": "### [B-009] aico-view 本地 attachment 缺少策略允许的真实浏览器截图入口"
+            }
+          ],
           "cooldown_hours": 168
         }
       ]

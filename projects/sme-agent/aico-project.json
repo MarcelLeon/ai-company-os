@@ -107,6 +107,16 @@
             "stop before real merchant data or payment",
             "stop before accepting the 199 RMB offer for the owner"
           ],
+          "evidence_sources": [
+            {
+              "path": "STATUS.md",
+              "start_marker": "## Product boundary"
+            },
+            {
+              "path": "docs/handoffs/current.md",
+              "start_marker": "## Goal"
+            }
+          ],
           "cooldown_hours": 168
         }
       ]

@@ -918,13 +918,18 @@ def _validate_standing_autonomy_grants(
         if not any(charter.id == grant.charter_id for charter in project.standing_charter):
             raise ValueError("standing autonomy grant references an unknown charter")
         charter = next(item for item in project.standing_charter if item.id == grant.charter_id)
+        if not charter.evidence_sources:
+            raise ValueError("standing autonomy grant requires bounded evidence sources")
         assignment = project_directory.appointment_for_role(project.id, charter.role)
         card = None if assignment is None else agent_directory.resolve(assignment.agent)
         adapter = None if card is None else registry.get(card.adapter_name)
         if not isinstance(adapter, PreauthorizedExecutionAdapter) or not (
             adapter.supports_preauthorized_execution(PreauthorizedExecutionMode.READ_ONLY.value)
+            and adapter.supports_preauthorized_budget(grant.max_total_tokens)
         ):
-            raise ValueError("standing autonomy grant requires an enforced read-only adapter")
+            raise ValueError(
+                "standing autonomy grant requires enforced read-only and token-budget adapter"
+            )
 
 
 def _view_snapshot_handler(

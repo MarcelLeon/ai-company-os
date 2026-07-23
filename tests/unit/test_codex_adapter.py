@@ -173,20 +173,48 @@ def test_codex_adapter_forces_ephemeral_read_only_command_for_preauthorized_task
         grant_id="grant-1",
         expires_at=datetime(2027, 1, 1, tzinfo=UTC),
         max_duration_seconds=60,
+        max_total_tokens=50_000,
     )
 
     assert adapter.supports_preauthorized_execution("read_only") is True
+    assert adapter.supports_preauthorized_budget(50_000) is True
     assert adapter._command_for_task(task) == (  # noqa: SLF001
         "codex",
         "--ask-for-approval",
         "never",
         "--sandbox",
         "read-only",
+        "--disable",
+        "shell_tool",
+        "--disable",
+        "unified_exec",
+        "--disable",
+        "multi_agent",
+        "--disable",
+        "apps",
+        "--disable",
+        "browser_use",
+        "--disable",
+        "browser_use_external",
+        "--disable",
+        "computer_use",
+        "--disable",
+        "image_generation",
+        "--disable",
+        "standalone_web_search",
+        "--disable",
+        "search_tool",
         "exec",
         "--ignore-user-config",
         "--ignore-rules",
         "--ephemeral",
         "--strict-config",
+        "-c",
+        "features.rollout_budget={limit_tokens=50000,reminder_at_remaining_tokens=[25000],sampling_token_weight=1.0,prefill_token_weight=1.0}",
+        "-c",
+        "model_context_window=50000",
+        "-c",
+        'web_search="disabled"',
         "--output-schema",
         str(STANDING_RESULT_SCHEMA_PATH),
         "--color",
@@ -194,8 +222,27 @@ def test_codex_adapter_forces_ephemeral_read_only_command_for_preauthorized_task
         "--json",
         task.payload,
     )
-    assert "-c" not in adapter._command_for_task(task)  # noqa: SLF001
     assert STANDING_RESULT_SCHEMA_PATH.is_file()
+
+
+def test_codex_adapter_binds_exact_model_and_effort_for_benchmark_task() -> None:
+    adapter = CodexAdapter(command=("codex", "exec"))
+    task = task_with_exact_output_constraint(_task("Inspect frozen evidence."))
+    task = task_with_preauthorized_execution(
+        task,
+        grant_id="benchmark-dispatch",
+        expires_at=datetime(2027, 1, 1, tzinfo=UTC),
+        max_duration_seconds=60,
+        max_total_tokens=50_000,
+        model="gpt-5.6-sol",
+        reasoning_effort="high",
+    )
+
+    command = adapter._command_for_task(task)  # noqa: SLF001
+
+    assert adapter.supports_preauthorized_model("gpt-5.6-sol", "high")
+    assert command[command.index("--model") + 1] == "gpt-5.6-sol"
+    assert 'model_reasoning_effort="high"' in command
 
 
 def test_codex_adapter_refuses_preauthorized_mode_for_non_codex_executable() -> None:
@@ -279,6 +326,7 @@ async def test_codex_adapter_bounds_preauthorized_final_message() -> None:
         grant_id="grant-1",
         expires_at=datetime(2027, 1, 1, tzinfo=UTC),
         max_duration_seconds=60,
+        max_total_tokens=50_000,
     )
 
     await adapter.receive_task(task)

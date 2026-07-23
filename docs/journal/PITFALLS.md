@@ -3979,7 +3979,7 @@ Codex已执行十余秒，但一个JSONL事件超过StreamReader默认limit，`r
 
 ### [P-113] 累计token阈值与bounded output不能冒充单次成本上限
 
-**状态**:🟡 ACTIVE
+**状态**:✅ RESOLVED(machine contract; real sample pending B-014)
 **首次踩中**:Round 256
 **最后更新**:2026-07-22
 **影响范围**:standing autonomy grant,result source routing,B-014
@@ -3989,6 +3989,151 @@ grant配置50,000 token stop threshold，但真实单次inspection已生成227,2
 同时charter允许引用`STATUS.md`，而该文件324 KiB、超过validator 256 KiB source cap，最终task DONE但outcome invalid。
 
 **解决方向 / 避免误报**
-- 对外只称“下一run前累计熔断”，禁止称hard budget；没有Provider侧生成前硬限额时保持standing autonomy disabled。
-- 先生成小型、allowlisted、带SHA的evidence pack，让Agent看不到超限整文件并限制可探索上下文；charter与validator共享同一source cap。
+- Round 257已把grant升级v2：`max_total_tokens`进入Codex rollout/context配置，provider usage越界时结果不采信并显示budget breach；
+  `token_stop_threshold`继续只称“下一run前累计熔断”。
+- 已生成小型、allowlisted、带SHA的evidence pack，让Agent看不到超限整文件并限制可探索上下文；charter与validator共享同一pack。
+- Codex rollout budget按response后记账，美元quota不由AICO控制；真实within-limit复验仍由B-014跟踪，不把机器post-check冒充付费保证。
 - 只有真实样本同时满足硬预算证据、`outcome=complete`、`evidence=current`和criteria/source全覆盖，才能关闭B-014。
+
+### [P-114] 只对收到的成功结果取平均会让漏任务和漏证据隐身
+
+**状态**:🟢 RESOLVED(machine scorer; real harness pending)
+**首次踩中**:Round 258
+**最后更新**:2026-07-22
+**影响范围**:boss-absent comparative benchmark,正式胜出声明
+
+**症状与根因**
+如果completion/evidence/budget只统计已上报result，系统可以不写失败task、漏usage或不提供takeover receipt，聚合比例反而更高；
+多Agent还可能按角色分别获得预算，使“相同总预算”只停留在文档口号。
+
+**解决与预防**
+- contract在模型调用前绑定exact task set SHA；每个system/task最多一条result，unknown/duplicate/drift直接拒绝计分。
+- 漏task继续占completion/evidence分母；漏usage与超总上限都计budget loss；漏takeover按cap+1计成本。
+- AICO多Agent usage合并到task唯一`total_tokens`，不能按角色扩预算。
+- relative五指标之外增加AICO全task、全协作、零预算、全证据和restart/IM/approval绝对门槛，防止“比baseline少失败”冒充可用。
+- synthetic fixture只验证scorer；正式结论必须由独立harness采集真实receipt，不能让实现测试反向成为成绩。
+
+**相关链接**
+- ADR-0091
+- `benchmarks/boss-absent-v1/README.md`
+- `src/aico/core/boss_absent_benchmark.py`
+
+### [P-115] `codex exec`不是Codex Goal，ephemeral thread也不能承载Goal
+
+**状态**:🟢 RESOLVED(control-plane admission; formal turn runner pending)
+**首次踩中**:Round 259
+**最后更新**:2026-07-23
+**影响范围**:boss-absent Codex Goal baseline,benchmark fairness
+
+**症状与根因**
+最初计划把两侧都包成CLI process runner，但本机`codex exec`没有Goal API；它只能运行一次性turn。app-server schema虽公开
+`thread/goal/set|get|clear`，live probe又证明ephemeral thread明确拒绝Goal。若继续用exec或ephemeral thread，测到的是更弱且不同的产品。
+
+直接在桌面`CODEX_HOME`启动另一个app-server还出现间歇SQLite state runtime初始化失败；共享日常state会让benchmark受桌面并发影响，
+并可能污染用户任务。
+
+**解决与预防**
+- Codex baseline固定为persistent app-server thread + Goal API；正式turn/continuation也必须在同一Goal thread上运行。
+- no-model admission绑定exact CLI/model/token budget，要求read-only/no-network、0 tokens/seconds，再clear Goal并delete thread。
+- 每个run使用isolated Codex home，不与桌面state DB竞争；正式auth注入未验收前不复制secret、不运行模型。
+- thread创建后落`0600` cleanup intent；断线保留isolated home，下次先重连删除旧thread。成功receipt不暴露thread id/path/identity。
+- external thread create与local intent write无法原子提交；该微小crash window不能被“finally会执行”掩盖，正式runner需继续审计。
+
+**相关链接**
+- ADR-0092
+- `src/aico/app/boss_absent_codex_goal_probe.py`
+- `benchmarks/boss-absent-v1/README.md`
+
+### [P-116] Goal状态API不等于Goal自动续跑宿主
+
+**状态**:🟢 RESOLVED(contract; native host adapter pending)
+**首次踩中**:Round 260
+**最后更新**:2026-07-23
+**影响范围**:Codex Goal baseline,continuation fairness,benchmark attribution
+
+**症状与根因**
+app-server暴露persistent Goal与`turn/start`，容易让runner在每个turn后发送自定义“继续”prompt并把结果命名为Codex Goal。
+但0.144.5 schema没有continuation method；`turn/start`要求调用方提供input。该loop的prompt、重试和停止策略实际由benchmark实现者提供，
+会把AICO能力偷偷注入baseline。
+
+**解决与预防**
+- app-server只算Goal control plane与observation surface；formal baseline必须有第一方Codex host build和native continuation admission。
+- runner不能构造continuation input，只保存opaque input SHA；raw prompt既不进入receipt，也不由AICO项目猜测。
+- initial、native continuation、owner takeover、harness injection分别记账；owner输入必须计human intervention。
+- sequence/previous SHA/Goal tokens/provider usage/status/budget全链闭合，terminal或paused后续跑直接拒绝。
+- 没有native host adapter/build receipt时宁可formal runner不可执行，也不以standalone loop制造虚假可比性。
+
+**相关链接**
+- ADR-0093
+- `src/aico/app/boss_absent_codex_goal_host.py`
+
+### [P-117] role label齐全不等于跨Agent协作
+
+**状态**:🟢 RESOLVED(machine gate; formal runtime pending)
+**首次踩中**:Round 261
+**最后更新**:2026-07-23
+**影响范围**:boss-absent collaboration metric,AICO managed orchestration,Codex baseline fairness
+
+**症状与根因**
+旧scorer只检查required role是否出现在checkpoint里、是否有consumer。一个Agent可以用不同role label生成多条checkpoint并取得协作满分，
+但这只证明角色扮演，不证明跨Agent交接，也无法体现AICO multi-agent价值。
+
+**解决与预防**
+- collaboration task要求每个required role恰有一个checkpoint，且required checkpoints的`agent_id`全部不同。
+- AICO runner按frozen role顺序选择不同Agent，后一个Agent必须消费前一artifact SHA；重复agent id在commit前拒绝。
+- 所有role共享task总预算，不按Agent扩容；每次provider usage都进入总账。
+- provider调用前保存stable dispatch intent，重启只对账、不盲重放；跨restart还必须看到不同runtime instance SHA。
+- `role_chain_complete`只是中间态，不能在terminal/test/source/acceptance证据缺失时计分。
+
+**相关链接**
+- ADR-0094
+- `src/aico/app/boss_absent_aico_runner.py`
+- `src/aico/core/boss_absent_benchmark.py`
+
+### [P-118] role-chain complete不是task terminal complete
+
+**状态**:🟢 RESOLVED(contract; live harness pending)
+**首次踩中**:Round 262
+**最后更新**:2026-07-23
+**影响范围**:AICO benchmark finalization,evidence completeness,scenario attribution
+
+**症状与根因**
+不同Agent完成全部required roles只能证明role turns结束，不能证明最终artifact通过acceptance/test、没有source drift、审批前零写入、
+进程确实重启或老板能够低成本接管。让AICO直接把自身state映射为complete result会使执行者兼任裁判。
+
+**解决与预防**
+- independent harness receipt绑定contract/task/state/observer/events SHA；raw prompt/log不进入结果。
+- terminal必须消费final role checkpoint；finalizer再次检查role order、distinct agents、chain和shared usage。
+- restart要求不同runtime、零dispatch replay；approval要求exact request/grant和审批前零mutation。
+- drift必须injected/detected且未发布stale result；budget pressure必须暴露但不消费irrelevant source。
+- IM takeover必须有actions/seconds/evidence完整三元组；budget receipt缺失时拒绝封口。
+- `finalize-aico`只生成单task result；仍须两侧全部样本通过同一scorer才可能宣称胜出。
+
+**相关链接**
+- ADR-0095
+- `src/aico/app/boss_absent_aico_evidence.py`
+
+### [P-119] token cap相同不等于模型合同相同
+
+**状态**:🟢 RESOLVED(machine transport; formal run pending)
+**首次踩中**:Round 263
+**最后更新**:2026-07-23
+**影响范围**:boss-absent benchmark fairness,preauthorized Codex,TaskBus runtime
+
+**症状与根因**
+benchmark contract虽然冻结model与reasoning effort，旧preauthorized Task只携带token cap，Codex命令依赖默认model/effort。
+如果两侧默认配置不同，即使task和预算相同，结果也不是同一模型条件；fake runtime又绕过TaskBus，无法证明真实Adapter capability、
+provider usage和跨进程dispatch receipt。
+
+**解决与预防**
+- benchmark preauthorization成对携带exact model/effort；metadata不完整或Adapter缺少机器能力时，在provider调用前fail closed。
+- Codex Adapter显式传`--model`与reasoning effort strict config；未携带新合同的既有standing task保持兼容。
+- AICO frozen role统一走TaskBus submit/output/usage合同，不另建benchmark专用subprocess路径。
+- provider完成后先持久owner-only observation receipt；新runtime按stable dispatch id恢复，未知outcome保持ambiguous而不盲重放。
+- runtime配置的不同agent id只是编排身份；正式协作成绩还要由独立collector绑定project assignment和provider session。
+
+**相关链接**
+- ADR-0096
+- `src/aico/app/boss_absent_aico_taskbus_runtime.py`
+- `src/aico/core/preauthorized_execution.py`
+- `src/aico/adapter/codex.py`

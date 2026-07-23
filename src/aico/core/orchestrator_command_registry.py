@@ -71,7 +71,13 @@ from aico.core.standing_autonomy import (
     standing_autonomy_outcome_envelope,
     standing_autonomy_receipts,
 )
+from aico.core.standing_evidence_pack import (
+    StandingEvidencePack,
+    StandingEvidencePackError,
+    build_standing_evidence_pack,
+)
 from aico.core.standing_proposal import (
+    StandingProposal,
     StandingProposalCoordinator,
     StandingProposalStore,
 )
@@ -827,6 +833,9 @@ def _install_standing_handlers(
         evidence_root_for_project=lambda project_id: _project_evidence_root(
             project_directory, project_id
         ),
+        evidence_pack_for_proposal=lambda proposal: _project_evidence_pack(
+            project_directory, proposal
+        ),
         authorization_time_refusal=task_bus.authorization_time_refusal,
     )
 
@@ -840,6 +849,28 @@ def _project_evidence_root(
         return None
     root = Path(project.repo).expanduser()
     return root if root.is_absolute() else Path.cwd() / root
+
+
+def _project_evidence_pack(
+    directory: ProjectAssignmentDirectory,
+    proposal: StandingProposal,
+) -> StandingEvidencePack:
+    project = directory.project(proposal.project_id)
+    root = _project_evidence_root(directory, proposal.project_id)
+    if project is None or root is None:
+        raise StandingEvidencePackError("standing evidence project is unavailable")
+    charter = next(
+        (item for item in project.standing_charter if item.id == proposal.charter_id),
+        None,
+    )
+    if charter is None:
+        raise StandingEvidencePackError("standing evidence charter is unavailable")
+    return build_standing_evidence_pack(
+        root,
+        project_id=proposal.project_id,
+        charter_id=proposal.charter_id,
+        source_specs=charter.evidence_sources,
+    )
 
 
 def _task_status(task_bus: TaskBus, task_id: str) -> TaskStatus | None:

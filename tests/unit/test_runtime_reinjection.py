@@ -148,6 +148,7 @@ def test_runtime_reinjection_validates_reissued_standing_grant_binding(
                     expires_at=datetime(2027, 1, 1, tzinfo=UTC),
                     max_runs=1,
                     max_duration_seconds=300,
+                    max_total_tokens=50_000,
                     token_stop_threshold=100_000,
                 ),
             )
@@ -254,6 +255,7 @@ def _write_env(
 
 
 def _standing_project(managed: Path) -> dict[str, object]:
+    (managed / "STATUS.md").write_text("# Current status\nEvidence is current.\n")
     return {
         "agents": {
             "codex": {
@@ -276,6 +278,7 @@ def _standing_project(managed: Path) -> dict[str, object]:
                         "role": "reviewer",
                         "acceptance_evidence": ["one bounded report"],
                         "stop_conditions": ["stop before external communication"],
+                        "evidence_sources": [{"path": "STATUS.md"}],
                     }
                 ],
             }

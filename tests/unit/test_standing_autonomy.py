@@ -53,6 +53,9 @@ class RecordingAdapter:
     def supports_preauthorized_execution(self, mode: str) -> bool:
         return self._enforced and mode == PreauthorizedExecutionMode.READ_ONLY.value
 
+    def supports_preauthorized_budget(self, max_total_tokens: int) -> bool:
+        return self._enforced and max_total_tokens == 50_000
+
     async def receive_task(self, task: Task) -> TaskAck:
         self.received_tasks.append(task)
         return TaskAck(task_id=task.task_id, status=AckStatus.ACCEPTED)
@@ -142,7 +145,7 @@ def test_load_standing_autonomy_grants_rejects_malformed_duplicate_and_oversized
         load_standing_autonomy_grants(grant_path)
     assert "not-json" not in str(malformed.value)
 
-    duplicate = {"version": 1, "grants": [_grant().model_dump(mode="json")] * 2}
+    duplicate = {"version": 2, "grants": [_grant().model_dump(mode="json")] * 2}
     grant_path.write_text(json.dumps(duplicate), encoding="utf-8")
     with pytest.raises(StandingAutonomyConfigError, match="invalid"):
         load_standing_autonomy_grants(grant_path)
@@ -176,6 +179,16 @@ def test_standing_autonomy_grants_require_post_run_token_threshold() -> None:
 
     with pytest.raises(ValueError, match="token_stop_threshold"):
         StandingAutonomyGrant.model_validate(payload)
+
+
+def test_standing_autonomy_grants_require_single_run_budget_and_v2_schema() -> None:
+    payload = _grant().model_dump()
+    payload.pop("max_total_tokens")
+
+    with pytest.raises(ValueError, match="max_total_tokens"):
+        StandingAutonomyGrant.model_validate(payload)
+    with pytest.raises(ValueError, match="version"):
+        StandingAutonomyGrantSet.model_validate({"version": 1, "grants": []})
 
 
 async def test_task_bus_accepts_only_enforced_read_only_preauthorized_task() -> None:
@@ -289,6 +302,7 @@ def _grant() -> StandingAutonomyGrant:
         expires_at=datetime(2027, 1, 1, tzinfo=UTC),
         max_runs=1,
         max_duration_seconds=0.1,
+        max_total_tokens=50_000,
         token_stop_threshold=100_000,
     )
 
@@ -311,6 +325,7 @@ def _preauthorized_task(payload: str) -> Task:
         grant_id="grant-1",
         expires_at=datetime(2027, 1, 1, tzinfo=UTC),
         max_duration_seconds=0.1,
+        max_total_tokens=50_000,
     )
 
 

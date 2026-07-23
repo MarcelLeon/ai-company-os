@@ -111,6 +111,11 @@ Round 244起，`aico-service`把“可做开发安装”和“可让老板离开
 disposable drill和owner-bound standing autonomy必须沿同一readiness图全部OK，install才可执行launchctl。strict不新建shadow
 checker，也不认证外部endpoint、off-device存储、platform ACK或human read；B-010至B-014仍需真实样本。
 
+Round 257起，standing autonomy还要求grant schema v2的`max_total_tokens`与charter `evidence_sources`。scheduler在派发前生成
+fingerprinted、allowlisted、最多64 KiB的evidence pack，Codex执行为tool-free单response；provider usage越过owner limit或
+result引用pack外行时只留下失败回执并停授。该门禁不等于美元hard quota，正式上线仍需B-014的一次真实within-limit、
+`outcome=complete/evidence=current`样本。
+
 Round 245修复一次性门禁绕过：Phase1Settings现在显式消费admission mode，service/runtime共享固定合同名；strict缺enable项在
 settings阶段失败，standing/recovery binding再于build第一步复用production preflight。Telegram/Feishu均在Channel/state前停止，
 LaunchAgent重启不能回落optional。生产settings loader禁止把含dotenv raw input的Pydantic ValidationError写入stderr，只提示运行doctor。

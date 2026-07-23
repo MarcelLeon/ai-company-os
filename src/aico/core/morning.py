@@ -258,6 +258,11 @@ def _standing_autonomy_receipt_lines(
             else ""
         )
         tokens = f" tokens={receipt.total_tokens}" if receipt.total_tokens is not None else ""
+        budget = (
+            f" budget={receipt.budget_status.value}/{receipt.max_total_tokens}"
+            if receipt.budget_status is not None and receipt.max_total_tokens is not None
+            else ""
+        )
         outcome = f" outcome={receipt.outcome_status.value}"
         coverage = (
             f" criteria={receipt.criteria_met}/{receipt.criteria_total} "
@@ -273,7 +278,8 @@ def _standing_autonomy_receipt_lines(
         action = f"/task {task}" if receipt.task_id else "/proposals"
         lines.append(
             f"- {proposal_id} [{receipt.status.value}] charter={receipt.charter_id} "
-            f"task={task} auth={authorization}{elapsed}{tokens}{outcome}{coverage}{evidence} "
+            f"task={task} auth={authorization}{elapsed}{tokens}{budget}{outcome}"
+            f"{coverage}{evidence} "
             f"-> {action}"
         )
     return lines

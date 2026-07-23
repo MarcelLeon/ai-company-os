@@ -108,6 +108,13 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0087 | Expiring Runtime Commissioning Receipt | Accepted | 2026-07-22 |
 | ADR-0088 | Signed Dead-Man Evidence Envelope | Accepted | 2026-07-22 |
 | ADR-0089 | Unified Local Onboarding and Optional Dead-Man Receiver | Accepted | 2026-07-22 |
+| ADR-0090 | Tool-Free Budgeted Standing Evidence Pack | Accepted | 2026-07-22 |
+| ADR-0091 | Evidence-First Boss-Absent Comparative Benchmark | Accepted | 2026-07-22 |
+| ADR-0092 | Persistent App-Server Codex Goal Baseline | Accepted | 2026-07-23 |
+| ADR-0093 | Native Codex Goal Host Continuation Boundary | Accepted | 2026-07-23 |
+| ADR-0094 | Restart-Safe Managed Multi-Agent Benchmark Runner | Accepted | 2026-07-23 |
+| ADR-0095 | Independent Scenario Evidence Finalization | Accepted | 2026-07-23 |
+| ADR-0096 | Exact-Model TaskBus Benchmark Transport | Accepted | 2026-07-23 |
 
 **状态图例**:
 - `Proposed`(提议中)

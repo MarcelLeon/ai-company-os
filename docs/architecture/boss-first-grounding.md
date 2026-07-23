@@ -369,9 +369,11 @@ origin、全资产恢复或真实IM业务可用。
 terminal/running/evidence-missing状态。这样保留TaskBus单一事实源，并把“预算已扣但dispatch evidence缺失”的
 at-most-once crash window显式交给owner，而不是自动重复成本未知的任务。
 
-Codex在terminal `turn.completed`后还会留下provider token usage；TaskBus写结构化audit，accepted proposal保存同一
-receipt。owner grant的`token_stop_threshold`在下一次dispatch前按累计实测量熔断，任何已消费run缺usage时停授。
-这是完成后累计熔断，不是当前run的hard token cap，也不从token自行估算美元账单。
+Round 257把standing inspection改为tool-free bounded context：charter列出exact source/section，系统生成带完整文件SHA、原始
+path/line且不超过64 KiB的evidence pack；模型没有shell/web/browser/multi-agent工具，result只能引用pack白名单行。
+owner grant v2新增`max_total_tokens`并同时进入Codex rollout/context配置；terminal provider usage超过它时保留证据但拒绝结果，
+morning/inbox显示budget breach。`token_stop_threshold`仍只负责下一次dispatch前的累计熔断。两者都不从token估算美元账单，
+Codex response后记账的残余边界仍由B-014真实样本验证。
 
 Codex最终消息还受versioned result schema约束，并以charter `A*`/`S*`覆盖、状态一致性与repo-relative file/line存在
 生成durable outcome receipt。老板面同时看task status和outcome；prior missing/invalid/blocked会停授，原始JSON不进入
