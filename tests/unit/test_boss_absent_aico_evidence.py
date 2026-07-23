@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
@@ -11,6 +12,7 @@ from aico.app.boss_absent_aico_evidence import (
     finalize_aico_benchmark_result,
 )
 from aico.app.boss_absent_aico_runner import (
+    AicoApprovalCheckpoint,
     AicoBenchmarkRunPhase,
     AicoBenchmarkRunState,
     AicoRoleCheckpoint,
@@ -56,6 +58,7 @@ def _task(
         task_id=f"task-{scenario.value.replace('_', '-')}",
         scenario=scenario,
         objective="produce a verified terminal handoff",
+        fixture='{"release":"candidate-17","tests":"green"}',
         acceptance=("lead plans", "reviewer verifies"),
         required_roles=("lead", "reviewer"),
         unattended_eligible=not approval,
@@ -77,6 +80,7 @@ def _state(
         role="lead",
         agent_id="agent-lead",
         runtime_instance_sha256="a" * 64,
+        input_fixture_sha256=hashlib.sha256(task.fixture.encode()).hexdigest(),
         artifact_sha256="c" * 64,
         usage=TaskUsage(input_tokens=90, output_tokens=10, total_tokens=100),
     )
@@ -86,9 +90,20 @@ def _state(
         role="reviewer",
         agent_id="agent-reviewer",
         runtime_instance_sha256=("b" if task.restart_required else "a") * 64,
+        input_fixture_sha256=hashlib.sha256(task.fixture.encode()).hexdigest(),
         artifact_sha256="d" * 64,
         consumed_checkpoint_sha256=first.artifact_sha256,
         usage=TaskUsage(input_tokens=100, output_tokens=20, total_tokens=120),
+    )
+    approval_request = (
+        hashlib.sha256(
+            (
+                f"aico-benchmark-approval-v1\0{canonical_sha256(contract)}\0"
+                f"{task.task_id}\0{task.fixture}"
+            ).encode()
+        ).hexdigest()
+        if task.approval_required
+        else None
     )
     return AicoBenchmarkRunState(
         contract_sha256=canonical_sha256(contract),
@@ -97,6 +112,17 @@ def _state(
         task_id=task.task_id,
         phase=AicoBenchmarkRunPhase.ROLE_CHAIN_COMPLETE,
         checkpoints=(first, second),
+        approval_request_sha256=approval_request,
+        approval_checkpoint=(
+            AicoApprovalCheckpoint(
+                after_sequence=1,
+                request_sha256=approval_request or "",
+                grant_sha256="8" * 64,
+                action_receipt_sha256="9" * 64,
+            )
+            if task.approval_required
+            else None
+        ),
         total_tokens=220,
         restart_count=int(task.restart_required),
     )
@@ -145,6 +171,21 @@ def _receipt(
         "approval_requests": int(task.approval_required),
         "approval_grants": int(task.approval_required),
         "approval_evidence_sha256": "8" * 64 if task.approval_required else None,
+        "approval_request_sha256": (
+            state.approval_checkpoint.request_sha256
+            if state.approval_checkpoint is not None
+            else None
+        ),
+        "approval_grant_sha256": (
+            state.approval_checkpoint.grant_sha256
+            if state.approval_checkpoint is not None
+            else None
+        ),
+        "approval_action_receipt_sha256": (
+            state.approval_checkpoint.action_receipt_sha256
+            if state.approval_checkpoint is not None
+            else None
+        ),
         "evidence_drift_injected": task.scenario is BenchmarkScenario.EVIDENCE_DRIFT,
         "evidence_drift_detected": task.scenario is BenchmarkScenario.EVIDENCE_DRIFT,
         "irrelevant_source_exposed": task.budget_pressure,
@@ -287,6 +328,28 @@ def test_finalizer_rejects_missing_budget_or_terminal_consumption() -> None:
                 state,
                 terminal_consumed_checkpoint_sha256="0" * 64,
             ),
+        )
+
+
+def test_finalizer_rejects_role_state_with_another_fixture() -> None:
+    contract = _contract()
+    task = _task()
+    state = _state(contract, task)
+    drifted = state.model_copy(
+        update={
+            "checkpoints": (
+                state.checkpoints[0].model_copy(update={"input_fixture_sha256": "0" * 64}),
+                state.checkpoints[1],
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="fixture fingerprint"):
+        finalize_aico_benchmark_result(
+            contract,
+            task,
+            drifted,
+            _receipt(contract, task, drifted),
         )
 
 

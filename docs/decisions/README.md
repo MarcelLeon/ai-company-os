@@ -115,6 +115,8 @@ ADR 回答的核心问题:**"为什么我们用 X 而不是 Y?"**
 | ADR-0094 | Restart-Safe Managed Multi-Agent Benchmark Runner | Accepted | 2026-07-23 |
 | ADR-0095 | Independent Scenario Evidence Finalization | Accepted | 2026-07-23 |
 | ADR-0096 | Exact-Model TaskBus Benchmark Transport | Accepted | 2026-07-23 |
+| ADR-0097 | Frozen-Fixture Independent AICO Harness | Accepted | 2026-07-23 |
+| ADR-0098 | Approval-Gated At-Most-Once Benchmark Mutation | Accepted | 2026-07-23 |
 
 **状态图例**:
 - `Proposed`(提议中)

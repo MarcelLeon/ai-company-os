@@ -75,5 +75,8 @@ invalid、drifted、duplicate、oversized或不安全，不能产生胜负结论
 Round 258已完成frozen task set、result schema、deterministic scorer、离线CLI与equal-observation artifact dry-run，并用真实helper
 process terminate/new-process resume receipt替换restart synthetic hash，但仍不证明AICO/Codex Goal本身跨重启，也不产生胜负结论。
 Round 259再完成真实Codex Goal persistent app-server no-model admission与isolated home/cleanup intent。Round 263完成AICO exact-model
-TaskBus/Adapter transport及跨runtime role handoff机器验收，但配置身份尚不等于正式独立Agent证据。首次正式对比仍须另行授权实际模型
-调用并由isolated harness注入五类事件；不能把protocol receipt、实现测试或synthetic fixture反向当成benchmark成绩。
+TaskBus/Adapter transport及跨runtime role handoff机器验收。Round 264把actual bounded fixture纳入task-set SHA，增加一次一role的
+clean-checkout runtime CLI和owner-only independent observation ledger/finalization；但配置身份尚不等于正式独立Agent证据，
+approval runner pause与intent-first at-most-once isolated mutation已接通，Telegram owner grant/takeover仍未live连接。
+首次正式对比仍须另行授权实际模型调用并由isolated harness注入五类事件；
+不能把protocol receipt、实现测试或synthetic fixture反向当成benchmark成绩。

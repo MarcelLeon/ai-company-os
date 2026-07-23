@@ -2,8 +2,11 @@
 
 This directory contains the tracked task contract for the first AICO vs Codex Goal comparison. It is not a benchmark result.
 
-Canonical `tasks.json` SHA-256: `cb4898fed0a958a5778dd8744bbe910c2e179a3918a03153ed07cabd14ef9f34`.
+Canonical `tasks.json` SHA-256: `f0acbd3317466f8709cf408ba1403bc0dbda17f0f5367cbd21630861c9462031`.
 The `freeze` command recomputes this fingerprint; this line is review help, not scoring authority.
+
+Each task embeds one bounded fixture in the canonical task object. The exact fixture therefore reaches both systems and is covered by the task-set
+fingerprint; an objective/acceptance list without the fixture is not a valid frozen execution input.
 
 ## Harness protocol
 
@@ -69,9 +72,68 @@ benchmark runner must never synthesize a continuation prompt for standalone app-
 runner records only bounded input/turn hashes, source, Goal/provider usage, status, and human-intervention counts. Until an exact host build passes
 that admission contract, the Codex Goal formal runner is not executable.
 
+## Advance the real AICO runtime
+
+Each invocation advances at most one frozen role. The checkout must be absolute, clean, and exactly match the contract revision. The external harness
+owns the state/artifact/receipt directories and runtime-instance SHA; for the restart scenario it terminates the first CLI process after the durable
+checkpoint and invokes a new process with a different runtime-instance SHA.
+
+```bash
+uv run aico-benchmark advance-aico \
+  --contract /private/new-run/contract.json \
+  --tasks benchmarks/boss-absent-v1/tasks.json \
+  --task-id bounded-budget-pressure \
+  --state /private/new-run/aico/bounded-budget-pressure/state.json \
+  --artifact-dir /private/new-run/aico/bounded-budget-pressure/artifacts \
+  --receipt-dir /private/new-run/aico/bounded-budget-pressure/receipts \
+  --cwd /private/clean-checkout \
+  --runtime-build <exact-aico-build> \
+  --runtime-instance-sha256 <64-hex-harness-generation> \
+  --expires-at <timezone-aware-iso8601> \
+  --max-duration-seconds 300 \
+  --role-target lead=agent-lead:codex \
+  --role-target reviewer=agent-reviewer:codex
+```
+
+The command uses the frozen exact model/effort and one shared remaining-token budget. It refuses dirty/wrong-revision checkout, missing/excess roles,
+expired authorization, unsafe state paths, Adapter capability drift, missing provider usage, and ambiguous dispatch replay. Running this command
+consumes provider tokens; no formal invocation is allowed without a separate owner authorization for the frozen contract.
+
+For `approval-fence-resume`, the first role leaves the state at `approval_pending`. After the owner decision produces an exact owner-only grant,
+apply the isolated action before advancing the reviewer:
+
+```bash
+uv run aico-benchmark apply-aico-approval \
+  --contract /private/new-run/contract.json \
+  --tasks benchmarks/boss-absent-v1/tasks.json \
+  --task-id approval-fence-resume \
+  --state /private/new-run/aico/approval-fence-resume/state.json \
+  --runtime-build <same-exact-aico-build> \
+  --grant /private/new-run/aico/approval-fence-resume/owner-grant.json \
+  --mutation-root /private/new-run/aico/approval-fence-resume/isolated-mutation \
+  --intent /private/new-run/aico/approval-fence-resume/action-intent.json \
+  --receipt /private/new-run/aico/approval-fence-resume/action-receipt.json
+```
+
+The action target and content come only from the frozen fixture. Intent is durable before mutation; a matching target can be reconciled only when that
+intent already exists, while a pre-existing target without intent is rejected. The reviewer remains undispatched until the action receipt is bound
+into runner state. The current missing formal link is production of the grant from a real owner-bound Telegram decision.
+
 ## Score a completed run
 
-Before appending an AICO task result, bind the durable role state to the independent harness receipt:
+The independent harness first converts its owner-only observation ledger into the bounded scenario receipt:
+
+```bash
+uv run aico-benchmark finalize-aico-observations \
+  --contract /private/new-run/contract.json \
+  --tasks benchmarks/boss-absent-v1/tasks.json \
+  --observations /private/new-run/aico/<task>/observations.json \
+  --output /private/new-run/aico/<task>/scenario-evidence.json
+```
+
+The ledger is built from actual fixture bytes, 0600 role artifacts/dispatch receipts, process generation, approval target generation, external
+acceptance/test receipts, provider usage, takeover ACK and terminal consumption. Reconstructing flags in a hand-written JSON receipt is not a formal
+observation. Before appending an AICO task result, bind the durable role state to that receipt:
 
 ```bash
 uv run aico-benchmark finalize-aico \

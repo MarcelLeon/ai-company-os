@@ -102,6 +102,7 @@ def _request(*, prior: str | None = None, role: str = "lead") -> AicoRoleRequest
         sequence=1 if role == "lead" else 2,
         role=role,
         objective="produce a verified handoff",
+        fixture='{"release":"candidate-17","tests":"green"}',
         acceptance=("plan exists", "review exists"),
         model="gpt-5.6-sol",
         reasoning_effort="high",
@@ -176,6 +177,9 @@ async def test_taskbus_runtime_passes_exact_prior_artifact_to_next_agent(
     assert second.agent_id == "agent-reviewer"
     assert first.artifact_sha256 in (tmp_path / "artifacts" / f"{first.artifact_sha256}.txt").name
     assert "Prior role artifact" in adapter.tasks[1].payload
+    assert 'Frozen fixture:\n{"release":"candidate-17","tests":"green"}' in (
+        adapter.tasks[1].payload
+    )
     assert '"artifact":"bounded"' in adapter.tasks[1].payload
 
 
@@ -256,6 +260,7 @@ async def test_taskbus_runtime_continues_role_chain_after_runtime_restart(
         task_id="restart-role-chain",
         scenario=BenchmarkScenario.RESTART,
         objective="produce a bounded verified handoff",
+        fixture='{"release":"candidate-17","tests":"green"}',
         acceptance=("lead plans", "reviewer verifies"),
         required_roles=("lead", "reviewer"),
         unattended_eligible=True,

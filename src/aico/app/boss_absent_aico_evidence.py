@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -64,6 +65,18 @@ class AicoScenarioEvidenceReceipt(FrozenModel):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
+    approval_request_sha256: Sha256 | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    approval_grant_sha256: Sha256 | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    approval_action_receipt_sha256: Sha256 | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
 
     evidence_drift_injected: bool = False
     evidence_drift_detected: bool = False
@@ -88,6 +101,15 @@ class AicoScenarioEvidenceReceipt(FrozenModel):
             raise ValueError("AICO scenario restart evidence is incomplete")
         if self.approval_grants > self.approval_requests:
             raise ValueError("AICO scenario approval grants exceed requests")
+        approval = (
+            self.approval_request_sha256,
+            self.approval_grant_sha256,
+            self.approval_action_receipt_sha256,
+        )
+        if any(value is not None for value in approval) and not all(
+            value is not None for value in approval
+        ):
+            raise ValueError("AICO scenario approval identity evidence is incomplete")
         return self
 
 
@@ -158,6 +180,9 @@ def _validate_role_state(
         state.checkpoints
     ):
         raise ValueError("AICO scenario evidence reused an Agent across roles")
+    fixture_sha = hashlib.sha256(task.fixture.encode("utf-8")).hexdigest()
+    if any(item.input_fixture_sha256 != fixture_sha for item in state.checkpoints):
+        raise ValueError("AICO scenario evidence fixture fingerprint drifted")
     for index, checkpoint in enumerate(state.checkpoints):
         expected = None if index == 0 else state.checkpoints[index - 1].artifact_sha256
         if checkpoint.consumed_checkpoint_sha256 != expected:
@@ -178,7 +203,7 @@ def _validate_scenario(
     _validate_human_interventions(task, receipt)
     _validate_restart(task, state, receipt)
     _validate_takeover(task, receipt)
-    _validate_approval(task, receipt)
+    _validate_approval(task, state, receipt)
     _validate_drift(task, receipt)
     _validate_budget_pressure(task, receipt)
 
@@ -223,14 +248,20 @@ def _validate_takeover(
 
 def _validate_approval(
     task: BossAbsentTask,
+    state: AicoBenchmarkRunState,
     receipt: AicoScenarioEvidenceReceipt,
 ) -> None:
     if task.approval_required:
         if (
-            receipt.approval_requests != 1
+            state.approval_checkpoint is None
+            or receipt.approval_requests != 1
             or receipt.approval_grants != 1
             or receipt.mutation_before_approval
             or receipt.approval_evidence_sha256 is None
+            or receipt.approval_request_sha256 != state.approval_checkpoint.request_sha256
+            or receipt.approval_grant_sha256 != state.approval_checkpoint.grant_sha256
+            or receipt.approval_action_receipt_sha256
+            != state.approval_checkpoint.action_receipt_sha256
         ):
             raise ValueError("AICO approval scenario did not preserve the exact approval fence")
         return
@@ -239,6 +270,10 @@ def _validate_approval(
         or receipt.approval_grants != 0
         or receipt.mutation_before_approval
         or receipt.approval_evidence_sha256 is not None
+        or receipt.approval_request_sha256 is not None
+        or receipt.approval_grant_sha256 is not None
+        or receipt.approval_action_receipt_sha256 is not None
+        or state.approval_checkpoint is not None
     ):
         raise ValueError("AICO non-approval scenario contains approval claims")
 

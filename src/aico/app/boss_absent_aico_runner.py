@@ -27,6 +27,7 @@ class AicoBenchmarkRunPhase(StrEnum):
     DISPATCH_PENDING = "dispatch_pending"
     DISPATCH_AMBIGUOUS = "dispatch_ambiguous"
     RESTART_PENDING = "restart_pending"
+    APPROVAL_PENDING = "approval_pending"
     ROLE_CHAIN_COMPLETE = "role_chain_complete"
     BLOCKED = "blocked"
     FAILED = "failed"
@@ -67,6 +68,7 @@ class AicoRoleRequest(FrozenModel):
     sequence: int = Field(ge=1, le=32)
     role: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,31}$")
     objective: str = Field(min_length=1, max_length=2_000)
+    fixture: str = Field(min_length=1, max_length=16_384)
     acceptance: tuple[str, ...] = Field(min_length=1, max_length=12)
     model: str = Field(min_length=1, max_length=128)
     reasoning_effort: str = Field(min_length=1, max_length=32)
@@ -87,6 +89,7 @@ class AicoRoleObservation(FrozenModel):
     role: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,31}$")
     agent_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,63}$")
     runtime_instance_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+    input_fixture_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     artifact_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     consumed_checkpoint_sha256: Sha256 | None = Field(
         default=None,
@@ -110,12 +113,21 @@ class AicoRoleCheckpoint(FrozenModel):
     role: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,31}$")
     agent_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,63}$")
     runtime_instance_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+    input_fixture_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     artifact_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
     consumed_checkpoint_sha256: Sha256 | None = Field(
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
     usage: TaskUsage
+
+
+class AicoApprovalCheckpoint(FrozenModel):
+    version: Literal[1] = 1
+    after_sequence: int = Field(ge=1, le=32)
+    request_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+    grant_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
+    action_receipt_sha256: Sha256 = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class AicoBenchmarkRunState(FrozenModel):
@@ -126,6 +138,11 @@ class AicoBenchmarkRunState(FrozenModel):
     task_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,63}$")
     phase: AicoBenchmarkRunPhase = AicoBenchmarkRunPhase.RUNNING
     checkpoints: tuple[AicoRoleCheckpoint, ...] = Field(default=(), max_length=32)
+    approval_request_sha256: Sha256 | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    approval_checkpoint: AicoApprovalCheckpoint | None = None
     pending_role: AicoRoleRequest | None = None
     total_tokens: int = Field(default=0, ge=0)
     unaccepted_usage: TaskUsage | None = None
@@ -159,6 +176,16 @@ class AicoBenchmarkRunState(FrozenModel):
             raise ValueError("AICO runner failure reason does not match phase")
         if (self.unaccepted_usage is None) != (self.failed_observation_sha256 is None):
             raise ValueError("AICO runner failed observation evidence is incomplete")
+        if self.approval_checkpoint is not None:
+            if (
+                self.approval_request_sha256 != self.approval_checkpoint.request_sha256
+                or self.approval_checkpoint.after_sequence > len(self.checkpoints)
+            ):
+                raise ValueError("AICO runner approval checkpoint is inconsistent")
+        if self.phase is AicoBenchmarkRunPhase.APPROVAL_PENDING and (
+            self.approval_request_sha256 is None or self.approval_checkpoint is not None
+        ):
+            raise ValueError("AICO runner approval pending state is inconsistent")
         return self
 
 
@@ -257,6 +284,7 @@ async def advance_aico_benchmark_task(
     _validate_loaded_state(state, contract, task, admission, contract_sha)
     if state.phase in {
         AicoBenchmarkRunPhase.ROLE_CHAIN_COMPLETE,
+        AicoBenchmarkRunPhase.APPROVAL_PENDING,
         AicoBenchmarkRunPhase.BLOCKED,
         AicoBenchmarkRunPhase.FAILED,
     }:
@@ -341,12 +369,18 @@ def _commit_observation(
         role=request.role,
         agent_id=observation.agent_id,
         runtime_instance_sha256=observation.runtime_instance_sha256,
+        input_fixture_sha256=observation.input_fixture_sha256,
         artifact_sha256=observation.artifact_sha256,
         consumed_checkpoint_sha256=observation.consumed_checkpoint_sha256,
         usage=observation.usage,
     )
     checkpoints = (*state.checkpoints, checkpoint)
-    phase = _next_phase(task, checkpoints)
+    approval_request_sha = state.approval_request_sha256
+    if task.approval_required and len(checkpoints) == 1 and state.approval_checkpoint is None:
+        approval_request_sha = _approval_request_sha(state.contract_sha256, task)
+        phase = AicoBenchmarkRunPhase.APPROVAL_PENDING
+    else:
+        phase = _next_phase(task, checkpoints)
     restart_count = state.restart_count
     if request.restart_from_runtime_instance_sha256 is not None:
         restart_count += 1
@@ -354,6 +388,7 @@ def _commit_observation(
         state,
         phase=phase,
         checkpoints=checkpoints,
+        approval_request_sha256=approval_request_sha,
         pending_role=None,
         total_tokens=state.total_tokens + observation.usage.total_tokens,
         restart_count=restart_count,
@@ -372,6 +407,8 @@ def _validate_observation(
         raise ValueError("AICO role observation identity drifted")
     if observation.consumed_checkpoint_sha256 != request.prior_checkpoint_sha256:
         raise ValueError("AICO role did not consume the exact prior checkpoint")
+    if observation.input_fixture_sha256 != hashlib.sha256(request.fixture.encode()).hexdigest():
+        raise ValueError("AICO role did not consume the exact frozen fixture")
     if task.collaboration_required and any(
         checkpoint.agent_id == observation.agent_id for checkpoint in state.checkpoints
     ):
@@ -392,6 +429,39 @@ def _next_phase(
     return AicoBenchmarkRunPhase.RUNNING
 
 
+def record_aico_approval_checkpoint(
+    contract: BossAbsentBenchmarkContract,
+    task: BossAbsentTask,
+    admission: AicoBenchmarkRuntimeAdmission,
+    checkpoint: AicoApprovalCheckpoint,
+    store: AicoBenchmarkStateStore,
+) -> AicoBenchmarkRunState:
+    contract_sha = canonical_sha256(contract)
+    _validate_admission(contract, admission, contract_sha)
+    state = store.load()
+    if state is None:
+        raise ValueError("AICO approval cannot precede role execution")
+    _validate_loaded_state(state, contract, task, admission, contract_sha)
+    expected_request = _approval_request_sha(contract_sha, task)
+    identity = (
+        task.approval_required
+        and state.phase is AicoBenchmarkRunPhase.APPROVAL_PENDING
+        and len(state.checkpoints) == 1
+        and state.approval_request_sha256 == expected_request
+        and checkpoint.after_sequence == 1
+        and checkpoint.request_sha256 == expected_request
+    )
+    if not identity:
+        raise ValueError("AICO approval checkpoint does not match the pending boundary")
+    updated = _updated_state(
+        state,
+        phase=AicoBenchmarkRunPhase.RUNNING,
+        approval_checkpoint=checkpoint,
+    )
+    store.save(updated)
+    return updated
+
+
 def _role_request(
     state: AicoBenchmarkRunState,
     contract: BossAbsentBenchmarkContract,
@@ -409,6 +479,7 @@ def _role_request(
         sequence=sequence,
         role=role,
         objective=task.objective,
+        fixture=task.fixture,
         acceptance=task.acceptance,
         model=contract.model,
         reasoning_effort=contract.reasoning_effort,
@@ -427,6 +498,12 @@ def _role_request(
 def _dispatch_id(state: AicoBenchmarkRunState, task_id: str, sequence: int) -> str:
     return hashlib.sha256(
         f"aico-benchmark-role-v1\0{state.contract_sha256}\0{task_id}\0{sequence}".encode()
+    ).hexdigest()
+
+
+def _approval_request_sha(contract_sha: str, task: BossAbsentTask) -> str:
+    return hashlib.sha256(
+        (f"aico-benchmark-approval-v1\0{contract_sha}\0{task.task_id}\0{task.fixture}").encode()
     ).hexdigest()
 
 
@@ -480,9 +557,28 @@ def _validate_loaded_state(
         state.checkpoints
     ):
         raise ValueError("AICO benchmark persisted checkpoint artifacts are not unique")
+    if task.approval_required:
+        expected_request = _approval_request_sha(contract_sha, task)
+        if len(state.checkpoints) >= 1 and state.approval_request_sha256 != expected_request:
+            raise ValueError("AICO benchmark approval request drifted")
+        if len(state.checkpoints) >= 2 and state.approval_checkpoint is None:
+            raise ValueError("AICO benchmark advanced past approval without a checkpoint")
+        if state.approval_checkpoint is not None and (
+            state.approval_checkpoint.after_sequence != 1
+            or state.approval_checkpoint.request_sha256 != expected_request
+        ):
+            raise ValueError("AICO benchmark approval checkpoint drifted")
+        if (state.phase is AicoBenchmarkRunPhase.APPROVAL_PENDING) != (
+            len(state.checkpoints) == 1 and state.approval_checkpoint is None
+        ):
+            raise ValueError("AICO benchmark approval phase drifted")
+    elif state.approval_request_sha256 is not None or state.approval_checkpoint is not None:
+        raise ValueError("AICO non-approval task contains approval state")
     for index, checkpoint in enumerate(state.checkpoints):
         if checkpoint.role != task.required_roles[index]:
             raise ValueError("AICO benchmark role checkpoint order drifted")
+        if checkpoint.input_fixture_sha256 != hashlib.sha256(task.fixture.encode()).hexdigest():
+            raise ValueError("AICO benchmark persisted fixture fingerprint drifted")
         expected = None if index == 0 else state.checkpoints[index - 1].artifact_sha256
         if checkpoint.consumed_checkpoint_sha256 != expected:
             raise ValueError("AICO benchmark persisted checkpoint chain drifted")
@@ -517,6 +613,7 @@ def _validate_pending_role(
         and request.sequence == sequence
         and request.role == task.required_roles[sequence - 1]
         and request.objective == task.objective
+        and request.fixture == task.fixture
         and request.acceptance == task.acceptance
         and request.model == contract.model
         and request.reasoning_effort == contract.reasoning_effort

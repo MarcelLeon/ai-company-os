@@ -144,6 +144,7 @@ class TaskBusAicoBenchmarkRuntime:
             role=request.role,
             agent_id=target.agent_id,
             runtime_instance_sha256=self._runtime_instance_sha256,
+            input_fixture_sha256=hashlib.sha256(request.fixture.encode("utf-8")).hexdigest(),
             artifact_sha256=artifact_sha,
             consumed_checkpoint_sha256=request.prior_checkpoint_sha256,
             status=AicoRoleStatus.COMPLETE,
@@ -232,6 +233,7 @@ def _role_prompt(request: AicoRoleRequest, prior: str | None) -> str:
         f"Task: {request.task_id}\n"
         f"Role: {request.role}\n"
         f"Objective: {request.objective}\n\n"
+        f"Frozen fixture:\n{request.fixture}\n\n"
         f"Acceptance:\n{acceptance}\n\n"
         "Prior role artifact:\n"
         f"{prior_text}\n\n"

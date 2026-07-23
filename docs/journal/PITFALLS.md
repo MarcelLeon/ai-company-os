@@ -4137,3 +4137,70 @@ provider usage和跨进程dispatch receipt。
 - `src/aico/app/boss_absent_aico_taskbus_runtime.py`
 - `src/aico/core/preauthorized_execution.py`
 - `src/aico/adapter/codex.py`
+
+### [P-120] objective和acceptance相同不等于task input相同
+
+**状态**:🟢 RESOLVED(machine contract; formal run pending)
+**首次踩中**:Round 264
+**最后更新**:2026-07-23
+**影响范围**:boss-absent benchmark fairness,role prompt,evidence drift
+
+**症状与根因**
+旧frozen task只保存objective和acceptance，没有保存实际fixture；AICO首角色只看到抽象要求。两侧即便使用相同model和token budget，
+也可能处理不同或根本不存在的任务输入，source fingerprint与drift场景因此没有权威bytes可复核。
+
+**解决与预防**
+- 每个task内嵌不超过16 KiB的actual fixture，fixture进入canonical task-set SHA。
+- fixture随每个role request进入prompt，并在observation/checkpoint保存SHA；restart加载、observer和finalizer重复验证。
+- `advance-aico`运行前再验证clean checkout与exact Git revision，防止同fixture之外的仓库环境漂移。
+- 正式两侧都接收exact task object；没有fixture或SHA不一致的run不能评分。
+
+**相关链接**
+- ADR-0097
+- `benchmarks/boss-absent-v1/tasks.json`
+- `src/aico/core/boss_absent_benchmark.py`
+
+### [P-121] 两次文件内容相同不能证明审批期间没有mutation
+
+**状态**:🟢 RESOLVED(local generation fence; live executor pending)
+**首次踩中**:Round 264
+**最后更新**:2026-07-23
+**影响范围**:approval benchmark,mutation-before-approval evidence
+
+**症状与根因**
+若approval request和grant时只比较target content SHA，未授权写入可以发生后再恢复原内容，两次快照仍相同，observer会错误报告
+`mutation_before_approval=false`。
+
+**解决与预防**
+- approval fence绑定target内容以及target/父目录的device、inode、size、mtime_ns和ctime_ns。
+- target创建后删除、替换、写后回滚都会改变不可由普通进程回拨的ctime或父目录代际，grant前因此fail closed。
+- mutation target必须位于harness隔离目录；observer自身ledger不得与target共用父目录。
+- 该fence只关闭本地文件代际证据；批准后的真实at-most-once executor和Telegram决策链仍须live连接。
+
+**相关链接**
+- ADR-0097
+- `src/aico/app/boss_absent_aico_observer.py`
+
+### [P-122] observer能发现越权不等于runner阻止了越权
+
+**状态**:🟢 RESOLVED(local execution gate; Telegram grant pending)
+**首次踩中**:Round 264
+**最后更新**:2026-07-23
+**影响范围**:approval benchmark,runner phase,at-most-once mutation
+
+**症状与根因**
+independent observer可以在role chain结束后拒绝缺失approval的result，但旧runner仍会从implementer直接派reviewer；这只是事后审计，
+不是审批约束。若executor看到target已有exact content就直接认领，还会把本次intent之前的预存文件冒充成功执行。
+
+**解决与预防**
+- approval task首checkpoint后持久进入`approval_pending`；没有matching action checkpoint时重复advance不派下一role。
+- stable request SHA绑定contract/task/fixture；grant必须未过期且逐项匹配。
+- action intent必须先于target创建。无intent预存target一律拒绝，即使内容完全相同。
+- intent存在且target exact时只用于write后crash reconciliation，不再次写入；receipt固定execution_count=1。
+- state、grant、action receipt与observer逐SHA闭合后才恢复reviewer。
+- 当前grant文件仍需真实Telegram owner decision生产；本地gate通过不冒充IM链已完成。
+
+**相关链接**
+- ADR-0098
+- `src/aico/app/boss_absent_aico_approval.py`
+- `src/aico/app/boss_absent_aico_runner.py`

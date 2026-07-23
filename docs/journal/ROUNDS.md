@@ -13191,3 +13191,45 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
   ACK/takeover counter；把formal agent identity绑定到project assignment与独立provider session。
 - Codex baseline仍等待可编程第一方native host adapter/build receipt；不能用standalone app-server continuation loop替代。
 - 两侧正式模型run仍需owner单独授权并使用frozen contract；本轮不产生成绩，B-012/B-013继续owner-paused。
+
+## Round 264 — 2026-07-23 — Codex
+
+### 输入与目标
+
+- 延续boss-absent multi-agent目标，实现真正独立的AICO scenario collector与可由外部harness跨进程调用的runtime入口。
+- 不调用模型、不发送IM；push仍等待owner对精确GitHub远端的代码外发授权。
+
+### 关键发现与决策
+
+- 审计发现旧task set没有actual fixture，只有objective/acceptance；这不满足“相同任务集”，也让drift/source observer无权威bytes。
+- 选择ADR-0097：fixture内嵌task并进入canonical SHA；independent observer只从actual file/receipt派生证据。
+- approval request/grant两个时点content相同仍可能发生过写后回滚；fence必须连target与父目录filesystem generation一起绑定。
+- formal runtime必须一次一role，才能让external harness在checkpoint后真正结束进程；内部循环不能冒充cross-restart。
+
+### 实现与验证
+
+- `BossAbsentTask.fixture`限制16 KiB；五类task加入不同实际fixture，新task-set SHA为
+  `f0acbd3317466f8709cf408ba1403bc0dbda17f0f5367cbd21630861c9462031`。
+- fixture贯穿request/prompt/observation/checkpoint；runner loaded-state、observer与finalizer都复核exact SHA。
+- 新增`advance-aico`，要求absolute clean non-symlink checkout和exact contract revision、完整role target、timezone-aware expiry；
+  每次只推进一个TaskBus/Codex role，state/artifact/receipt均跨CLI调用持久。
+- 新增`boss_absent_aico_observer.py`：owner-only atomic hash-chain ledger；实际读取0600 artifact/dispatch receipt、fixture、external checks、
+  usage、takeover ACK和terminal receipt，五类scenario receipt从ledger派生。
+- source drift比较实际bytes；budget pressure实测200 KiB irrelevant source但role receipt只绑定fixture；approval fence检测直接mutation及
+  mutate-then-delete回滚；observer重建后仍能finalize。
+- CLI新增`finalize-aico-observations`；benchmark JSON/JSONL/Markdown改为fresh 0600。clean临时Git checkout上no-model fake Adapter
+  经`advance-aico`两次完成distinct lead/reviewer，证明正式命令边界和持久状态接通，不冒充provider成绩。
+- approval task首role后持久停于`approval_pending`；无checkpoint重复advance不派reviewer。新增ADR-0098 intent-first executor：
+  exact未过期grant绑定stable request，target/content来自fixture；write后crash只对账不重写，预存target无intent拒绝。
+- action receipt固定execution_count=1，runner state与observer逐request/grant/action SHA闭合；过期grant、receipt漂移和wrong content拒绝。
+- 新增ADR-0097/0098、Goal Brief与P-120/P-121/P-122；相关定向`61 passed`；精确deselect外部0字节配置影响的3条
+  release-room tests后root`1121 passed, 1 skipped, 3 deselected`；SME`53 passed`；Ruff、root/SME mypy(251/37 files)、
+  251/37-file format、
+  变更模块class/method尺寸与diff通过。
+
+### 下一步
+
+- 把approval grant与takeover receipt接到真实Telegram platform ACK、owner-bound inbound command/action counter；runner pause和
+  at-most-once isolated mutation已经完成，不再重做本地gate。
+- 绑定formal role target到project assignment与独立ephemeral provider execution；随后才申请owner授权AICO模型run。
+- Codex Goal baseline继续等待第一方native continuation host adapter/build；没有它不运行不公平baseline。

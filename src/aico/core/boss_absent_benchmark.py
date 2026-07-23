@@ -17,6 +17,7 @@ from aico.core.models import FrozenModel
 BENCHMARK_SYSTEMS = ("aico", "codex_goal")
 EVIDENCE_CATEGORY_COUNT = 5
 BoundedText = Annotated[str, Field(min_length=1, max_length=1_000)]
+FixtureText = Annotated[str, Field(min_length=1, max_length=16_384)]
 RoleId = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{1,31}$")]
 CheckpointId = Annotated[str, Field(pattern=r"^(?:[a-z0-9][a-z0-9-]{2,63}|terminal)$")]
 
@@ -58,6 +59,7 @@ class BossAbsentTask(FrozenModel):
     task_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{2,63}$")
     scenario: BenchmarkScenario
     objective: str = Field(min_length=1, max_length=2_000)
+    fixture: FixtureText
     acceptance: tuple[BoundedText, ...] = Field(min_length=1, max_length=12)
     required_roles: tuple[RoleId, ...] = Field(min_length=1, max_length=8)
     unattended_eligible: bool

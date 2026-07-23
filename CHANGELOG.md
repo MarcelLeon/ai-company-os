@@ -30,6 +30,13 @@
 - Exact-model TaskBus benchmark transport:AICO frozen roles通过真实TaskBus/Adapter合同执行，preauthorization与Codex CLI显式绑定
   exact model/reasoning effort和shared remaining-token budget；内容寻址artifact与owner-only dispatch receipt支持新runtime按id恢复，
   确定性能力拒绝在provider前fail closed，未知outcome不自动重放。
+- Frozen-fixture independent AICO harness:五类task把实际bounded fixture纳入canonical SHA并贯穿role prompt/checkpoint/receipt；
+  `advance-aico`在clean exact-revision checkout一次推进一个真实TaskBus role，外部harness可跨进程继续。owner-only hash-chain observer
+  从artifact、dispatch receipt、filesystem generation、external checks、usage、takeover和terminal事实派生scenario receipt，
+  `finalize-aico-observations`不再接受SUT自报场景结论，所有benchmark输出为fresh 0600文件。
+- Approval-gated benchmark mutation:approval task在implementer后持久停于`approval_pending`，exact owner grant与action receipt之前
+  reviewer零派发。isolated executor从frozen fixture解析target/content，intent先于写入；write后crash只对账不重写，预存target无intent、
+  expired/wrong grant或receipt/state SHA漂移全部fail closed。
 - Signed dead-man evidence:独立receiver可用owner-only Ed25519私钥签发domain-separated evidence envelope；离线verifier与strict
   commissioning只信owner-pinned公钥，绑定exact envelope、payload和key identity。unsigned endpoint保留历史审计兼容，signature
   success仍明确不证明receiver物理host、TLS、fault action、provider ACK或human read。

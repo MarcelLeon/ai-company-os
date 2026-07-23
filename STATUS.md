@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-07-23
-**当前轮次**:Round 263(Exact-model TaskBus benchmark transport)
+**当前轮次**:Round 264(Frozen-fixture independent AICO harness)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是个人开发者可直接使用的远程IM指挥、
@@ -22,6 +22,29 @@ recovery/alert/dead-man、component DR primitive和bounded/auditable autonomy，
 Round 241为独立receiver增加可选different-origin fallback与1-of-2/2-of-2 ACK quorum；schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝配置漂移，原2-of-2事件不能在重启后被1-of-2降级结算。单通知provider或credential失效不再必然切断老板通知，但不同URL、local ACK和unit test仍不冒充真实provider/账号/网络独立或human read。
 
 Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增加默认关闭、显式opt-in的`silent-route-probe-v1`：复用真实双route URL/token/POST，exact intent跨restart；一个失败窗口为suspect/PENDING，连续达到阈值才通过既有edge主动告警，ACK后恢复。bridge不能证明silent handling时必须保持disabled，local ACK不冒充human read或commercial HA。Round 244新增strict install admission，Round 245让它贯穿每次runtime启动；Round 246再要求incident alert与dead-man pulse使用不同exact URL及不同非空bearer，防止两个strict协议共用authority却判绿。Round 247检测运行中dotenv代际漂移；Round 248让dead-man当前验收显式拒绝超龄artifact、过期/未完成probe和非healthy route；Round 249把reviewed config、dotenv generation与strict evidence绑定成expiring commissioning receipt并持续纳入required health。Round 200-249累计合同以本段和下方最新Round为准。
+
+---
+
+## Round 264 完成:Frozen-fixture independent AICO harness
+
+- [x] 修复benchmark公平性缺口：五个frozen task都内嵌actual bounded fixture，fixture进入canonical task-set SHA；当前SHA为
+  `f0acbd3317466f8709cf408ba1403bc0dbda17f0f5367cbd21630861c9462031`。
+- [x] fixture贯穿role request/prompt、provider observation与durable checkpoint；runner加载、independent observer和finalizer都复核
+  exact fixture SHA，不能用相同objective配另一份实际输入。
+- [x] 新增`advance-aico`：验证absolute clean checkout与contract exact Git revision，一次只推进一个真实TaskBus/Codex role；
+  state/artifact/receipt在CLI调用之间持久，外部harness可真正终止进程、换runtime instance后继续。
+- [x] 新增owner-only atomic hash-chain observer ledger；从actual 0600 role artifact/dispatch receipt、fixture bytes、process generation、
+  external acceptance/test receipt、provider usage、takeover ACK和terminal consumption派生scenario evidence。
+- [x] drift observer比较真实前后bytes；approval fence同时绑定target与父目录inode/ctime/mtime，能拒绝审批前mutation和临时修改后回滚；
+  budget pressure验证large irrelevant source存在且所有role receipt只绑定frozen fixture。
+- [x] approval task首role后进入durable`approval_pending`；无exact checkpoint重复advance也不会派reviewer。新增intent-first isolated
+  mutation executor：未过期grant绑定request，target/content来自frozen fixture，write后crash只对账不重写，预存target无intent拒绝。
+- [x] action receipt固定`execution_count=1`并与runner state、observer的request/grant/action SHA闭合；手工填任意hash不能封口。
+- [x] 新增`finalize-aico-observations`，从完整ledger生成ADR-0095 receipt；benchmark JSON/JSONL/Markdown统一fresh 0600输出。
+- [x] 新增ADR-0097/0098、Goal Brief与P-120/P-121/P-122；定向`61 passed`；精确排除外部0字节配置影响的3条release-room测试后root
+  `1121 passed, 1 skipped, 3 deselected`；SME`53 passed`；Ruff、root/SME mypy(251/37 files)、format、结构与diff通过。
+- [ ] 本轮仍是no-model机器验收，不产生benchmark成绩。Telegram真实send/inbound owner decision与takeover、formal agent/session
+  binding和Codex native host adapter仍是正式run前缺口。
 
 ---
 
@@ -3426,9 +3449,9 @@ AICO 的产品边界是 absence-first:
    - Round 259已证明Codex Goal必须走persistent app-server并完成no-model admission；Round 260进一步冻结native Codex host
      continuation边界；Round 258已有frozen tasks/scorer/dry-run。
      当前仍没有真实AICO/Codex turn结果，禁止提前写“强于Codex Goal”。
-   - AICO managed role runner、五类scenario finalizer与exact-model TaskBus/Adapter transport已完成shared budget、distinct agents、
-     dispatch reconciliation、restart、approval/drift/source-pressure/IM takeover机器合同；下一切片实现真实independent harness
-     collector，并把role target绑定正式project assignment与独立provider session证据。
+   - AICO managed role runner、五类scenario finalizer、exact-model TaskBus transport、frozen actual fixture、single-role CLI与
+     independent file/receipt observer、approval runner pause与at-most-once isolated mutation已完成；下一切片把owner grant和
+     takeover receipt接真实Telegram ACK/inbound，并绑定role target到project assignment/provider execution。
      Codex侧仍必须等待可编程native host adapter/build receipt，禁止自创continuation prompt。
    - receipt采集与scorer分离；Goal tokensUsed、turn/provider usage任一缺失或不一致都按budget loss，不能信被测系统自报。
    - 任何正式模型benchmark需owner另行授权，且必须使用冻结contract和真实provider usage，见

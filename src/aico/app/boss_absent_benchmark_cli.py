@@ -3,19 +3,39 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
+import os
+import subprocess
 import sys
 from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import TextIO, TypeVar
 
 from pydantic import BaseModel
 
+from aico.adapter.codex import CodexAdapter
+from aico.app.boss_absent_aico_approval import execute_aico_approval_action
 from aico.app.boss_absent_aico_evidence import (
     AicoScenarioEvidenceReceipt,
     finalize_aico_benchmark_result,
 )
-from aico.app.boss_absent_aico_runner import AicoBenchmarkRunState
+from aico.app.boss_absent_aico_observer import (
+    IndependentAicoScenarioObserver,
+    JsonAicoScenarioObservationStore,
+)
+from aico.app.boss_absent_aico_runner import (
+    AicoBenchmarkRunState,
+    AicoBenchmarkRuntimeCapabilities,
+    JsonAicoBenchmarkStateStore,
+    admit_aico_benchmark_runtime,
+    advance_aico_benchmark_task,
+)
+from aico.app.boss_absent_aico_taskbus_runtime import (
+    AicoBenchmarkRoleTarget,
+    TaskBusAicoBenchmarkRuntime,
+)
 from aico.app.boss_absent_benchmark_restart_probe import run_restart_probe
 from aico.app.boss_absent_codex_goal_probe import (
     CodexGoalProtocolReceipt,
@@ -35,6 +55,7 @@ from aico.core.boss_absent_benchmark import (
 )
 from aico.core.boss_absent_benchmark_harness import run_synthetic_benchmark_harness
 from aico.core.models import utc_now
+from aico.core.task_bus import TaskBus
 
 _MAX_JSON_BYTES = 1_048_576
 _MAX_RESULTS_BYTES = 4_194_304
@@ -89,6 +110,25 @@ def run(
                 f"task={result.task_id} status={result.terminal_status.value} "
                 f"tokens={result.total_tokens}\n"
             )
+            return 0
+        if args.command == "finalize-aico-observations":
+            observation_receipt = _finalize_aico_observations(args)
+            output.write(
+                "AICO independent observations finalized: "
+                f"task={observation_receipt.task_id} "
+                f"events={observation_receipt.events_sha256}\n"
+            )
+            return 0
+        if args.command == "advance-aico":
+            state = asyncio.run(_advance_aico(args))
+            output.write(
+                f"AICO role advanced: task={state.task_id} phase={state.phase.value} "
+                f"checkpoints={len(state.checkpoints)} tokens={state.total_tokens}\n"
+            )
+            return 0
+        if args.command == "apply-aico-approval":
+            state = _apply_aico_approval(args)
+            output.write(f"AICO approval applied: task={state.task_id} phase={state.phase.value}\n")
             return 0
     except (OSError, UnicodeError, ValueError) as exc:
         error.write(f"benchmark failed: {exc}\n")
@@ -196,6 +236,164 @@ def _finalize_aico(args: argparse.Namespace) -> BossAbsentTaskResult:
     return result
 
 
+def _finalize_aico_observations(
+    args: argparse.Namespace,
+) -> AicoScenarioEvidenceReceipt:
+    contract = _read_model(args.contract, BossAbsentBenchmarkContract)
+    task_set = _read_model(args.tasks, BossAbsentTaskSet)
+    if canonical_sha256(task_set) != contract.task_set_sha256:
+        raise ValueError("benchmark task set fingerprint mismatch")
+    store = JsonAicoScenarioObservationStore(args.observations)
+    ledger = store.load()
+    if ledger is None:
+        raise ValueError("AICO scenario observation ledger is missing")
+    task = next((item for item in task_set.tasks if item.task_id == ledger.task_id), None)
+    if task is None:
+        raise ValueError("AICO observation ledger references an unknown frozen task")
+    observer = IndependentAicoScenarioObserver(
+        contract,
+        task,
+        store,
+        observer_build=ledger.observer_build,
+    )
+    receipt = observer.build_receipt()
+    _write_new_model(args.output, receipt)
+    return receipt
+
+
+async def _advance_aico(args: argparse.Namespace) -> AicoBenchmarkRunState:
+    contract = _read_model(args.contract, BossAbsentBenchmarkContract)
+    task_set = _read_model(args.tasks, BossAbsentTaskSet)
+    if canonical_sha256(task_set) != contract.task_set_sha256:
+        raise ValueError("benchmark task set fingerprint mismatch")
+    task = next((item for item in task_set.tasks if item.task_id == args.task_id), None)
+    if task is None:
+        raise ValueError("AICO runtime references an unknown frozen task")
+    _verify_clean_checkout(args.cwd, contract.repo_revision)
+    expires_at = _aware_datetime(args.expires_at)
+    role_targets = _role_targets(args.role_target)
+    if {target.role for target in role_targets} != set(task.required_roles):
+        raise ValueError("AICO runtime role targets do not match the frozen task")
+    adapter = CodexAdapter(
+        command=(args.codex, "exec"),
+        cwd=args.cwd,
+        output_idle_timeout_seconds=args.max_duration_seconds,
+        max_concurrent_tasks=1,
+    )
+    runtime = TaskBusAicoBenchmarkRuntime(
+        task_bus=TaskBus(adapter),
+        role_targets=role_targets,
+        runtime_build=args.runtime_build,
+        runtime_instance_sha256=args.runtime_instance_sha256,
+        artifact_dir=args.artifact_dir,
+        receipt_dir=args.receipt_dir,
+        expires_at=expires_at,
+        max_duration_seconds=args.max_duration_seconds,
+    )
+    admission = admit_aico_benchmark_runtime(
+        contract,
+        runtime.capabilities(
+            model=contract.model,
+            reasoning_effort=contract.reasoning_effort,
+        ),
+    )
+    return await advance_aico_benchmark_task(
+        contract,
+        task,
+        admission,
+        runtime,
+        JsonAicoBenchmarkStateStore(args.state),
+    )
+
+
+def _apply_aico_approval(args: argparse.Namespace) -> AicoBenchmarkRunState:
+    contract = _read_model(args.contract, BossAbsentBenchmarkContract)
+    task_set = _read_model(args.tasks, BossAbsentTaskSet)
+    if canonical_sha256(task_set) != contract.task_set_sha256:
+        raise ValueError("benchmark task set fingerprint mismatch")
+    task = next((item for item in task_set.tasks if item.task_id == args.task_id), None)
+    if task is None:
+        raise ValueError("AICO approval references an unknown frozen task")
+    admission = admit_aico_benchmark_runtime(
+        contract,
+        AicoBenchmarkRuntimeCapabilities(
+            runtime_build=args.runtime_build,
+            model=contract.model,
+            reasoning_effort=contract.reasoning_effort,
+            isolated_run_state=True,
+            managed_role_orchestration=True,
+            hard_remaining_token_cap=True,
+            provider_usage_observable=True,
+            durable_dispatch_reconciliation=True,
+        ),
+    )
+    return execute_aico_approval_action(
+        contract,
+        task,
+        admission,
+        JsonAicoBenchmarkStateStore(args.state),
+        grant_path=args.grant,
+        mutation_root=args.mutation_root,
+        intent_path=args.intent,
+        receipt_path=args.receipt,
+    )
+
+
+def _role_targets(values: Sequence[str]) -> tuple[AicoBenchmarkRoleTarget, ...]:
+    result: list[AicoBenchmarkRoleTarget] = []
+    for value in values:
+        role, separator, remainder = value.partition("=")
+        agent_id, persona_separator, persona = remainder.partition(":")
+        if not separator or not persona_separator or not role or not agent_id or not persona:
+            raise ValueError("AICO role target must use role=agent_id:target_persona syntax")
+        result.append(
+            AicoBenchmarkRoleTarget(
+                role=role,
+                agent_id=agent_id,
+                target_persona=persona,
+            )
+        )
+    if not result:
+        raise ValueError("AICO runtime requires at least one role target")
+    return tuple(result)
+
+
+def _aware_datetime(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        raise ValueError("AICO runtime expiry is not ISO-8601") from None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("AICO runtime expiry must be timezone-aware")
+    return parsed
+
+
+def _verify_clean_checkout(cwd: Path, expected_revision: str) -> None:
+    if not cwd.is_absolute() or not cwd.is_dir() or cwd.is_symlink():
+        raise ValueError("AICO benchmark checkout must be an absolute non-symlink directory")
+    try:
+        head = subprocess.run(
+            ("git", "-C", str(cwd), "rev-parse", "HEAD"),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        status = subprocess.run(
+            ("git", "-C", str(cwd), "status", "--porcelain=v1"),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        raise ValueError("AICO benchmark checkout could not be verified") from None
+    if head != expected_revision:
+        raise ValueError("AICO benchmark checkout revision drifted")
+    if status:
+        raise ValueError("AICO benchmark checkout is not clean")
+
+
 def _read_model(path: Path, model_type: type[ModelT]) -> ModelT:
     payload = _read_bounded(path, _MAX_JSON_BYTES)
     return model_type.model_validate(_loads_unique(payload))
@@ -248,17 +446,11 @@ def _loads_unique(payload: str) -> object:
 
 
 def _write_new_model(path: Path, model: BaseModel) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("x", encoding="utf-8") as output:
-        output.write(model.model_dump_json(indent=2))
-        output.write("\n")
+    _write_new_text(path, model.model_dump_json(indent=2) + "\n")
 
 
 def _write_jsonl(path: Path, models: Sequence[BaseModel]) -> None:
-    with path.open("x", encoding="utf-8") as output:
-        for model in models:
-            output.write(model.model_dump_json())
-            output.write("\n")
+    _write_new_text(path, "".join(f"{model.model_dump_json()}\n" for model in models))
 
 
 def _write_report_dir(
@@ -271,8 +463,26 @@ def _write_report_dir(
     _write_new_model(output_dir / "aico-summary.json", aico)
     _write_new_model(output_dir / "codex-goal-summary.json", codex_goal)
     _write_new_model(output_dir / "verdict.json", verdict)
-    with (output_dir / "verdict.md").open("x", encoding="utf-8") as output:
-        output.write(_verdict_markdown(aico, codex_goal, verdict))
+    _write_new_text(output_dir / "verdict.md", _verdict_markdown(aico, codex_goal, verdict))
+
+
+def _write_new_text(path: Path, content: str) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except BaseException:
+        if path.exists():
+            path.unlink()
+        raise
 
 
 def _verdict_markdown(
@@ -387,6 +597,44 @@ def _parser() -> argparse.ArgumentParser:
     finalize.add_argument("--state", type=Path, required=True)
     finalize.add_argument("--scenario-evidence", type=Path, required=True)
     finalize.add_argument("--output", type=Path, required=True)
+    observations = subparsers.add_parser(
+        "finalize-aico-observations",
+        help="Derive a scenario receipt from an independent owner-only observation ledger.",
+    )
+    observations.add_argument("--contract", type=Path, required=True)
+    observations.add_argument("--tasks", type=Path, required=True)
+    observations.add_argument("--observations", type=Path, required=True)
+    observations.add_argument("--output", type=Path, required=True)
+    advance = subparsers.add_parser(
+        "advance-aico",
+        help="Advance exactly one frozen AICO role through TaskBus and Codex.",
+    )
+    advance.add_argument("--contract", type=Path, required=True)
+    advance.add_argument("--tasks", type=Path, required=True)
+    advance.add_argument("--task-id", required=True)
+    advance.add_argument("--state", type=Path, required=True)
+    advance.add_argument("--artifact-dir", type=Path, required=True)
+    advance.add_argument("--receipt-dir", type=Path, required=True)
+    advance.add_argument("--cwd", type=Path, required=True)
+    advance.add_argument("--runtime-build", required=True)
+    advance.add_argument("--runtime-instance-sha256", required=True)
+    advance.add_argument("--expires-at", required=True)
+    advance.add_argument("--max-duration-seconds", type=float, required=True)
+    advance.add_argument("--role-target", action="append", required=True)
+    advance.add_argument("--codex", default="codex")
+    approval = subparsers.add_parser(
+        "apply-aico-approval",
+        help="Apply one exact owner grant to the isolated approval fixture at most once.",
+    )
+    approval.add_argument("--contract", type=Path, required=True)
+    approval.add_argument("--tasks", type=Path, required=True)
+    approval.add_argument("--task-id", required=True)
+    approval.add_argument("--state", type=Path, required=True)
+    approval.add_argument("--runtime-build", required=True)
+    approval.add_argument("--grant", type=Path, required=True)
+    approval.add_argument("--mutation-root", type=Path, required=True)
+    approval.add_argument("--intent", type=Path, required=True)
+    approval.add_argument("--receipt", type=Path, required=True)
     return parser
 
 

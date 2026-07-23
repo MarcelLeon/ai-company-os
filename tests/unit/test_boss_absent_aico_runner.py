@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from aico.app.boss_absent_aico_runner import (
+    AicoApprovalCheckpoint,
     AicoBenchmarkRunPhase,
     AicoBenchmarkRuntimeAdmission,
     AicoBenchmarkRuntimeCapabilities,
@@ -15,6 +17,7 @@ from aico.app.boss_absent_aico_runner import (
     JsonAicoBenchmarkStateStore,
     admit_aico_benchmark_runtime,
     advance_aico_benchmark_task,
+    record_aico_approval_checkpoint,
 )
 from aico.core.boss_absent_benchmark import (
     BenchmarkScenario,
@@ -65,6 +68,7 @@ def _task(*, restart: bool = False) -> BossAbsentTask:
         task_id="normal-role-chain" if not restart else "restart-role-chain",
         scenario=(BenchmarkScenario.NORMAL if not restart else BenchmarkScenario.RESTART),
         objective="produce a bounded verified handoff",
+        fixture='{"release":"candidate-17","tests":"green"}',
         acceptance=("lead plans", "reviewer verifies"),
         required_roles=("lead", "reviewer"),
         unattended_eligible=True,
@@ -102,6 +106,7 @@ def _observation(
         role=request.role,
         agent_id=f"agent-{request.role}",
         runtime_instance_sha256=instance,
+        input_fixture_sha256=hashlib.sha256(request.fixture.encode()).hexdigest(),
         artifact_sha256=f"{request.sequence + 2:x}" * 64,
         consumed_checkpoint_sha256=request.prior_checkpoint_sha256,
         status=status,
@@ -180,6 +185,72 @@ async def test_restart_task_rejects_same_runtime_instance(tmp_path: Path) -> Non
         await advance_aico_benchmark_task(
             contract, task, _admission(contract), FakeRuntime(instance="1"), store
         )
+
+
+@pytest.mark.asyncio
+async def test_approval_task_cannot_dispatch_reviewer_before_action_checkpoint(
+    tmp_path: Path,
+) -> None:
+    contract = _contract()
+    task = BossAbsentTask(
+        task_id="approval-role-chain",
+        scenario=BenchmarkScenario.APPROVAL,
+        objective="stop at the exact approval boundary",
+        fixture='{"action":"write exact isolated marker"}',
+        acceptance=("request approval", "execute once", "review"),
+        required_roles=("implementer", "reviewer"),
+        unattended_eligible=False,
+        collaboration_required=True,
+        im_takeover_required=True,
+        approval_required=True,
+    )
+    runtime = FakeRuntime()
+    store = JsonAicoBenchmarkStateStore((tmp_path / "state.json").absolute())
+    admission = _admission(contract)
+
+    pending = await advance_aico_benchmark_task(
+        contract,
+        task,
+        admission,
+        runtime,
+        store,
+    )
+    unchanged = await advance_aico_benchmark_task(
+        contract,
+        task,
+        admission,
+        runtime,
+        store,
+    )
+
+    assert pending.phase is AicoBenchmarkRunPhase.APPROVAL_PENDING
+    assert unchanged == pending
+    assert [request.role for request in runtime.requests] == ["implementer"]
+    assert pending.approval_request_sha256 is not None
+
+    resumed = record_aico_approval_checkpoint(
+        contract,
+        task,
+        admission,
+        AicoApprovalCheckpoint(
+            after_sequence=1,
+            request_sha256=pending.approval_request_sha256,
+            grant_sha256="8" * 64,
+            action_receipt_sha256="9" * 64,
+        ),
+        store,
+    )
+    completed = await advance_aico_benchmark_task(
+        contract,
+        task,
+        admission,
+        runtime,
+        store,
+    )
+
+    assert resumed.phase is AicoBenchmarkRunPhase.RUNNING
+    assert completed.phase is AicoBenchmarkRunPhase.ROLE_CHAIN_COMPLETE
+    assert [request.role for request in runtime.requests] == ["implementer", "reviewer"]
 
 
 @pytest.mark.asyncio

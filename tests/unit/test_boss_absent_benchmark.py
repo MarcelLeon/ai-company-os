@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
@@ -30,8 +32,83 @@ from aico.core.boss_absent_benchmark_harness import (
     HarnessEventType,
     run_synthetic_benchmark_harness,
 )
+from aico.core.models import (
+    AckStatus,
+    AdapterStatus,
+    Capability,
+    HealthStatus,
+    OutputType,
+    Task,
+    TaskAck,
+    TaskOutput,
+    TaskUsage,
+)
 
 _TASKS_PATH = Path("benchmarks/boss-absent-v1/tasks.json")
+_TASKS_SHA256 = "f0acbd3317466f8709cf408ba1403bc0dbda17f0f5367cbd21630861c9462031"
+
+
+class CliRecordingAdapter:
+    name = "codex"
+
+    def __init__(self) -> None:
+        self.tasks: list[Task] = []
+        self._usage: dict[str, TaskUsage] = {}
+
+    def capabilities(self) -> frozenset[Capability]:
+        return frozenset({Capability.CODE_REVIEW, Capability.STREAM_OUTPUT})
+
+    def supports_preauthorized_execution(self, mode: str) -> bool:
+        return mode == "read_only"
+
+    def supports_preauthorized_budget(self, max_total_tokens: int) -> bool:
+        return max_total_tokens >= 100
+
+    def supports_preauthorized_model(self, model: str, reasoning_effort: str) -> bool:
+        return model == "gpt-5.6-sol" and reasoning_effort == "high"
+
+    async def receive_task(self, task: Task) -> TaskAck:
+        self.tasks.append(task)
+        self._usage[task.task_id] = TaskUsage(
+            input_tokens=90,
+            output_tokens=10,
+            total_tokens=100,
+        )
+        return TaskAck(task_id=task.task_id, status=AckStatus.ACCEPTED)
+
+    async def stream_output(self, task_id: str) -> AsyncIterator[TaskOutput]:
+        yield TaskOutput(
+            task_id=task_id,
+            sequence=1,
+            type=OutputType.TEXT,
+            content='{"status":"complete"}',
+        )
+        yield TaskOutput(
+            task_id=task_id,
+            sequence=2,
+            type=OutputType.DONE,
+            content="",
+        )
+
+    def task_usage(self, task_id: str) -> TaskUsage | None:
+        return self._usage.get(task_id)
+
+    def status(self) -> AdapterStatus:
+        return AdapterStatus.IDLE
+
+    async def interrupt(self, task_id: str) -> None:
+        return None
+
+    async def health_check(self) -> HealthStatus:
+        return HealthStatus.OK
+
+
+def test_frozen_task_set_embeds_bounded_distinct_fixtures() -> None:
+    tasks = _tasks()
+
+    assert canonical_sha256(tasks) == _TASKS_SHA256
+    assert len({task.fixture for task in tasks.tasks}) == len(tasks.tasks)
+    assert all(0 < len(task.fixture.encode("utf-8")) <= 16_384 for task in tasks.tasks)
 
 
 def test_boss_absent_scorer_requires_all_five_win_metrics() -> None:
@@ -362,6 +439,87 @@ def test_benchmark_cli_runs_equal_no_model_synthetic_harness(tmp_path: Path) -> 
         assert receipt.terminated_returncode < 0
         assert receipt.resumed_from_exact_checkpoint
         assert restart_result.restart_evidence_sha256 == canonical_sha256(receipt)
+
+
+def test_benchmark_cli_advances_frozen_aico_roles_through_taskbus(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    subprocess.run(("git", "init", "-q", str(checkout)), check=True)
+    subprocess.run(
+        ("git", "-C", str(checkout), "config", "user.email", "benchmark@example.invalid"),
+        check=True,
+    )
+    subprocess.run(
+        ("git", "-C", str(checkout), "config", "user.name", "Benchmark Harness"),
+        check=True,
+    )
+    (checkout / "fixture.txt").write_text("clean checkout", encoding="utf-8")
+    subprocess.run(("git", "-C", str(checkout), "add", "fixture.txt"), check=True)
+    subprocess.run(
+        ("git", "-C", str(checkout), "commit", "-q", "-m", "fixture"),
+        check=True,
+    )
+    revision = subprocess.run(
+        ("git", "-C", str(checkout), "rev-parse", "HEAD"),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    tasks = _tasks()
+    contract = _contract(tasks).model_copy(update={"repo_revision": revision})
+    contract_path = tmp_path / "contract.json"
+    tasks_path = tmp_path / "tasks.json"
+    contract_path.write_text(contract.model_dump_json(), encoding="utf-8")
+    tasks_path.write_text(tasks.model_dump_json(), encoding="utf-8")
+    task = next(item for item in tasks.tasks if item.task_id == "bounded-budget-pressure")
+    adapter = CliRecordingAdapter()
+    monkeypatch.setattr(
+        "aico.app.boss_absent_benchmark_cli.CodexAdapter",
+        lambda **_: adapter,
+    )
+    state_path = (tmp_path / "state.json").absolute()
+    common = [
+        "advance-aico",
+        "--contract",
+        str(contract_path),
+        "--tasks",
+        str(tasks_path),
+        "--task-id",
+        task.task_id,
+        "--state",
+        str(state_path),
+        "--artifact-dir",
+        str((tmp_path / "artifacts").absolute()),
+        "--receipt-dir",
+        str((tmp_path / "receipts").absolute()),
+        "--cwd",
+        str(checkout.absolute()),
+        "--runtime-build",
+        "aico-cli-test",
+        "--runtime-instance-sha256",
+        "a" * 64,
+        "--expires-at",
+        "2027-01-01T00:00:00+00:00",
+        "--max-duration-seconds",
+        "10",
+        "--role-target",
+        "lead=agent-lead:codex",
+        "--role-target",
+        "reviewer=agent-reviewer:codex",
+    ]
+    stdout = StringIO()
+
+    assert run(common, stdout=stdout) == 0
+    assert run(common, stdout=stdout) == 0
+
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["phase"] == "role_chain_complete"
+    assert len(adapter.tasks) == 2
+    assert all(task.fixture in dispatched.payload for dispatched in adapter.tasks)
+    assert state_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_benchmark_cli_writes_no_model_codex_goal_protocol_receipt(
