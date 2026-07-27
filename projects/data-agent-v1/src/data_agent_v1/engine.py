@@ -151,8 +151,7 @@ class DataAgentEngine:
         revenue = self._paid_by_dimension(month=CURRENT_MONTH, dimension="region")
         top_region, top_revenue = max(revenue.items(), key=lambda item: item[1])
         answer = (
-            "2026-06 收入最高地区是 East, paid revenue 84,000; "
-            "South 为 79,000; North 为 61,000。"
+            "2026-06 收入最高地区是 East, paid revenue 84,000; South 为 79,000; North 为 61,000。"
         )
         return QueryResponse(
             intent="regional_revenue_rank",
@@ -352,8 +351,7 @@ class DataAgentEngine:
         previous = self._paid_by_dimension(month=PREVIOUS_MONTH, region=region, dimension="channel")
         channels = set(current) | set(previous)
         return {
-            channel: current.get(channel, 0.0) - previous.get(channel, 0.0)
-            for channel in channels
+            channel: current.get(channel, 0.0) - previous.get(channel, 0.0) for channel in channels
         }
 
     def _paid_by_dimension(
@@ -377,9 +375,7 @@ class DataAgentEngine:
             if item.month == month and item.region == region and item.spend > 0
         }
         return {
-            channel: revenue[channel] / spend[channel]
-            for channel in spend
-            if channel in revenue
+            channel: revenue[channel] / spend[channel] for channel in spend if channel in revenue
         }
 
     def _refunds_by_product(self, *, month: str, region: str) -> dict[str, float]:
@@ -412,8 +408,10 @@ class DataAgentEngine:
 def _is_revenue_drop_question(text: str) -> bool:
     has_region = "华东" in text or "east" in text
     has_revenue = "收入" in text or "revenue" in text
-    return has_region and has_revenue and any(
-        marker in text for marker in ("下降", "下滑", "drop", "减少")
+    return (
+        has_region
+        and has_revenue
+        and any(marker in text for marker in ("下降", "下滑", "drop", "减少"))
     )
 
 

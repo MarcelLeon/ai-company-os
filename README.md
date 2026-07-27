@@ -1,6 +1,7 @@
 # AI Company OS
 
-> **Manage your local AI coding agents like a remote team — from Telegram, while you sleep.**
+> **A personal human-on-the-loop control plane for local AI coding agents — supervise by
+> exception from Telegram while your Mac keeps working.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
@@ -9,7 +10,7 @@
 [![Checked with mypy](https://img.shields.io/badge/mypy-strict-2a6db4.svg)](https://mypy.readthedocs.io/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-[中文](README.zh-CN.md) · [Quickstart](docs/human/quickstart.md) · [Demo](docs/examples/release-room.md) · [Roadmap](STATUS.md) · [Architecture](docs/architecture/boss-first-grounding.md) · [Agents](AGENTS.md)
+[中文](README.zh-CN.md) · [Capabilities](docs/human/core-capability-map.md) · [Quickstart](docs/human/quickstart.md) · [Demo](docs/examples/release-room.md) · [Roadmap](STATUS.md) · [Architecture](docs/architecture/boss-first-grounding.md) · [Agents](AGENTS.md)
 
 ![Release Room demo](docs/assets/release-room-demo.gif)
 
@@ -18,6 +19,9 @@ Trae, CodeFlicker, or your own CLI — into a remote project team you can manage
 Telegram today. Feishu is implemented as the first non-Telegram channel slice and is
 still awaiting production smoke. Roles, project memory, approval gates, audit trails,
 task status, and a morning handoff — all over IM, without sitting at the laptop.
+
+AICO is personal and local-first: it is built for one developer operating the AI team on
+their own computer. It is not an enterprise multi-tenant agent administration platform.
 
 > **Try it in 30 seconds, no tokens needed:**
 > ```bash
@@ -63,12 +67,54 @@ remotely, not a smarter chat UI for one agent.
   daily reports, risks, blockers, and next actions.
 - **Approval and audit**: file writes, shell execution, and destructive actions go through
   remote approval and leave traceable audit events.
+- **Human-on-the-loop autonomy**: appointment prompts tell agents to proceed within the
+  current task and permission boundaries, then stop and escalate unknown, conflicting, or
+  out-of-bound situations. Approval gates and Adapter sandboxes remain the enforcement layer.
 - **Shared memory**: keep project-scoped and boss preference memory in append-only JSONL,
   with controlled prompt injection.
 - **Observable work**: inspect tasks, child tasks, metrics, audit history, and compact
   local glance output.
 - **Offline delegation**: use `/overnight` to leave work with a project lead, then review
   `/inbox`, `/morning`, `/task`, and `/audit` later.
+
+## Core Capability Map
+
+The product loop is simple: the owner delegates through IM, AICO supplies project context
+and authority boundaries, local Adapters execute, and durable evidence comes back for
+handoff or intervention.
+
+<!-- Keep this product-level map aligned with docs/human/core-capability-map.md. -->
+```mermaid
+flowchart LR
+    owner["Personal owner<br/>Telegram / Feishu"] --> office["Project office<br/>Project / Role / Appointment"]
+    office --> task["Task and context<br/>Task / Memory / Experience"]
+    task --> risk{"Risk and authority"}
+    risk -->|"ordinary read-only"| adapter["Local AI Adapter"]
+    risk -->|"write / shell / destructive"| approval["/approve or /reject"]
+    approval --> adapter
+    risk -->|"owner-preauthorized scheduled read-only"| standing["Standing grant<br/>runs / expiry / time / tokens"]
+    standing --> adapter
+    adapter --> evidence["Results and evidence<br/>Task / Audit / Inbox / Morning / View"]
+    evidence --> owner
+    owner -->|"exception / unknown / out of bounds"| approval
+    owner -->|"/interrupt"| adapter
+
+    classDef human fill:#f3e8ff,stroke:#7e22ce,color:#3b0764,stroke-width:2px
+    classDef orchestration fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:2px
+    classDef policy fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:2px
+    classDef execution fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px
+    classDef observability fill:#ccfbf1,stroke:#0f766e,color:#134e4a,stroke-width:2px
+    class owner human
+    class office,task orchestration
+    class risk,approval,standing policy
+    class adapter execution
+    class evidence observability
+```
+
+Purple = owner; blue = orchestration and context; amber = risk and authority;
+green = local execution; teal = evidence and handoff. See the
+[full capability map](docs/human/core-capability-map.md) for the three execution modes,
+command-level capabilities, and a 15-minute re-entry path.
 
 ## Use It Today
 

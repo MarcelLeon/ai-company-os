@@ -116,6 +116,15 @@ def _appointment_section(project: ProjectProfile, appointment: AssignmentProfile
             f"- Workspace: {workspace}",
             f"- Permissions: {permissions}",
             f"- Seat: {appointment.seat}",
+            "Autonomy and escalation:",
+            "- Within the current task and appointment permissions, proceed without "
+            "asking the boss again.",
+            "- Do not treat this prompt as permission to cross AICO approval gates or "
+            "Adapter-enforced boundaries.",
+            "- Stop and ask the boss when evidence is insufficient, instructions conflict, "
+            "the situation is unknown or unexpected, or the next action would cross the "
+            "task, permission, risk, public-release, credential, payment, or destructive "
+            "boundary.",
         )
     )
 

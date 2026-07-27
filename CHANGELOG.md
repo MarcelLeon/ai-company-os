@@ -8,6 +8,11 @@
 ## [Unreleased]
 
 ### Added
+- Human-on-the-loop appointment contract:所有project-scoped Agent都被明确要求在当前任务和任命权限内直接推进，
+  遇到证据不足、指令冲突、未知/意外或即将越界时停止并找owner；Prompt同时声明不能绕过AICO审批门禁或
+  Adapter强制边界，并新增回归测试。
+- Personal HOTL relaunch pack:README中英文首屏明确AICO是个人、本机优先而非企业多租户平台；新增核心能力地图、
+  10人design-partner陪跑计划、真实3分钟案例分镜和对应social preview素材。
 - Tool-free budgeted standing evidence pack:standing charter可配置exact section allowlist；系统在派发前生成不超过64 KiB、
   带完整源SHA和原始path/line的证据包。preauthorized Codex显式禁用所有tool/web/multi-agent能力，并把owner
   `max_total_tokens`写入rollout/context门禁；超预算usage保留但result不采信，morning/inbox/outcome显示budget状态。

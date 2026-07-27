@@ -13528,3 +13528,102 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 - 本地正式证据链已闭合；B-015只剩owner授权的isolated Goal fork、frozen budget和一次Codex App restart真实capability sample。
 - capability admission通过后，仍需单独授权两侧相同模型/任务/预算的五task正式模型run；完整score前不得声称AICO强于Codex Goal。
 - 提交继续排除用户空`examples/release-room/aico-project.json`；既有9个未push提交与本轮新提交必须一起取得exact push授权。
+
+## Round 273 — 2026-07-24 — Codex
+
+### 输入
+
+- Owner质疑把OpenClaw审批疲劳简化为Prompt授权是否足够，要求核对AICO是否已有“边界内主动推进、未知/意外再找人”的机制。
+- Owner明确纠正AICO不是企业级产品，而是私人、本机优先产品，并同意收口v0.1.0与HOTL定位。
+- Owner询问真实3分钟案例是否应做GIF，以及如何不生硬地找到首批10位用户；同时说明自己已遗忘部分核心能力。
+
+### 思考与讨论
+
+- Prompt能降低反复请示和无证据猜测，但不能成为授权安全边界。现有P-016明确要求prompt scaffolding不影响approval gate；
+  standing-autonomy ADR也明确拒绝把prompt permissions当sandbox，因此没有增加“Agent自己审批”通道。
+- AICO已有三层真实机制：普通只读任务直接派发、风险任务TaskBus等待owner `/approve`、scheduled standing work消费
+  owner-bound read-only grant。缺口只是所有角色共用的明确HOTL行为提示。
+- “企业级”来自上一轮外部企业落地调研语境，而不是项目证据。北极星明确是开发者远程指挥自己电脑上的AI工具；
+  SME/Data-Agent企业样例是dogfood题目，不是AICO的目标客户或多租户产品边界。
+- 3分钟素材适合MP4/字幕录屏；README GIF只承担30–45秒首印象。首批用户不从冷私信GitHub作者开始，
+  改为熟人样本、内容自愿报名和公开表达过对应痛点的社区用户。
+
+### 产出
+
+- `prompt_stack.py`为所有appointment加入Autonomy and escalation合同，并新增回归测试；真实审批和Adapter边界保持不变。
+- README中英文首屏、release notes和social preview改为个人、本机优先的human-on-the-loop control plane，
+  明确不是企业多租户平台。
+- 新增`docs/human/core-capability-map.md`，提供一张图、三种执行模式、能力表和15分钟重新上手路径。
+- 新增`docs/launch/hotl-relaunch-pilot.md`，冻结10人design-partner漏斗、邀请文案、陪跑步骤、指标和真实案例分镜。
+- 更新release readiness：GitHub仓库PUBLIC，线上旧custom preview为1280x640且verifier `status=ok`；
+  新HOTL preview待上传，当前branch比`origin/main`超前19 commits且没有`v0.1.0` tag。
+- Gate：Prompt/Risk定向`14 passed`；raw root为`3 failed, 1187 passed, 1 skipped`，三项全部由owner既有零字节
+  release-room JSON触发；精确排除后`1187 passed, 1 skipped, 3 deselected`。Ruff check与mypy通过；
+  一处既有data-agent文件只做机械format，最终format(321 files)与diff通过。
+
+### 关键决策
+
+- AICO公开产品边界固定为个人、本机优先，不追求企业多租户治理能力。
+- HOTL表述必须区分行为提示和强制授权：Prompt负责“边界内推进、例外上报”，TaskBus/grant/Adapter负责安全。
+- 两周内除安全或首用blocker外暂停新增核心能力；先完成v0.1.0、真实案例和10人首用闭环。
+- 不覆盖owner零字节配置，不在full gate、current-head CI和新preview未闭环时打tag或Release。
+
+### 留给下一轮
+
+- Owner决定恢复或明确替换`examples/release-room/aico-project.json`后，复跑完整release gate和no-token demo。
+- 提交/合并到main、等待current-head CI、上传并肉眼确认新social preview后，再执行v0.1.0 tag/Release。
+- 用一个低风险真实bugfix跑真实IM + 真实Adapter素材；完整MP4与README teaser从同一事实链剪辑。
+
+### 状态变化
+
+- 产品定位从宽泛AI Company OS收窄为personal HOTL control plane for local coding agents。
+- v0.1.0从“宣传素材准备”进入RC收口，但因owner配置、未提交/未合main、CI和新preview仍保持No-Go。
+
+## Round 274 — 2026-07-27 — Codex
+
+### 输入
+
+- Owner要求提交当前未提交改动、把最新Social Preview上传GitHub，并为核心能力地图区分组件颜色。
+- Owner要求判断核心能力地图是否适合进入README；建议3的真实案例和建议4的首批用户落地先提问题，
+  对齐理解后才能开始实施。
+
+### 思考与讨论
+
+- 核心能力地图适合进入README：它解释的是完整产品循环，而既有Security Model解释的是风险动作到本机CLI的
+  强制链；两图层级不同。否决只放文档链接，因为陌生用户需要在README首屏下方直接建立心智模型。
+- Mermaid使用五类语义色而不是按每个节点随机上色：Owner紫、编排/上下文蓝、风险/授权橙、本机执行绿、
+  证据/接手青。中英文README各保留对应语言，详细图与中文README保持同一结构。
+- Social Preview上传后GitHub设置页前端回写出现脚本异常，不能只看页面状态；改用公开Open Graph地址下载远端
+  字节，与本地文件做SHA-256精确比对，再肉眼检查同一文件。
+- 建议3/4仍存在受众、案例、招募入口和陪跑投入等产品选择。Owner明确要求先对齐，因此本轮不生成视频、不联系
+  GitHub作者、不招募或发送邀请。
+
+### 产出
+
+- `docs/human/core-capability-map.md`新增五类语义配色和图例；中英文README新增核心能力地图章节，
+  并保留详细能力文档入口。
+- GitHub公开Social Preview已更新为最新HOTL图片：远端与本地SHA-256均为
+  `0eab69510c4ed81c207bd7831b1282f89c062ef6f3e6f63f8c6fabd4258c517c`，
+  尺寸`1280 x 640`、49,393 bytes；verifier为`status=ok`，已完成人工视觉检查。
+- 本轮收口为一个本地commit，继续排除owner既有零字节`examples/release-room/aico-project.json`；
+  未push、未merge、未tag、未Release。
+- Gate复核：Prompt/Risk定向`14 passed`；Ruff check、format(321 files)、mypy(267 files)与diff通过。
+  Round 273完整诊断仍是raw root仅owner零字节配置导致3项失败。
+
+### 关键决策
+
+- README保留产品级核心能力地图和安全模型两图；前者回答“AICO怎么运转”，后者回答“风险动作如何被强制约束”。
+- Social Preview以公开远端字节与本地SHA相等作为上传成功证据，设置页前端显示只作辅助。
+- 建议3/4遵守owner的理解门禁；本轮只提出问题，不把已有草案当成已确认需求。
+- 提交不等于发布授权；没有push/merge/current-head CI和完整release gate时继续No-Go。
+
+### 留给下一轮
+
+- Owner回答建议3/4的受众、事实案例、素材形态、招募入口和陪跑边界后，再冻结实施brief。
+- Owner恢复或明确替换零字节Release Room配置后，复跑full suite与no-token demo。
+- 如owner另行授权，push/merge当前分支并等待current-head CI；仍不得跳过tag/Release门禁。
+
+### 状态变化
+
+- 核心能力地图从内部重新上手文档升级为README产品入口，并具备一致的语义配色。
+- 最新个人HOTL Social Preview已上线；v0.1.0剩余发布阻塞收窄为零字节配置、push/merge和current-head CI。

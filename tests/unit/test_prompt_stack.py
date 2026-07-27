@@ -6,8 +6,10 @@ from aico.core import (
     MemoryPacketItem,
     MemoryScope,
     ProjectProfile,
+    RiskLevel,
     RoleProfile,
     Task,
+    TextRiskAssessor,
     render_appointment_prompt,
 )
 
@@ -78,3 +80,38 @@ def test_render_appointment_prompt_marks_project_lead_responsibility() -> None:
     assert "Reduce boss cognitive load" in prompt
     assert "challenger, reviewer" in prompt
     assert prompt.index("Lead responsibility:") < prompt.index("Project: aico")
+
+
+def test_render_appointment_prompt_sets_autonomy_and_escalation_boundary() -> None:
+    prompt = render_appointment_prompt(
+        task=Task(
+            task_id="task-1",
+            payload="inspect the current release state",
+            requester_id="boss",
+            target_persona="reviewer",
+        ),
+        agent=CompanyAgentProfile(id="codex", provider="codex", title="Reviewer"),
+        role=RoleProfile(id="reviewer", title="Release Reviewer"),
+        project=ProjectProfile(id="aico", name="AI Company OS", repo="/repo"),
+        project_role=None,
+        appointment=AssignmentProfile(
+            seat="aico-reviewer",
+            project="aico",
+            agent="codex",
+            role="reviewer",
+            permissions=("docs", "audit"),
+        ),
+    )
+
+    assert "Autonomy and escalation:" in prompt
+    assert "proceed without asking the boss again" in prompt
+    assert "unknown or unexpected" in prompt
+    assert "Do not treat this prompt as permission" in prompt
+    assert prompt.index("Autonomy and escalation:") < prompt.index("Current task:")
+    rendered_task = Task(
+        task_id="task-2",
+        payload=prompt,
+        requester_id="boss",
+        target_persona="reviewer",
+    )
+    assert TextRiskAssessor().assess(rendered_task).risk_level is RiskLevel.READ_ONLY

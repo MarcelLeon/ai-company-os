@@ -3,8 +3,8 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-07-23
-**当前轮次**:Round 272(Native Codex host-run observation)
+**最后更新**:2026-07-27
+**当前轮次**:Round 274(HOTL capability map + social preview closeout)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是个人开发者可直接使用的远程IM指挥、
@@ -14,6 +14,9 @@ owner-bound standing autonomy、durable result/outcome delivery与真实日常do
 receipt继续不冒充off-device来源、full business recovery或老板已读。当前state schema v13、receiver/evidence schema v5，
 recovery-set schema v6仍固定`business_restore_ready=false`。默认与交互入口不自执行；Round 200-249累计补齐durable runtime、
 recovery/alert/dead-man、component DR primitive和bounded/auditable autonomy，Team Karpathy Loop仍在Future。
+Round 274把个人HOTL定位收口到带语义配色的核心能力地图、README首屏解释和GitHub social preview；
+owner尚未确认真实案例与首批用户方案，因此建议3/4保持设计澄清状态，不提前开发。当前进入两周发布/首批用户窗口，
+除安全或首用blocker外暂停扩展核心能力。
 
 公开用户默认形态现已固定为checkout内的本机Runtime：`aico init|doctor|run`完成前台验证，macOS再用
 `aico service install`进入用户级LaunchAgent。Dead-Man Receiver只在用户主动要求整机失联检测时作为异机/云端高级能力，
@@ -22,6 +25,40 @@ recovery/alert/dead-man、component DR primitive和bounded/auditable autonomy，
 Round 241为独立receiver增加可选different-origin fallback与1-of-2/2-of-2 ACK quorum；schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝配置漂移，原2-of-2事件不能在重启后被1-of-2降级结算。单通知provider或credential失效不再必然切断老板通知，但不同URL、local ACK和unit test仍不冒充真实provider/账号/网络独立或human read。
 
 Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增加默认关闭、显式opt-in的`silent-route-probe-v1`：复用真实双route URL/token/POST，exact intent跨restart；一个失败窗口为suspect/PENDING，连续达到阈值才通过既有edge主动告警，ACK后恢复。bridge不能证明silent handling时必须保持disabled，local ACK不冒充human read或commercial HA。Round 244新增strict install admission，Round 245让它贯穿每次runtime启动；Round 246再要求incident alert与dead-man pulse使用不同exact URL及不同非空bearer，防止两个strict协议共用authority却判绿。Round 247检测运行中dotenv代际漂移；Round 248让dead-man当前验收显式拒绝超龄artifact、过期/未完成probe和非healthy route；Round 249把reviewed config、dotenv generation与strict evidence绑定成expiring commissioning receipt并持续纳入required health。Round 200-249累计合同以本段和下方最新Round为准。
+
+---
+
+## Round 274 完成:HOTL capability map + social preview closeout
+
+- [x] 核心能力地图增加五类语义配色：Owner、编排/上下文、风险/授权、本机执行、证据/接手；
+  中英文README加入产品级地图，保留后续Security Model作为更窄的强制执行链。
+- [x] GitHub Settings上传最新`docs/assets/social-preview.png`；公开远端与本地SHA-256均为
+  `0eab69510c4ed81c207bd7831b1282f89c062ef6f3e6f63f8c6fabd4258c517c`，
+  `1280 x 640`、49,393 bytes；CLI为`status=ok`，并已肉眼确认文案和手机示意。
+- [x] 本轮提交继续排除owner既有零字节`examples/release-room/aico-project.json`，不覆盖本地数据；
+  建议3的真实案例和建议4的首批用户落地仅提出产品问题，等待owner对齐后再实施。
+- [x] 当前复核：Prompt/Risk定向`14 passed`；Ruff check、format(321 files)、mypy(267 files)
+  与diff通过。Round 273完整诊断仍有效：raw root仅上述零字节文件导致3项失败。
+- [ ] 尚未push/merge或获得current-head CI；完整suite与no-token demo仍受owner零字节配置阻塞，
+  因此不打`v0.1.0` tag或Release。
+
+---
+
+## Round 273 完成:Personal HOTL positioning + release pilot
+
+- [x] 核对真实授权边界：普通任务由TextRiskAssessor + TaskBus审批，Lead已有高风险上报提示；
+  scheduled standing autonomy另有owner-bound read-only grant、expiry/run/duration/token和Adapter沙箱。
+- [x] 所有appointment prompt新增HOTL行为合同：当前任务/权限内直接推进；证据不足、指令冲突、未知/意外或
+  即将越界时停下找owner；Prompt明确不能替代AICO审批门禁和Adapter强制边界。
+- [x] README中英文与social preview改为“个人、本机优先的human-on-the-loop control plane”，明确不是企业
+  多租户平台；新增核心能力地图、10人design-partner陪跑计划和真实3分钟案例分镜。
+- [x] GitHub只读复核：仓库PUBLIC，当前线上custom preview为`1280 x 640`且verifier `status=ok`；
+  新HOTL图尚未上传。当前branch比`origin/main`超前19 commits，未创建`v0.1.0` tag。
+- [x] Gate：Prompt/Risk定向`14 passed`；raw root因用户既有零字节release-room JSON为
+  `3 failed, 1187 passed, 1 skipped`，精确排除后`1187 passed, 1 skipped, 3 deselected`；
+  Ruff check、format(321 files)、root mypy(267 files)与diff通过；一处既有data-agent文件只做机械format。
+- [ ] 未覆盖用户零字节配置，未commit/push/merge/tag/release；恢复或明确替换该文件、上传新preview、
+  当前HEAD CI绿之前保持No-Go。
 
 ---
 
@@ -3593,9 +3630,26 @@ AICO 的产品边界是 absence-first:
 
 ---
 
-## 下一轮建议做什么(优先级从高到低)
+## 当前两周发布优先级
 
-> Agent 接手时,如果没有明确任务,从这里挑最高优先级。
+> Round 273 owner决定覆盖旧排序：除安全或首用blocker外暂停新核心能力，先完成发布和陌生用户闭环。
+
+1. **【最高】恢复Release Room RC并发布v0.1.0**:
+   - 由owner决定恢复或替换零字节`examples/release-room/aico-project.json`；Agent不得覆盖。
+   - 复跑完整test/lint/format/mypy/demo，提交当前分支，合入`main`并等待current-head CI。
+   - owner上传新HOTL `docs/assets/social-preview.png`并肉眼确认；之后按GitHub release SOP打tag/Release。
+2. **【最高】录制真实3分钟HOTL案例**:
+   - 真实IM + 真实Adapter完成一个小bugfix；展示任务边界、自主推进、一次风险审批、例外停下和morning接手。
+   - README GIF只保留30–45秒teaser；完整案例用MP4，不让fake adapter冒充真实结果。
+3. **【最高】启动10人design-partner陪跑**:
+   - 先3位熟人，再4位内容自愿报名、3位公开表达过相关痛点的社区用户；不冷私信、不群发Issue。
+   - 只看Demo→Telegram、首任务终态、接手质量与7日主动复用；前5位有3位卡同一步就先修共同blocker。
+
+详见[`docs/launch/hotl-relaunch-pilot.md`](docs/launch/hotl-relaunch-pilot.md)。
+
+## 长期待办(发布窗口后再恢复排序)
+
+> Agent 接手时,如果没有明确任务且发布窗口已结束,从这里挑最高优先级。
 
 1. **【最高】Boss-absent isolated system turn runner**:
    - Round 259已证明Codex Goal必须走persistent app-server并完成no-model admission；Round 260进一步冻结native Codex host

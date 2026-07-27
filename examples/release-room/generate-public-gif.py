@@ -287,11 +287,11 @@ def _render_social_preview() -> Image.Image:
     draw.text((110, 120), "AI Company OS", fill="#111827", font=_font(64, bold=True))
     draw.text(
         (112, 202),
-        "Boss absent. Local agents still work.",
+        "Personal human-on-the-loop control plane.",
         fill="#334155",
         font=_font(30, bold=True),
     )
-    tags = ("IM control", "Overnight handoff", "Approval + Audit")
+    tags = ("Policy-bounded agents", "Exception alerts", "Interrupt + Audit")
     x = 112
     for tag in tags:
         width = int(draw.textlength(tag, font=_font(22, bold=True))) + 42
@@ -312,13 +312,13 @@ def _render_social_preview() -> Image.Image:
     _social_bubble(draw, 938, 426, "HTML snapshot attached", mine=False)
     draw.text(
         (112, 430),
-        "Leave the laptop. Keep the team moving.",
+        "Let local agents work. Intervene when it matters.",
         fill="#0f172a",
         font=_font(34, bold=True),
     )
     draw.text(
         (112, 480),
-        "Roles, memory, approvals, audit, and morning handoff.",
+        "Personal, local-first supervision from Telegram.",
         fill="#475569",
         font=_font(24),
     )

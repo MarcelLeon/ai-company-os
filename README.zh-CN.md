@@ -1,8 +1,9 @@
 # AI Company OS
 
-> 面向本机 AI coding agents 的远程项目作战室。
+> 面向个人本机 AI coding agents 的 Human-on-the-loop 远程控制层:Agent 在边界内推进,
+> 人只处理例外并可从 Telegram 随时介入。
 
-[English](README.md) · [快速上手](docs/human/quickstart.md) · [Release Room Demo](docs/examples/release-room.md) · [路线图](STATUS.md) · [老板第一路线图](docs/architecture/boss-first-grounding.md) · [Agent 接手入口](AGENTS.md)
+[English](README.md) · [核心能力地图](docs/human/core-capability-map.md) · [快速上手](docs/human/quickstart.md) · [Release Room Demo](docs/examples/release-room.md) · [路线图](STATUS.md) · [老板第一路线图](docs/architecture/boss-first-grounding.md) · [Agent 接手入口](AGENTS.md)
 
 AI Company OS 把你电脑上的 Claude Code、Codex、Cursor、Gemini、Trae、CodeFlicker、
 或你自己的 CLI 收编成一个可以通过 Telegram 远程管理的项目团队。飞书已经实现第一个非
@@ -11,6 +12,9 @@ AI CLI 可以按同一 Adapter 协议后续接入。
 
 它不是另一个聊天 UI。它更像一个小型运营层:当你离开电脑时,仍能用 IM 派工、审批、
 打断、看日报、查审计,让本机 agent 以项目、岗位、记忆和交付状态的方式继续工作。
+
+AICO 是个人、本机优先的产品:服务于一个开发者管理自己电脑上的 AI 团队,不是企业
+多租户 Agent 管理平台。
 
 ![Release Room demo](docs/assets/release-room-demo.gif)
 
@@ -35,10 +39,50 @@ AICO 的产品判断是:agent 开发者不只需要更聪明的 agent,还需要�
   CodeFlicker、Trae、Gemini,后续也能接公司内部 CLI。
 - **项目办公室语义**:支持项目、岗位、任命、负责人、团队视图、日报、风险、卡点和下一步。
 - **审批与审计**:写文件、shell 执行和破坏性动作先走远程审批,并留下审计事件。
+- **Human-on-the-loop 自主边界**:Appointment Prompt 要求 Agent 在当前任务和任命权限内
+  直接推进,遇到未知、指令冲突或即将越界时停止并找 owner;真正的强制边界仍由审批门禁和
+  Adapter 沙箱承担。
 - **共享记忆**:用 append-only JSONL 保存项目记忆和老板偏好,受控注入 prompt。
 - **可观测工作流**:可以查看任务、子任务、指标、审计历史和本地 glance 输出。
 - **离线托管**:用 `/overnight` 睡前下任务,之后通过 `/inbox`、`/morning`、`/task`、
   `/audit` 接手和追溯交付情况。
+
+## 核心能力地图
+
+AICO 的工作闭环很简单：Owner 从 IM 派工，AICO 补齐项目上下文和授权边界，本机
+Adapter 执行，结果与证据再回到 Owner 手里接管或介入。
+
+<!-- 这张产品级地图需要与 docs/human/core-capability-map.md 保持一致。 -->
+```mermaid
+flowchart LR
+    owner["个人 Owner<br/>Telegram / Feishu"] --> office["项目办公室<br/>Project / Role / Appointment"]
+    office --> task["任务与上下文<br/>Task / Memory / Experience"]
+    task --> risk{"风险与授权"}
+    risk -->|"普通只读"| adapter["本机 AI Adapter"]
+    risk -->|"写入 / Shell / 破坏性"| approval["/approve 或 /reject"]
+    approval --> adapter
+    risk -->|"Owner 预授权的定时只读"| standing["Standing grant<br/>次数 / 到期 / 时间 / Token"]
+    standing --> adapter
+    adapter --> evidence["结果与证据<br/>Task / Audit / Inbox / Morning / View"]
+    evidence --> owner
+    owner -->|"例外、未知、越界"| approval
+    owner -->|"/interrupt"| adapter
+
+    classDef human fill:#f3e8ff,stroke:#7e22ce,color:#3b0764,stroke-width:2px
+    classDef orchestration fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:2px
+    classDef policy fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:2px
+    classDef execution fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px
+    classDef observability fill:#ccfbf1,stroke:#0f766e,color:#134e4a,stroke-width:2px
+    class owner human
+    class office,task orchestration
+    class risk,approval,standing policy
+    class adapter execution
+    class evidence observability
+```
+
+紫色是 Owner 入口，蓝色是项目编排和上下文，橙色是风险与授权，绿色是本机执行，
+青色是结果、证据和重新接手。三种执行模式、命令级能力和 15 分钟重新上手路径见
+[完整核心能力地图](docs/human/core-capability-map.md)。
 
 ## 今天能拿它做什么
 
