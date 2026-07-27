@@ -4,8 +4,12 @@
 
 这不是一次追求曝光量的广撒网。第一阶段只验证：
 
-> 10 位已经使用 Claude Code 或 Codex 的个人开发者，能否理解 AICO、接通真实 IM、
-> 完成第一个真实任务，并在 7 天内主动再用一次。
+> 10 位合格候选中，是否有 5 位完成安装、3 位完成真实任务，并至少有 1 位在 7 天内
+> 主动再用一次。
+
+执行名单、进入标准、陪跑步骤和可直接发送的三套邀请见
+[`design-partner-ops.md`](design-partner-ops.md)；事实追踪使用
+[`design-partner-tracker.csv`](design-partner-tracker.csv)。
 
 ## 不从冷启动私信 GitHub 作者开始
 
@@ -77,6 +81,11 @@ GitHub README GIF 保持 30–45 秒，只负责让人看懂“IM 指挥、审�
 
 素材必须来自一次真实 Adapter + 真实 IM 跑通。允许剪掉等待时间和敏感内容，但不能用 fake adapter
 冒充真实执行。README GIF 从该视频截取四个可读镜头；完整视频负责证明结果。
+
+2026-07-27 已完成第一份真实素材：Telegram Owner 对 `shell_exec` 任务做一次审批，
+Claude Code Implementer 修改公开入口，Codex Reviewer 独立只读复核，主任务与子任务均进入 `done`。
+素材同时保留首次 LaunchAgent Provider 登录失败，不把失败剪成成功。完整事实链见
+[`../showcase/aico-self-repair-case.md`](../showcase/aico-self-repair-case.md)。
 
 ## 两周执行节奏
 

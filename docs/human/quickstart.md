@@ -161,9 +161,9 @@ Dead-Man、创建云资源或自动安装后台服务。
 LaunchAgent读取的durable配置；不要把token直接写进plist:
 
 如果还不知道sender/target ID，可先把两项留空并仅在当前terminal设置
-`AICO_INGRESS_DISCOVERY_LOG_IDENTITIES=true`后运行`aico-phase1`。发送一条消息，本地日志会显示escaped
+`AICO_INGRESS_DISCOVERY_LOG_IDENTITIES=true`后运行`uv run aico run`。发送一条消息，本地日志会显示escaped
 `sender`/`target`，但消息仍在业务入口前被拒绝。复制ID后停止进程，填入`.env`并把discovery设回`false`。
-`aico-service doctor/install`会拒绝开启discovery的配置，避免身份日志长期暴露。
+`uv run aico doctor`和`uv run aico service install`会拒绝开启discovery的配置，避免身份日志长期暴露。
 
 ```bash
 uv run aico-audit --audit-log .aico/audit.jsonl verify
@@ -183,6 +183,10 @@ strict OK只证明本机机器合同已配置；仍需分别验收receiver/provi
 Telegram 配置启动 polling runtime,Feishu 配置启动 webhook runtime;切换 Channel 后要重新 install。
 日志写入 `.aico/service/`,进程 heartbeat 写入 `.aico/runtime-heartbeat.json`。plist 只包含可执行文件、
 工作目录、PATH 和日志路径,不包含 `.env` 的 token/key value。
+安装完成后仍要从真实IM发一条代表性Provider任务；`doctor`的CLI可见与synthetic component health
+不证明LaunchAgent能读取终端里的Provider登录态。若出现`Not logged in`，按
+[`troubleshooting.md`](troubleshooting.md#终端里的-provider-已登录但-launchagent-任务仍报-not-logged-in)
+保留失败证据并先回到前台Runtime，不要把credential复制进plist。
 
 ```bash
 uv run aico service status
@@ -192,7 +196,7 @@ uv run aico service uninstall
 ```
 
 `doctor` 的 `runtime owner` 必须显示 active PID 且与 launchd PID 一致。若提示 owner mismatch,
-通常是另一个手动 `aico-phase1` / webhook 仍在运行;先停止原进程,不要删除 lock file或直接 kill 未确认 PID。
+通常是另一个手动 `uv run aico run` / webhook 仍在运行;先停止原进程,不要删除 lock file或直接 kill 未确认 PID。
 
 `uninstall` 会先 bootout,再把 plist 移到 `~/.Trash`,便于恢复。Heartbeat v5 同时记录 process freshness
 以及 Channel、默认/可选 Adapter、morning scheduler 的脱敏 component status:required failure 会让 doctor
@@ -319,7 +323,7 @@ install -m 600 docs/examples/standing-autonomy.example.json \
   /absolute/private/aico-standing-autonomy.json
 # 替换外部文件中的所有 replace-with-*、expiry、run/duration、max_total_tokens 与 token_stop_threshold
 export AICO_STANDING_AUTONOMY_GRANT_PATH="/absolute/private/aico-standing-autonomy.json"
-uv run aico-service --repo . doctor
+uv run aico doctor
 ```
 
 不要把 grant 留在 repo，也不要给 group/world 权限。系统只在 scheduler 的 morning tick 消费，固定 Codex
@@ -361,7 +365,7 @@ export AICO_VIEW_OUTPUT_DIR=".aico/view-snapshots"  # 可选,非附件 Channel �
 export AICO_VIEW_TELEGRAM_BOT_USERNAME="your_bot_username"  # 可选,启用 HTML 内回 IM deep link
 ```
 
-重启 `aico-phase1` 后,在 Telegram 里:
+重启 `uv run aico run` 后,在 Telegram 里:
 
 ```text
 /project aico

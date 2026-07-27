@@ -13627,3 +13627,68 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 
 - 核心能力地图从内部重新上手文档升级为README产品入口，并具备一致的语义配色。
 - 最新个人HOTL Social Preview已上线；v0.1.0剩余发布阻塞收窄为零字节配置、push/merge和current-head CI。
+
+## Round 275 — 2026-07-27 — Codex
+
+### 输入
+
+- Owner对建议3/4的四个产品选择全部确认：案例使用“AICO自己修复一个真实低风险小问题”，交付3分钟MP4和
+  30–45秒README GIF；首批用户固定为Mac + Claude Code/Codex + 离开电脑后的真实接手需求；
+  同意匿名默认、免费陪跑、案例另行opt-in和Owner/Codex分工。
+- 继续执行上一轮尚未完成的提交与发布素材收口，但不自动联系候选人、不打tag或Release。
+
+### 真实dogfood
+
+- 在真实Telegram中选择中文README快速上手仍使用旧公开入口的问题。首条任务`ca692ce1`正确停在
+  `shell_exec`审批，Owner批准后LaunchAgent中的Claude Code返回`Not logged in`；失败保留为`failed`。
+- 同一Claude只读探针在普通用户环境成功。临时前台运行`uv run aico run`后，重新提交同一范围任务
+  `62a84f46`，再次经Owner一次审批，Claude Code只修改`README.zh-CN.md`并报告最小一致性检查。
+- Implementer主动请求Codex Reviewer子任务`2a3553ee`。Reviewer保持`read_only`，确认本次改动准确，
+  同时发现`docs/human/quickstart.md`仍有面向用户的旧入口；主任务与子任务最终均为`done`。
+- `/task`、`/morning`和`/audit 10`确认approval approved、adapter dispatched、collaboration requested和
+  两次task completed。素材使用脱敏重绘，不保存Bot Token、Chat/Sender ID或历史聊天。
+- 恢复LaunchAgent后，补充任务再次复现`Not logged in`；重新install也无效。新增B-016/P-132和
+  Troubleshooting，把结论限制为launchd/非交互凭据可见性差异，不让用户重复登录或复制credential。
+
+### 产出
+
+- 新增`docs/showcase/aico-self-repair-case.md`，冻结真实任务、失败、审批、协作、终态与“不证明什么”。
+- 新增Design Partner执行包和匿名CSV tracker；两周漏斗固定为10位合格候选、5位安装、3位真实任务、
+  1位7日主动复用。提供熟人、自愿报名、相关社区公开回复三套文案，但没有发送任何外部消息。
+- Quickstart面向普通用户的入口统一到`aico init|doctor|run|service`；新增文档合同测试，
+  唯一旧`aico-service`保留为明确标记的operator render diagnostic。
+- 新增独立Remotion工程、3分钟中文旁白、8场景完整MP4和40秒README GIF；画面保留首次失败、
+  一次具体审批、Claude/Codex角色分工、真实diff、Morning和Audit。
+- 中英文README首屏切换到真实案例GIF，并链接完整视频、证据边界与Design Partner入口。
+
+### 关键决策
+
+- “Human-on-the-loop”不等于Agent自己批准。Prompt减少已知范围内反复请示，TaskBus/Owner grant/Adapter仍是强制边界。
+- 真实案例必须展示失败和剩余风险；Provider错误、等待和Reviewer finding不能被剪成全绿演示。
+- 首批用户从明确opt-in和近关系开始，不冷私信GitHub作者；Owner负责关系与最终邀请，Codex负责配置、排障、
+  脱敏证据和漏斗，不越权发送。
+- LaunchAgent Provider auth在B-016关闭前保持首用blocker；陪跑成功门槛先要求同一终端探针和前台真实任务。
+
+### 验证
+
+- `uv run pytest tests/unit/test_public_cli_docs.py tests/unit/test_prompt_stack.py tests/unit/test_risk.py -q`：
+  `15 passed`。
+- `uv run ruff check .`通过；`uv run ruff format --check .`为322 files；`uv run mypy`为268 source files。
+- 视频包`npx tsc --noEmit`通过，`npm audit --omit=dev`为0 vulnerabilities。
+- 完整MP4为1920×1080、180.032秒、H.264/AAC、14,023,295 bytes；GIF为960×540、40秒、
+  2,955,162 bytes。两者全量ffmpeg decode无错误；音频无超过2秒静音，mean/max volume为
+  `-20.2/-5.3 dB`；场景边界已按8段真实旁白时长重排，3张完整静帧、8场景MP4 contact sheet和
+  4镜头GIF contact sheet完成人工检查。
+- owner既有零字节`examples/release-room/aico-project.json`始终未改、未stage；因此不复跑会读取该文件的
+  full suite/no-token demo，也不打tag或Release。
+
+### 下一步
+
+- Owner决定实际邀请哪3位熟人或发布哪个自愿报名入口后，Codex再生成逐人配置并发送前做最终确认。
+- 优先关闭B-016：核对Claude Code对launchd/Keychain/非交互会话的正式合同，设计不泄露credential的live auth probe。
+- Owner恢复或明确替换零字节Release Room配置后，复跑full suite、no-token demo和current-head CI，再裁决v0.1.0。
+
+### 状态变化
+
+- 建议3从脚本草案升级为可播放、可复核、包含真实失败的案例资产；建议4从宽泛招募想法升级为可执行漏斗和陪跑合同。
+- AICO首次用自己的真实IM/Adapter/审批/协作链修正了自身公开文档；后台Provider auth仍明确保持红色blocker。

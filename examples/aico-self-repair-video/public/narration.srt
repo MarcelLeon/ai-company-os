@@ -1,0 +1,31 @@
+1
+00:00:00,000 --> 00:00:18,000
+这是一次真实的 AICO dogfood。问题很小，却很典型：中文 README 仍把旧命令当作快速上手入口。Owner 人不在电脑前，只从 Telegram 交给 AICO 一个范围明确的任务：修正文档，不提交，不推送，也不发布。
+
+2
+00:00:18,000 --> 00:00:38,000
+AICO 的核心不是让 Agent 自己审批。Prompt 负责告诉角色：已知边界内直接推进，遇到证据不足、冲突、未知或越界再找人。真正的边界由任务风险、Owner 授权和本机 Adapter 共同执行。
+
+3
+00:00:38,000 --> 00:01:03,000
+任务涉及修改文件和运行最小检查，因此 AICO 把它标记为 shell exec，并停在 Approval required。Owner 在 Telegram 只批准这一个短任务。批准前没有文件修改；批准后，任务才派发给本机 Claude Code。
+
+4
+00:01:03,000 --> 00:01:38,000
+第一次执行没有成功。后台 LaunchAgent 里的 Claude Code 返回 Not logged in。AICO 保留 failed，而不是把 Provider 错误包装成完成。随后，同一条只读登录探针在正常用户环境成功，问题被收窄为执行环境差异。切换到已验证的前台 Runtime 后，Owner 重新提交同一范围任务。这个失败也进入了首用排障清单。
+
+5
+00:01:38,000 --> 00:02:13,000
+第二次审批后，Implementer 只修改公开文档：无 Token 演示改用 aico demo，真实接入改成 aico init、doctor 和 run，前台验证后再安装 service。它没有碰 Owner 已有的本地配置，也没有 commit、push、tag 或 Release。主任务最终进入 done。
+
+6
+00:02:13,000 --> 00:02:33,000
+Implementer 随后主动请求 Codex Reviewer 做独立只读检查。Reviewer 没有修改文件，确认本次改动准确，同时发现 Quickstart 还有少量旧入口残留，并把后续修正范围明确交还。这是协作，不是换一个标签继续由同一个角色自证。
+
+7
+00:02:33,000 --> 00:02:55,000
+Owner 回来后不需要翻完整聊天。Task 页面显示主任务和 Reviewer 子任务都已完成；Morning 汇总 Done、Blocked、Risks 和 Next；Audit 依次保留 approval approved、adapter dispatched、collaboration requested 和两次 task completed。
+
+8
+00:02:55,000 --> 00:03:00,000
+AICO 不是替你审批，而是让你只在真正需要判断的位置回到环上。

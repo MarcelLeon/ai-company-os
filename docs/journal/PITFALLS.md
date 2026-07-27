@@ -4420,3 +4420,27 @@ thread仍可生成多组hash冒充multi-agent。额外/重复subagent若未进�
 - ADR-0101
 - B-015
 - `src/aico/app/boss_absent_codex_goal_run_observer.py`
+
+### [P-132] 终端Provider已登录不等于LaunchAgent能读取同一凭据
+
+**状态**:🔴 OPEN(provider-specific launchd credential visibility)
+**首次踩中**:Round 275
+**最后更新**:2026-07-27
+**影响范围**:macOS LaunchAgent,Claude Code Adapter,首个真实任务,service readiness
+
+**症状与根因**
+真实Telegram任务通过审批后，LaunchAgent中的Claude Code立即返回`Not logged in`；同一仓库、同一CLI在普通用户终端执行
+只读登录探针则成功。临时前台运行`uv run aico run`后，同一范围任务可完成；重新`aico service install`仍复现后台失败。
+当前证据只能证明launchd/非交互上下文的凭据可见性差异，不能归因于用户未登录，也不能声称所有Provider都有同一原因。
+
+**解决与预防**
+- 首用流程在安装服务前增加同一终端的Provider只读探针和一次前台真实任务。
+- `doctor`的CLI可见/组件健康不得冒充Provider真实登录；最终健康仍要一条代表性IM任务。
+- 保留失败task/audit，再以前台Runtime做范围相同的新任务；不把失败剪成成功。
+- 不把Provider credential复制到plist、`.env`、日志或仓库。长期修复需要逐Provider核对launchd/Keychain/非交互合同，
+  并增加不泄露credential的机器探针。
+
+**相关链接**
+- `docs/showcase/aico-self-repair-case.md`
+- `docs/human/troubleshooting.md`
+- ROUNDS Round 275

@@ -617,6 +617,38 @@ Round 268确认当前签名Codex App内嵌`0.145.0-alpha.30`新增
 - `src/aico/app/boss_absent_codex_goal_live_observer.py`
 - Round 266
 
+### [B-016] macOS LaunchAgent无法复用当前Claude Code登录态
+
+**状态**:🔴 BLOCKING
+**提出于**:Round 275
+**最后更新**:2026-07-27
+**影响**:普通终端中的Claude Code可用，但`aico service install`后的真实写任务立即失败；阻塞“关终端后继续真实Provider任务”的首用承诺。
+
+**问题描述**
+2026-07-27真实Telegram dogfood中，LaunchAgent里的Claude Code对两条已审批任务都返回`Not logged in`。
+同一仓库、同一CLI在普通用户环境执行只读登录探针成功；临时前台运行`uv run aico run`后，同一范围任务完成，
+并成功委托Codex只读复核。重新install LaunchAgent没有修复后台凭据可见性。
+
+当前证据只能定位到launchd/非交互上下文与Provider凭据的可见性差异。不能推断用户没有登录，也不能把Claude的行为
+泛化到所有Adapter。
+
+**需要什么才能解开**
+1. 核对Claude Code对launchd、Keychain和非交互OAuth会话的官方支持边界。
+2. 在不复制或打印credential的前提下，为service doctor增加Provider-specific live auth probe设计。
+3. 覆盖“终端成功、LaunchAgent失败”和“LaunchAgent成功”的真实Mac验收，并保证日志/heartbeat只保存脱敏状态。
+4. 通过后再恢复“完成前台验证即可后台继续真实Provider任务”的公开承诺。
+
+**当前 workaround**
+- 安装服务前在同一终端做Provider只读探针，并用`uv run aico run`完成一条代表性任务。
+- 后台失败时保留`/task`和`/audit`，使用前台Runtime重提同一范围的新任务；不自动重试，不复制credential进plist或`.env`。
+- Quickstart和Troubleshooting明确该边界；Design Partner陪跑先以前台真实任务作为成功门槛。
+
+**相关链接**
+- P-132
+- `docs/showcase/aico-self-repair-case.md`
+- `docs/human/troubleshooting.md`
+- ROUNDS Round 275
+
 ### [B-009] aico-view 本地 attachment 缺少策略允许的真实浏览器截图入口
 
 **状态**:🟡 DEFERRED

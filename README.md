@@ -12,7 +12,16 @@
 
 [中文](README.zh-CN.md) · [Capabilities](docs/human/core-capability-map.md) · [Quickstart](docs/human/quickstart.md) · [Demo](docs/examples/release-room.md) · [Roadmap](STATUS.md) · [Architecture](docs/architecture/boss-first-grounding.md) · [Agents](AGENTS.md)
 
-![Release Room demo](docs/assets/release-room-demo.gif)
+![Real AICO self-repair case](docs/assets/aico-self-repair.gif)
+
+[Watch the full 3-minute case with narration](docs/assets/aico-self-repair.mp4) ·
+[Read the evidence boundary](docs/showcase/aico-self-repair-case.md) ·
+[Join the design-partner pilot](docs/launch/design-partner-ops.md)
+
+The case is real Telegram + Claude Code + Codex dogfooding: one scoped write task,
+one explicit owner approval, one honest provider failure, a successful retry, an
+independent read-only review, and a Morning/Audit handoff. The UI is privacy-safe
+reconstruction; task IDs, risks, states, diff and audit sequence come from the real run.
 
 AICO turns the AI tools already on your laptop — Claude Code, Codex, Cursor, Gemini,
 Trae, CodeFlicker, or your own CLI — into a remote project team you can manage from

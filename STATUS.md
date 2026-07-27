@@ -4,7 +4,7 @@
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
 **最后更新**:2026-07-27
-**当前轮次**:Round 274(HOTL capability map + social preview closeout)
+**当前轮次**:Round 275(real self-repair case + design-partner launch assets)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是个人开发者可直接使用的远程IM指挥、
@@ -14,8 +14,10 @@ owner-bound standing autonomy、durable result/outcome delivery与真实日常do
 receipt继续不冒充off-device来源、full business recovery或老板已读。当前state schema v13、receiver/evidence schema v5，
 recovery-set schema v6仍固定`business_restore_ready=false`。默认与交互入口不自执行；Round 200-249累计补齐durable runtime、
 recovery/alert/dead-man、component DR primitive和bounded/auditable autonomy，Team Karpathy Loop仍在Future。
-Round 274把个人HOTL定位收口到带语义配色的核心能力地图、README首屏解释和GitHub social preview；
-owner尚未确认真实案例与首批用户方案，因此建议3/4保持设计澄清状态，不提前开发。当前进入两周发布/首批用户窗口，
+Round 274把个人HOTL定位收口到带语义配色的核心能力地图、README首屏解释和GitHub social preview。
+Round 275在owner确认受众、案例、素材和招募边界后完成真实Telegram自修复dogfood、3分钟成片、40秒README teaser与
+10→5→3→1 design-partner执行包；没有发送外部邀请。真实案例同时发现LaunchAgent无法复用当前Claude Code登录态，
+已新增B-016/P-132并把前台Provider探针纳入首用流程。当前进入两周发布/首批用户窗口，
 除安全或首用blocker外暂停扩展核心能力。
 
 公开用户默认形态现已固定为checkout内的本机Runtime：`aico init|doctor|run`完成前台验证，macOS再用
@@ -25,6 +27,33 @@ owner尚未确认真实案例与首批用户方案，因此建议3/4保持设计
 Round 241为独立receiver增加可选different-origin fallback与1-of-2/2-of-2 ACK quorum；schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝配置漂移，原2-of-2事件不能在重启后被1-of-2降级结算。单通知provider或credential失效不再必然切断老板通知，但不同URL、local ACK和unit test仍不冒充真实provider/账号/网络独立或human read。
 
 Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增加默认关闭、显式opt-in的`silent-route-probe-v1`：复用真实双route URL/token/POST，exact intent跨restart；一个失败窗口为suspect/PENDING，连续达到阈值才通过既有edge主动告警，ACK后恢复。bridge不能证明silent handling时必须保持disabled，local ACK不冒充human read或commercial HA。Round 244新增strict install admission，Round 245让它贯穿每次runtime启动；Round 246再要求incident alert与dead-man pulse使用不同exact URL及不同非空bearer，防止两个strict协议共用authority却判绿。Round 247检测运行中dotenv代际漂移；Round 248让dead-man当前验收显式拒绝超龄artifact、过期/未完成probe和非healthy route；Round 249把reviewed config、dotenv generation与strict evidence绑定成expiring commissioning receipt并持续纳入required health。Round 200-249累计合同以本段和下方最新Round为准。
+
+---
+
+## Round 275 完成:real self-repair case + design-partner launch assets
+
+- [x] 真实Telegram案例闭环：`62a84f46`经Owner一次`shell_exec`审批后由Claude Code更新
+  `README.zh-CN.md`；Implementer再请求Codex Reviewer `2a3553ee`只读复核，两条任务均为`done`，
+  `/morning`与`/audit`保留approval、dispatch、collaboration和completion事实。
+- [x] 如实保留首次`ca692ce1`和补充后台任务的`Not logged in`失败；同一Claude只读探针在普通用户环境成功、
+  前台AICO可完成任务，重新install LaunchAgent仍失败。新增B-016、P-132和Troubleshooting，不复制credential。
+- [x] Reviewer发现Quickstart仍有面向普通用户的旧入口；已最小改为`aico run|doctor|service`并新增
+  `test_public_cli_docs.py`，保留唯一明确标记的`aico-service render` operator diagnostic。
+- [x] 新增真实证据说明、Design Partner执行包与匿名tracker；漏斗固定为
+  `10位合格候选 → 5位安装 → 3位真实任务 → 1位7日主动复用`，本轮没有联系或邀请任何外部用户。
+- [x] Remotion源码、CosyVoice本地旁白与隐私安全重绘已落地：
+  `docs/assets/aico-self-repair.mp4`为`1920×1080`、180.032秒、含H.264/AAC、14,023,295 bytes，
+  SHA-256 `c3173bc0a0df1b2373d6ef5b8165643ae03b4a6bebaa298aa904cf308f6ec5bf`；
+  README GIF为`960×540`、40秒、2,955,162 bytes，
+  SHA-256 `48dd0996a657a1b7cd07500e76e8833354db3e66d1597f36b89cbbc3b001a491`。
+- [x] README中英文首屏已切换到真实案例GIF，并链接完整视频、证据边界和Design Partner入口；
+  Round 274的GitHub Social Preview仍是已上传且远端字节验证通过的最新版本。
+- [x] Gate：Public CLI/Prompt/Risk定向`15 passed`；Ruff check、format(322 files)、mypy(268 files)通过；
+  视频包TypeScript和npm audit通过，0 vulnerabilities；MP4/GIF全量decode无错误，音轨无超过2秒静音，
+  mean/max volume为`-20.2/-5.3 dB`；完整视频按8段真实旁白时长重排场景边界，
+  8场景与4镜头contact sheet均完成人工视觉检查。
+- [ ] 完整suite与no-token demo仍受owner零字节`examples/release-room/aico-project.json`阻塞；
+  本轮继续不覆盖、不stage该文件，也不打`v0.1.0` tag或Release。
 
 ---
 

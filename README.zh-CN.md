@@ -16,7 +16,15 @@ AI CLI 可以按同一 Adapter 协议后续接入。
 AICO 是个人、本机优先的产品:服务于一个开发者管理自己电脑上的 AI 团队,不是企业
 多租户 Agent 管理平台。
 
-![Release Room demo](docs/assets/release-room-demo.gif)
+![AICO 真实自修复案例](docs/assets/aico-self-repair.gif)
+
+[观看带旁白的 3 分钟完整案例](docs/assets/aico-self-repair.mp4) ·
+[查看事实与证据边界](docs/showcase/aico-self-repair-case.md) ·
+[参加首批 Design Partner 试用](docs/launch/design-partner-ops.md)
+
+案例来自真实 Telegram + Claude Code + Codex dogfooding：一个范围明确的写任务、一次
+Owner 审批、一次如实保留的 Provider 失败、一次成功重试、一次独立只读复核，以及最终
+Morning/Audit 接手。画面做了隐私安全重绘，短任务 ID、风险、状态、diff 和审计顺序均来自真实执行。
 
 ## 解决什么痛点
 
@@ -167,7 +175,7 @@ flowchart LR
 如果你想先看产品形态,不想立刻创建 Telegram Bot Token,可以先跑无 token demo:
 
 ```bash
-env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-release-room-demo
+env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico demo
 ```
 
 它会用 deterministic fake adapters 跑 Release Room 链路,不会调用 Telegram、Claude、
@@ -184,21 +192,17 @@ Codex 或任何付费 provider。
 ```bash
 git clone https://github.com/MarcelLeon/ai-company-os.git
 cd ai-company-os
-
-export AICO_TELEGRAM_BOT_TOKEN="你的 Telegram Bot Token"
-export AICO_CLAUDE_WORKING_DIRECTORY="$PWD"
-export AICO_ENABLE_CODEX_ADAPTER=true
-export AICO_PERSONA_CONFIG_PATH="config/personas.example.json"
-export AICO_PROJECT_CONFIG_PATH="config/projects.example.json"
-export AICO_AUDIT_LOG_PATH="/tmp/aico-audit.jsonl"
-export AICO_MEMORY_PATH="/tmp/aico-memory.jsonl"
-export AICO_STATE_DB_PATH="/tmp/aico-state.db"
-
 env UV_CACHE_DIR=/tmp/aico-uv-cache uv sync --python 3.11
-env UV_CACHE_DIR=/tmp/aico-uv-cache uv run --python 3.11 aico-phase1
+uv run aico init
+uv run aico doctor
+uv run aico run
 ```
 
-`aico-phase1` 是长驻 Telegram runtime。使用 bot 时保持它运行;停止时按 `Ctrl-C`。
+`aico init` 会交互式生成 owner-only `.env`(token 用隐藏输入),`aico doctor` 先检查配置,
+`aico run` 在前台启动 Telegram runtime。使用 bot 时保持它运行;停止时按 `Ctrl-C`。
+在 macOS 上完成一次前台验证后,可用 `uv run aico service install` 安装用户级 LaunchAgent,
+让 AICO 在关闭终端后继续运行。安装后仍要从 IM 发一条代表性任务确认 Provider 登录；
+`doctor` 显示 CLI 可见不等于 LaunchAgent 能读取同一凭据。
 
 然后在 Telegram Bot 中发送:
 

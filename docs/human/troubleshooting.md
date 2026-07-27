@@ -57,6 +57,19 @@ lsof -i :8080
 16. components healthy 但没有 IM:继续检查 token、网络、provider 登录和 send/getUpdates 日志;synthetic
     health 不能替代真实 IM 回包。
 
+### 终端里的 Provider 已登录，但 LaunchAgent 任务仍报 Not logged in
+
+`doctor`的组件健康和CLI位于PATH，只能证明Runtime可以启动，不能证明LaunchAgent上下文能读取Provider凭据。
+2026-07-27真实dogfood中，同一条Claude只读探针在普通用户终端成功，LaunchAgent派发却稳定返回
+`Not logged in`；重新install服务也没有改变结果。
+
+1. 保留失败任务，用`/task <id>`和`/audit`确认是Adapter/Provider失败，不要把它改写成任务完成。
+2. 在准备运行AICO的同一终端执行Provider官方只读登录探针；不要在日志或聊天中输出credential。
+3. 暂时运行`uv run aico run`完成一次代表性任务；如果前台成功、LaunchAgent失败，把结论限制为
+   “后台凭据可见性差异”，不要让用户重复登录或删除凭据目录碰运气。
+4. 在查清Provider对launchd、Keychain和非交互会话的支持前，不宣称`aico service install`已经验证真实Provider。
+5. 该问题不授权把credential复制进plist、`.env`或仓库。若需要额外环境桥接，必须另做脱敏设计和回归测试。
+
 ### install被 absence admission 拒绝
 
 `AICO_ABSENCE_ADMISSION_MODE=strict`表示owner要求“老板离开前”的机器合同门禁，不是普通开发安装。doctor会在固定合同名后

@@ -1,0 +1,11 @@
+candidate_id,cohort,source,opt_in,mac_ready,provider,provider_probe,demo,telegram,first_task_terminal,approval_understood,handoff_understood,day7_reuse,case_opt_in,primary_blocker,next_action,status
+DP-01,A,known-contact,pending,pending,,pending,pending,pending,pending,pending,pending,pending,no,,,candidate
+DP-02,A,known-contact,pending,pending,,pending,pending,pending,pending,pending,pending,pending,no,,,candidate
+DP-03,A,known-contact,pending,pending,,pending,pending,pending,pending,pending,pending,pending,no,,,candidate
+DP-04,B,public-opt-in,pending,pending,,pending,pending,pending,pending,pending,pending,pending,no,,,candidate
+DP-05,B,public-opt-in,pending,pending,,pending,pending,pending,pending,pending,pending,pending,no,,,candidate
+DP-06,B,public-opt-in,pending,pending,,pending,pending,pending,pending,pending,pending,pending,no,,,candidate
+DP-07,B,public-opt-in,pending,pending,,pending,pending,pending,pending,pending,pending,pending,no,,,candidate
+DP-08,C,relevant-public-thread,pending,pending,,pending,pending,pending,pending,pending,pending,pending,no,,,candidate
+DP-09,C,relevant-public-thread,pending,pending,,pending,pending,pending,pending,pending,pending,pending,no,,,candidate
+DP-10,C,relevant-public-thread,pending,pending,,pending,pending,pending,pending,pending,pending,pending,no,,,candidate
