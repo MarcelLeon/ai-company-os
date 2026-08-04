@@ -13692,3 +13692,56 @@ Still running: no adapter output for 120s. Use /task <id> for details or /interr
 
 - 建议3从脚本草案升级为可播放、可复核、包含真实失败的案例资产；建议4从宽泛招募想法升级为可执行漏斗和陪跑合同。
 - AICO首次用自己的真实IM/Adapter/审批/协作链修正了自身公开文档；后台Provider auth仍明确保持红色blocker。
+
+## Round 276 — 2026-08-03 — Codex
+
+### 输入
+
+- Owner确认上一轮产物没有问题后，要求合并到主分支，并同步刷新GitHub README、项目卡片和最新能力宣传。
+- 发布范围仅包含公开定位、仓库元数据、Social Preview、合并与验证；没有授权tag、Release或外部招募消息。
+
+### 思考与讨论
+
+- README和项目卡片必须围绕已经dogfood证明的能力，而不是罗列内部模块：个人开发者从Telegram委派，
+  Claude Code/Codex分工执行，风险写操作回到Owner审批，最后由Morning/Audit接手。
+- 仓库description和topics应与“personal HOTL control plane”一致。否决继续使用`fastapi`/`llm`等实现标签，
+  因为它们既不能解释用户价值，也会稀释`human-on-the-loop`和`agent-orchestration`的可发现性。
+- Social Preview沿用仓库内确定性生成器，避免单独制作一张无法复现的营销图；上传成功以公开远端文件与本地文件
+  SHA-256及字节完全相等为准，并补充人工视觉检查。
+- 本地完整gate通过后才fast-forward合并。Actions第一次失败来自测试固定时间依赖上海时区，生产代码读取的
+  `ps lstart`本来就是host-local；因此只修测试观察时间，否决为迎合UTC runner而改变生产时间语义。
+
+### 产出
+
+- 中英文README首屏和能力表、`docs/human/github-publication.md`、Social Preview及其确定性生成器已更新。
+- GitHub description改为个人HOTL最新能力文案；topics新增`agent-orchestration`、`human-on-the-loop`，
+  删除`fastapi`、`llm`。公开仓库和homepage未变。
+- 新Preview为`1280 x 640`、50,232 bytes，远端和本地SHA-256均为
+  `674e91ce435ebdc74de7bbc91dee5c02bc4c2d4347e3adb22869da795b7c3469`，逐字节比对通过。
+- `codex/aico-closeout`已fast-forward合入并推送`main`。公开定位commit为`7b40379`；
+  时区无关测试修正commit为`284bc11`。
+
+### 验证
+
+- 干净检出完整测试为`1191 passed, 1 skipped`；Ruff check、format(322 files)、root mypy(268 files)、
+  SME strict mypy(37 files)和`uv run aico demo`通过。
+- UTC与Asia/Shanghai环境下的desktop host observer定向测试均为`10 passed`。
+- main CI run `30889145083`中pytest、Ruff、format、root mypy与SME strict mypy全绿。
+- owner既有零字节`examples/release-room/aico-project.json`未改、未stage、未提交；本轮未创建tag或Release。
+
+### 关键决策
+
+- AICO公开定位固定为个人、本机优先的HOTL，不引入企业多租户、RBAC或合规平台表述。
+- GitHub公开素材只宣传已有证据的完整接手循环；内部机器合同不直接充当用户价值文案。
+- `ps lstart`测试必须跨host timezone稳定；测试时间不能隐含开发者所在时区。
+
+### 留给下一轮
+
+- 继续优先关闭B-016，让LaunchAgent中的Provider登录态具备可诊断、无credential泄露的首用合同。
+- Owner决定首批Design Partner人选或自愿报名入口后，再执行逐人配置与发送前确认。
+- tag/Release仍需单独release gate与Owner授权，不由本轮main merge自动触发。
+
+### 状态变化
+
+- AICO最新个人HOTL能力已统一出现在main、中英文README、GitHub项目卡片和Social Preview；main CI恢复全绿。
+- v0.1.0的“未合main/公开入口过期/current-head CI”阻塞已关闭，B-016与显式release裁决继续保留。

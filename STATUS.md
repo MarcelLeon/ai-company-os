@@ -3,8 +3,8 @@
 > 这个文件高频更新。每一轮 AI 工作或人类工作结束都要更新这里。
 > 阅读顺序:从上往下,前面的信息时效性最高。
 
-**最后更新**:2026-07-27
-**当前轮次**:Round 275(real self-repair case + design-partner launch assets)
+**最后更新**:2026-08-03
+**当前轮次**:Round 276(main merge + GitHub public positioning refresh)
 **当前阶段**:🟢 Phase 8 功能收口 — 离线托管 + 老板缺席操作模型
 **当前路线图**:近期高优三块基础能力(Memory+Experience / Audit+Rollback / aico-view)详见
 [`docs/architecture/boss-first-grounding.md`](docs/architecture/boss-first-grounding.md)。当前主线是个人开发者可直接使用的远程IM指挥、
@@ -19,6 +19,11 @@ Round 275在owner确认受众、案例、素材和招募边界后完成真实Tel
 10→5→3→1 design-partner执行包；没有发送外部邀请。真实案例同时发现LaunchAgent无法复用当前Claude Code登录态，
 已新增B-016/P-132并把前台Provider探针纳入首用流程。当前进入两周发布/首批用户窗口，
 除安全或首用blocker外暂停扩展核心能力。
+Round 276把上述能力统一到GitHub公开入口：中英文README、仓库description/topics与Social Preview均改为
+个人、本机优先的HOTL定位；远端Preview与仓库文件逐字节一致。`codex/aico-closeout`已fast-forward合入并推送`main`。
+干净检出完整gate为`1191 passed, 1 skipped`，Ruff、format、root/SME mypy与demo均通过；首次Actions暴露
+`ps lstart`夹具依赖开发机时区，已用仅测试数据的P-133修正，run `30889145083`全绿。owner零字节
+`examples/release-room/aico-project.json`继续不覆盖、不stage；本轮未打tag或Release。
 
 公开用户默认形态现已固定为checkout内的本机Runtime：`aico init|doctor|run`完成前台验证，macOS再用
 `aico service install`进入用户级LaunchAgent。Dead-Man Receiver只在用户主动要求整机失联检测时作为异机/云端高级能力，
@@ -27,6 +32,24 @@ Round 275在owner确认受众、案例、素材和招募边界后完成真实Tel
 Round 241为独立receiver增加可选different-origin fallback与1-of-2/2-of-2 ACK quorum；schema v3持久化当前策略并冻结逐事件策略，pending期间拒绝配置漂移，原2-of-2事件不能在重启后被1-of-2降级结算。单通知provider或credential失效不再必然切断老板通知，但不同URL、local ACK和unit test仍不冒充真实provider/账号/网络独立或human read。
 
 Round 242把aggregate quorum继续拆成逐route健康事实。Round 243再增加默认关闭、显式opt-in的`silent-route-probe-v1`：复用真实双route URL/token/POST，exact intent跨restart；一个失败窗口为suspect/PENDING，连续达到阈值才通过既有edge主动告警，ACK后恢复。bridge不能证明silent handling时必须保持disabled，local ACK不冒充human read或commercial HA。Round 244新增strict install admission，Round 245让它贯穿每次runtime启动；Round 246再要求incident alert与dead-man pulse使用不同exact URL及不同非空bearer，防止两个strict协议共用authority却判绿。Round 247检测运行中dotenv代际漂移；Round 248让dead-man当前验收显式拒绝超龄artifact、过期/未完成probe和非healthy route；Round 249把reviewed config、dotenv generation与strict evidence绑定成expiring commissioning receipt并持续纳入required health。Round 200-249累计合同以本段和下方最新Round为准。
+
+---
+
+## Round 276 完成:main merge + GitHub public positioning refresh
+
+- [x] 中英文README首屏统一为个人、本机优先的HOTL控制面：Telegram远程委派、Claude Code/Codex协作、
+  风险写操作审批，以及Morning/Audit可审计接手；没有包装成企业多租户平台。
+- [x] GitHub仓库description改为最新个人HOTL文案，topics新增`agent-orchestration`、`human-on-the-loop`，
+  移除不再准确的`fastapi`、`llm`；公开仓库与homepage保持不变。
+- [x] Social Preview更新为`1280 x 640`、50,232 bytes；本地与GitHub远端SHA-256均为
+  `674e91ce435ebdc74de7bbc91dee5c02bc4c2d4347e3adb22869da795b7c3469`，已完成人工视觉检查和逐字节比对。
+- [x] `codex/aico-closeout`经fast-forward合入`main`并推送；公开定位commit为`7b40379`。
+  干净检出完整gate：`1191 passed, 1 skipped`，Ruff check、format(322 files)、root mypy(268 files)、
+  SME strict mypy(37 files)及`aico demo`通过。
+- [x] 首次main CI run `30888941941`仅在UTC runner暴露测试夹具时区耦合；production逻辑未改，
+  commit `284bc11`把观察时间改为所有CI时区均晚于fixture start，UTC/Asia-Shanghai定向测试各`10 passed`；
+  run `30889145083`的pytest、Ruff、format、root/SME mypy全部通过。
+- [x] 全程保留owner既有零字节`examples/release-room/aico-project.json`为未stage状态；没有创建tag或Release。
 
 ---
 

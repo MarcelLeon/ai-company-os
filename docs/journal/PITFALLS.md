@@ -64,6 +64,7 @@
 - P-061:Generic health failure 不能直接驱动无人值守重启
 - P-062:Heartbeat 直发 webhook 不是可靠的缺席告警
 - P-095:Process alive 与 dead-man pulse fresh 不能证明 required 业务组件仍可用
+- P-133:`ps lstart`测试时间不能绑定开发者所在时区
 
 ### Java / Spring AI 相关
 - (待填充)
@@ -4444,3 +4445,26 @@ thread仍可生成多组hash冒充multi-agent。额外/重复subagent若未进�
 - `docs/showcase/aico-self-repair-case.md`
 - `docs/human/troubleshooting.md`
 - ROUNDS Round 275
+
+### [P-133] `ps lstart`测试时间不能绑定开发者所在时区
+
+**状态**:🟢 RESOLVED
+**首次踩中**:Round 276
+**最后更新**:2026-08-03
+**影响范围**:`tests/unit/test_boss_absent_codex_goal_live_observer.py`,GitHub Actions,跨平台CI
+
+**症状与根因**
+本机Asia/Shanghai完整suite通过，但GitHub Actions的UTC runner在
+`test_desktop_host_inspector_binds_exact_app_process`失败：fixture中的`ps lstart`是没有时区的host-local时间，
+测试却把`observed_at`固定成只在UTC+8下晚于进程启动的UTC时刻。在UTC runner中，同一启动时间会落在观察时间之后，
+触发正确的Pydantic时间顺序校验。失败来自测试数据隐含开发机时区，不是production parser回归。
+
+**解决与预防**
+- 保留production语义：真实`ps lstart`来自当前host，继续按当前host timezone转换为UTC。
+- 测试把`observed_at`设置到fixture日期的次日中午UTC，确保任意现实host timezone下都严格晚于启动时间。
+- 同一测试至少在`TZ=UTC`和`TZ=Asia/Shanghai`各运行一次；不得为让UTC CI通过而把host-local输入硬解释为UTC。
+- GitHub Actions run `30889145083`确认pytest、Ruff、format、root/SME mypy全部通过。
+
+**相关链接**
+- `tests/unit/test_boss_absent_codex_goal_live_observer.py`
+- ROUNDS Round 276
