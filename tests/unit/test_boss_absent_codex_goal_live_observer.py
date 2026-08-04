@@ -190,7 +190,9 @@ def test_desktop_host_inspector_binds_exact_app_process(
         69964,
         app_bundle=app,
         embedded_codex=embedded,
-        observed_at=datetime(2026, 7, 23, 5, tzinfo=UTC),
+        # ``ps lstart`` is host-local, so keep this safely after the fixture
+        # start time in every CI timezone instead of assuming Asia/Shanghai.
+        observed_at=datetime(2026, 7, 24, 12, tzinfo=UTC),
     )
 
     assert observed is not None
