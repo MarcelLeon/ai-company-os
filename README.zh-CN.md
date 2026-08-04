@@ -1,9 +1,13 @@
 # AI Company OS
 
-> 面向个人本机 AI coding agents 的 Human-on-the-loop 远程控制层:Agent 在边界内推进,
-> 人只处理例外并可从 Telegram 随时介入。
+> 面向个人本机 AI coding agents 的 Human-on-the-loop 远程控制层：从 Telegram 派工，
+> 让 Claude Code 与 Codex 按岗位协作，远程审批风险动作，再从可审计的交接结果继续接手。
 
 [English](README.md) · [核心能力地图](docs/human/core-capability-map.md) · [快速上手](docs/human/quickstart.md) · [Release Room Demo](docs/examples/release-room.md) · [路线图](STATUS.md) · [老板第一路线图](docs/architecture/boss-first-grounding.md) · [Agent 接手入口](AGENTS.md)
+
+| 远程派工 | 真实 Agent 协作 | 人保留控制权 | 带证据接手 |
+|---|---|---|---|
+| Telegram `/ask`、`/overnight` | 项目、岗位、Claude Code、Codex 与其他本机 CLI | `/approve`、`/reject`、`/interrupt`、有界授权 | `/inbox`、`/morning`、`/task`、`/audit`、`/view` |
 
 AI Company OS 把你电脑上的 Claude Code、Codex、Cursor、Gemini、Trae、CodeFlicker、
 或你自己的 CLI 收编成一个可以通过 Telegram 远程管理的项目团队。飞书已经实现第一个非

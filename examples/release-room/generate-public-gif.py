@@ -287,11 +287,11 @@ def _render_social_preview() -> Image.Image:
     draw.text((110, 120), "AI Company OS", fill="#111827", font=_font(64, bold=True))
     draw.text(
         (112, 202),
-        "Personal human-on-the-loop control plane.",
+        "Personal HOTL for local coding agents.",
         fill="#334155",
         font=_font(30, bold=True),
     )
-    tags = ("Policy-bounded agents", "Exception alerts", "Interrupt + Audit")
+    tags = ("Telegram delegation", "Approval-gated writes", "Claude + Codex")
     x = 112
     for tag in tags:
         width = int(draw.textlength(tag, font=_font(22, bold=True))) + 42
@@ -306,19 +306,19 @@ def _render_social_preview() -> Image.Image:
     draw.rounded_rectangle((910, 132, 1148, 502), radius=28, fill="#eef4fb")
     draw.rounded_rectangle((910, 132, 1148, 186), radius=26, fill="#ffffff")
     draw.text((938, 150), "release-room", fill="#0f172a", font=_font(24, bold=True))
-    _social_bubble(draw, 944, 214, "/morning", mine=True)
-    _social_bubble(draw, 938, 282, "done / blocked / risks / next", mine=False)
-    _social_bubble(draw, 960, 358, "/view", mine=True)
-    _social_bubble(draw, 938, 426, "HTML snapshot attached", mine=False)
+    _social_bubble(draw, 944, 214, "/approve", mine=True)
+    _social_bubble(draw, 940, 282, "Claude → Codex", mine=False)
+    _social_bubble(draw, 960, 358, "/morning", mine=True)
+    _social_bubble(draw, 922, 426, "done · risks · next", mine=False)
     draw.text(
         (112, 430),
-        "Let local agents work. Intervene when it matters.",
+        "Delegate. Approve. Review. Resume.",
         fill="#0f172a",
-        font=_font(34, bold=True),
+        font=_font(32, bold=True),
     )
     draw.text(
         (112, 480),
-        "Personal, local-first supervision from Telegram.",
+        "One developer. Real local agents. Human on the loop.",
         fill="#475569",
         font=_font(24),
     )

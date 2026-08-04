@@ -10,13 +10,13 @@
 GitHub 仓库 About 区域 description 建议填:
 
 ```text
-Remote control room for local AI coding agents: manage Claude Code, Codex, Cursor and more from Telegram or Feishu with roles, approvals, audit, memory and overnight handoff.
+Personal human-on-the-loop control plane for local AI coding agents: delegate from Telegram, coordinate Claude Code and Codex, approve risky writes, and resume from Morning/Audit.
 ```
 
 更短版本:
 
 ```text
-Remote IM control room for local AI coding agents.
+Personal HOTL control plane for local AI coding agents.
 ```
 
 ## Recommended Website
@@ -37,6 +37,8 @@ GitHub topics 最多 20 个,建议先填这组:
 ai-agents
 agent-os
 multi-agent
+agent-orchestration
+human-on-the-loop
 mcp
 developer-tools
 claude-code
@@ -47,8 +49,6 @@ feishu
 local-first
 automation
 python
-fastapi
-llm
 ai-coding
 approval-workflow
 audit-log
@@ -95,15 +95,16 @@ Social preview 需要在仓库 `Settings` 里上传图片。GitHub 官方建议:
 
 ```text
 AI Company OS
-Remote control room for your local AI coding agents
-Telegram / Feishu · Claude Code / Codex / Cursor · Approval · Audit · Memory
+Personal human-on-the-loop control plane
+Telegram delegation · Claude Code + Codex · Approval · Morning + Audit
 ```
 
 画面建议:
 
 - 左侧:项目名和一句话定位。
 - 右侧:Telegram Release Room 截图或简化流程图。
-- 底部:3 个短标签,例如 `IM-first`, `Local agents`, `Approval + audit`。
+- 底部:3 个短标签,例如 `Telegram delegation`, `Approval-gated writes`,
+  `Claude + Codex`。
 
 当前已生成可上传文件:
 

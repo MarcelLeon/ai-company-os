@@ -1,7 +1,8 @@
 # AI Company OS
 
-> **A personal human-on-the-loop control plane for local AI coding agents — supervise by
-> exception from Telegram while your Mac keeps working.**
+> **A personal, local-first human-on-the-loop control plane for AI coding agents —
+> delegate from Telegram, coordinate Claude Code and Codex by role, approve risky work
+> remotely, and return to an auditable handoff.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
@@ -11,6 +12,10 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 [中文](README.zh-CN.md) · [Capabilities](docs/human/core-capability-map.md) · [Quickstart](docs/human/quickstart.md) · [Demo](docs/examples/release-room.md) · [Roadmap](STATUS.md) · [Architecture](docs/architecture/boss-first-grounding.md) · [Agents](AGENTS.md)
+
+| Delegate remotely | Coordinate real agents | Keep control | Resume with evidence |
+|---|---|---|---|
+| `/ask` and `/overnight` from Telegram | Projects, roles, Claude Code, Codex, and other local CLIs | `/approve`, `/reject`, `/interrupt`, bounded grants | `/inbox`, `/morning`, `/task`, `/audit`, `/view` |
 
 ![Real AICO self-repair case](docs/assets/aico-self-repair.gif)
 
